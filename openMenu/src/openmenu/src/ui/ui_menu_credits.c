@@ -5092,19 +5092,24 @@ static int svmu_cached_bmf_width = 0;
 static int svmu_cached_content_lines = 0;
 static int svmu_layout_state = -1;
 
-/* Draw a BMF progress line ("Block N / 256 ...") at a fixed, smaller size.
- * The scale is derived from a worst-case template instead of the live string,
- * so the text does not change size as the block counter advances. */
-#define SVMU_BMF_PROGRESS_HEIGHT 20.0f
-
+/* Draw a BMF status line and its "Block N / 256 ..." progress line at one
+ * shared size. The size is based on the fixed status text and a worst-case
+ * progress template, not the live counter, so it stays constant while the
+ * block count advances and both lines always match. */
 static void
-svmu_draw_bmf_progress(int x, int y, uint32_t color, const char* str, const char* widest, int width) {
-    font_bmf_set_height(SVMU_BMF_PROGRESS_HEIGHT);
+svmu_draw_bmf_status_progress(int x, int status_y, int progress_y, uint32_t color, const char* status,
+                              const char* progress, const char* widest, int width) {
+    font_bmf_set_height_default();
+    float needed = font_bmf_text_width(status);
     float widest_w = font_bmf_text_width(widest);
-    if (widest_w > (float)width) {
-        font_bmf_set_height(SVMU_BMF_PROGRESS_HEIGHT * (float)width / widest_w);
+    if (widest_w > needed) {
+        needed = widest_w;
     }
-    font_bmf_draw(x, y, color, str);
+    if (needed > (float)width) {
+        font_bmf_set_scale((float)width / needed);
+    }
+    font_bmf_draw(x, status_y, color, status);
+    font_bmf_draw(x, progress_y, color, progress);
     font_bmf_set_height_default();
 }
 
@@ -6580,45 +6585,49 @@ draw_serial_vmu_tr(void) {
                                         "Cancel", width - padding);
                 break;
 
-            case SERIAL_VMU_RESTORE_BUSY:
+            case SERIAL_VMU_RESTORE_BUSY: {
                 cur_y += line_height;
                 font_bmf_draw_auto_size(x_item, cur_y, text_color, svmu_ctx.game_line, width - padding);
                 cur_y += line_height;
                 cur_y += line_height;
-                font_bmf_draw_auto_size(x_item, cur_y, text_color, "Restoring Serial VMU...", width - padding);
+                int status_y = cur_y;
                 cur_y += line_height;
                 cur_y += line_height;
                 snprintf(line_buf, sizeof(line_buf), "Block %d / %d (%d KB)", svmu_ctx.current_block, SERIAL_VMU_BLOCKS,
                          svmu_ctx.current_block * SERIAL_VMU_BLOCK_SIZE / 1024);
-                svmu_draw_bmf_progress(x_item, cur_y, text_color, line_buf, "Block 888 / 888 (888 KB)",
-                                       width - padding);
+                svmu_draw_bmf_status_progress(x_item, status_y, cur_y, text_color, "Restoring Serial VMU...", line_buf,
+                                              "Block 888 / 888 (888 KB)", width - padding);
                 break;
+            }
 
-            case SERIAL_VMU_BACKUP_BUSY:
+            case SERIAL_VMU_BACKUP_BUSY: {
                 cur_y += line_height;
                 font_bmf_draw_auto_size(x_item, cur_y, text_color, svmu_ctx.game_line, width - padding);
                 cur_y += line_height;
                 cur_y += line_height;
-                font_bmf_draw_auto_size(x_item, cur_y, text_color, "Backing up Serial VMU...", width - padding);
+                int status_y = cur_y;
                 cur_y += line_height;
                 cur_y += line_height;
                 snprintf(line_buf, sizeof(line_buf), "Block %d / %d (%d KB)", svmu_ctx.current_block, SERIAL_VMU_BLOCKS,
                          svmu_ctx.current_block * SERIAL_VMU_BLOCK_SIZE / 1024);
-                svmu_draw_bmf_progress(x_item, cur_y, text_color, line_buf, "Block 888 / 888 (888 KB)",
-                                       width - padding);
+                svmu_draw_bmf_status_progress(x_item, status_y, cur_y, text_color, "Backing up Serial VMU...", line_buf,
+                                              "Block 888 / 888 (888 KB)", width - padding);
                 break;
+            }
 
-            case SERIAL_VMU_WIPE_BUSY:
+            case SERIAL_VMU_WIPE_BUSY: {
                 cur_y += line_height;
                 font_bmf_draw_auto_size(x_item, cur_y, text_color, svmu_ctx.game_line, width - padding);
                 cur_y += line_height;
                 cur_y += line_height;
-                font_bmf_draw_auto_size(x_item, cur_y, text_color, "Formatting VMU...", width - padding);
+                int status_y = cur_y;
                 cur_y += line_height;
                 cur_y += line_height;
                 snprintf(line_buf, sizeof(line_buf), "Block %d / %d", svmu_ctx.current_block, SERIAL_VMU_BLOCKS);
-                svmu_draw_bmf_progress(x_item, cur_y, text_color, line_buf, "Block 888 / 888", width - padding);
+                svmu_draw_bmf_status_progress(x_item, status_y, cur_y, text_color, "Formatting VMU...", line_buf,
+                                              "Block 888 / 888", width - padding);
                 break;
+            }
 
             case SERIAL_VMU_RESTORE_FAILED:
                 cur_y += line_height;
