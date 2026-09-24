@@ -6590,7 +6590,8 @@ draw_serial_vmu_tr(void) {
                 cur_y += line_height;
                 snprintf(line_buf, sizeof(line_buf), "Block %d / %d (%d KB)", svmu_ctx.current_block, SERIAL_VMU_BLOCKS,
                          svmu_ctx.current_block * SERIAL_VMU_BLOCK_SIZE / 1024);
-                svmu_draw_bmf_progress(x_item, cur_y, text_color, line_buf, "Block 888 / 888 (888 KB)", width - padding);
+                svmu_draw_bmf_progress(x_item, cur_y, text_color, line_buf, "Block 888 / 888 (888 KB)",
+                                       width - padding);
                 break;
 
             case SERIAL_VMU_BACKUP_BUSY:
@@ -6603,7 +6604,8 @@ draw_serial_vmu_tr(void) {
                 cur_y += line_height;
                 snprintf(line_buf, sizeof(line_buf), "Block %d / %d (%d KB)", svmu_ctx.current_block, SERIAL_VMU_BLOCKS,
                          svmu_ctx.current_block * SERIAL_VMU_BLOCK_SIZE / 1024);
-                svmu_draw_bmf_progress(x_item, cur_y, text_color, line_buf, "Block 888 / 888 (888 KB)", width - padding);
+                svmu_draw_bmf_progress(x_item, cur_y, text_color, line_buf, "Block 888 / 888 (888 KB)",
+                                       width - padding);
                 break;
 
             case SERIAL_VMU_WIPE_BUSY:
