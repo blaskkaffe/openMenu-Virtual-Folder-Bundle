@@ -5092,6 +5092,22 @@ static int svmu_cached_bmf_width = 0;
 static int svmu_cached_content_lines = 0;
 static int svmu_layout_state = -1;
 
+/* Draw a BMF progress line ("Block N / 256 ...") at a fixed, smaller size.
+ * The scale is derived from a worst-case template instead of the live string,
+ * so the text does not change size as the block counter advances. */
+#define SVMU_BMF_PROGRESS_HEIGHT 20.0f
+
+static void
+svmu_draw_bmf_progress(int x, int y, uint32_t color, const char* str, const char* widest, int width) {
+    font_bmf_set_height(SVMU_BMF_PROGRESS_HEIGHT);
+    float widest_w = font_bmf_text_width(widest);
+    if (widest_w > (float)width) {
+        font_bmf_set_height(SVMU_BMF_PROGRESS_HEIGHT * (float)width / widest_w);
+    }
+    font_bmf_draw(x, y, color, str);
+    font_bmf_set_height_default();
+}
+
 static int
 serial_vmu_setting_to_device_id(uint8_t setting) {
     if (setting == SERIAL_VMU_OFF) {
@@ -6574,7 +6590,7 @@ draw_serial_vmu_tr(void) {
                 cur_y += line_height;
                 snprintf(line_buf, sizeof(line_buf), "Block %d / %d (%d KB)", svmu_ctx.current_block, SERIAL_VMU_BLOCKS,
                          svmu_ctx.current_block * SERIAL_VMU_BLOCK_SIZE / 1024);
-                font_bmf_draw_auto_size(x_item, cur_y, text_color, line_buf, width - padding);
+                svmu_draw_bmf_progress(x_item, cur_y, text_color, line_buf, "Block 888 / 888 (888 KB)", width - padding);
                 break;
 
             case SERIAL_VMU_BACKUP_BUSY:
@@ -6587,7 +6603,7 @@ draw_serial_vmu_tr(void) {
                 cur_y += line_height;
                 snprintf(line_buf, sizeof(line_buf), "Block %d / %d (%d KB)", svmu_ctx.current_block, SERIAL_VMU_BLOCKS,
                          svmu_ctx.current_block * SERIAL_VMU_BLOCK_SIZE / 1024);
-                font_bmf_draw_auto_size(x_item, cur_y, text_color, line_buf, width - padding);
+                svmu_draw_bmf_progress(x_item, cur_y, text_color, line_buf, "Block 888 / 888 (888 KB)", width - padding);
                 break;
 
             case SERIAL_VMU_WIPE_BUSY:
@@ -6599,7 +6615,7 @@ draw_serial_vmu_tr(void) {
                 cur_y += line_height;
                 cur_y += line_height;
                 snprintf(line_buf, sizeof(line_buf), "Block %d / %d", svmu_ctx.current_block, SERIAL_VMU_BLOCKS);
-                font_bmf_draw_auto_size(x_item, cur_y, text_color, line_buf, width - padding);
+                svmu_draw_bmf_progress(x_item, cur_y, text_color, line_buf, "Block 888 / 888", width - padding);
                 break;
 
             case SERIAL_VMU_RESTORE_FAILED:
