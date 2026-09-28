@@ -24,15 +24,18 @@
 
 #define DCNOW_HOST            "dreamcast.online"
 #define DCNOW_PATH            "/now/api/users.json"
-/* DCNet's online list, same JSON shape as dreamcast.online's ("users": an
- * array of {"username","country","current_game_display","current_game",
- * "online"}). This build environment could not reach dc99.net to confirm the
- * path, so this is a best guess; if the feed comes back malformed,
- * parse_users() fails closed (the fetch just reports an error) rather than
- * showing wrong data, but the path should be verified against the real site
- * before this ships. */
+/* dc99.net's combined DreamPi/DCNet status feed. Confirmed against a live
+ * response: {"generated":..,"dreampi":{...},"dcnet":{"online":bool,
+ * "error":..,"games":[...],"players":[{"name","gameId","gameName",
+ * "geoloc":{"country",...}},...],"users":[...]}}. Only dcnet.online and
+ * dcnet.players are used below. The response also carries a full dreampi
+ * (DC Now) section we don't need, so it's larger than dreamcast.online's own
+ * feed; DCNOW_BODY_MAX has room for the sample this was checked against, but
+ * a very busy DreamPi (many users, each with a long game history) could
+ * outgrow it, in which case parse_dcnet_players() fails closed rather than
+ * showing a wrong list. */
 #define DCNET_HOST            "dc99.net"
-#define DCNET_PATH            "/api/users.json"
+#define DCNET_PATH            "/online/dcnet_status.php"
 #define DCNOW_BODY_MAX        98304
 #define DCNOW_STEP_TIMEOUT_MS 10000
 #define DCNOW_GET_TIMEOUT_MS  60000
@@ -343,6 +346,163 @@ parse_users(const char* text, int truncated, int* total) {
     return count;
 }
 
+/* Reads {"country":"XX",...} (dcnet.players[].geoloc) into out, keeping only
+ * "country". Returns the position after the object, or NULL on malformed
+ * text. */
+static const char*
+json_geoloc_country(const char* p, char* out, size_t out_len) {
+    char key[32];
+
+    if (out_len > 0) {
+        out[0] = '\0';
+    }
+    if (*p != '{') {
+        return NULL;
+    }
+    p = json_ws(p + 1);
+    while (*p != '}') {
+        p = json_string(p, key, sizeof(key));
+        if (p == NULL) {
+            return NULL;
+        }
+        p = json_ws(p);
+        if (*p != ':') {
+            return NULL;
+        }
+        p = json_ws(p + 1);
+        if (strcmp(key, "country") == 0 && *p == '"') {
+            p = json_string(p, out, out_len);
+        } else {
+            p = json_skip(p);
+        }
+        if (p == NULL) {
+            return NULL;
+        }
+        p = json_ws(p);
+        if (*p == ',') {
+            p = json_ws(p + 1);
+        } else if (*p != '}') {
+            return NULL;
+        }
+    }
+    return p + 1;
+}
+
+/* Reads one entry of dcnet.players into out: {"geoloc":{...},"name":..,
+ * "gameId":..,"gameName":..,"thumbnail":..}. Returns the position after the
+ * object, or NULL on malformed text. Every entry in this array is an online
+ * DCNet player; unlike dreamcast.online's feed there is no per-entry "online"
+ * flag to check. */
+static const char*
+json_dcnet_player(const char* p, dcnow_player_t* out) {
+    char key[32];
+
+    memset(out, 0, sizeof(*out));
+    p = json_ws(p);
+    if (*p != '{') {
+        return NULL;
+    }
+    p = json_ws(p + 1);
+    while (*p != '}') {
+        p = json_string(p, key, sizeof(key));
+        if (p == NULL) {
+            return NULL;
+        }
+        p = json_ws(p);
+        if (*p != ':') {
+            return NULL;
+        }
+        p = json_ws(p + 1);
+        if (strcmp(key, "name") == 0 && *p == '"') {
+            p = json_string(p, out->name, sizeof(out->name));
+        } else if (strcmp(key, "gameName") == 0 && *p == '"') {
+            p = json_string(p, out->title, sizeof(out->title));
+        } else if (strcmp(key, "gameId") == 0 && *p == '"') {
+            p = json_string(p, out->code, sizeof(out->code));
+        } else if (strcmp(key, "geoloc") == 0 && *p == '{') {
+            p = json_geoloc_country(p, out->country, sizeof(out->country));
+        } else {
+            p = json_skip(p);
+        }
+        if (p == NULL) {
+            return NULL;
+        }
+        p = json_ws(p);
+        if (*p == ',') {
+            p = json_ws(p + 1);
+        } else if (*p != '}') {
+            return NULL;
+        }
+    }
+    return p + 1;
+}
+
+/* Returned by parse_dcnet_players() when dcnet.online is false: DCNet itself
+ * is down, which deserves a clearer message than a generic parse failure. */
+#define DCNET_STATUS_OFFLINE (-2)
+
+/* Fills parsed[] from dcnet.players, up to the store's size, and counts every
+ * player in the feed in *total. Returns the stored count, DCNET_STATUS_OFFLINE,
+ * or -1 when the text is not the shape we expect. A body cut at the cap ends
+ * inside a record, so with truncated set the players already read still count. */
+static int
+parse_dcnet_players(const char* text, int truncated, int* total) {
+    const char* dcnet = strstr(text, "\"dcnet\"");
+    const char* online;
+    const char* p;
+    int count = 0;
+
+    *total = 0;
+    if (dcnet == NULL) {
+        return -1;
+    }
+    /* "online" is dcnet's own first field, well before "players". */
+    online = strstr(dcnet, "\"online\"");
+    if (online != NULL) {
+        const char* v = json_ws(online + 8);
+        if (*v == ':') {
+            v = json_ws(v + 1);
+            if (strncmp(v, "false", 5) == 0) {
+                return DCNET_STATUS_OFFLINE;
+            }
+        }
+    }
+    p = strstr(dcnet, "\"players\"");
+    if (p == NULL) {
+        return -1;
+    }
+    p = json_ws(p + 9);
+    if (*p != ':') {
+        return -1;
+    }
+    p = json_ws(p + 1);
+    if (*p != '[') {
+        return -1;
+    }
+    p = json_ws(p + 1);
+    while (*p != ']') {
+        dcnow_player_t entry;
+
+        p = json_dcnet_player(p, &entry);
+        if (p == NULL) {
+            return truncated && count > 0 ? count : -1;
+        }
+        if (entry.name[0] != '\0') {
+            (*total)++;
+            if (count < DCNOW_PLAYER_MAX) {
+                parsed[count++] = entry;
+            }
+        }
+        p = json_ws(p);
+        if (*p == ',') {
+            p = json_ws(p + 1);
+        } else if (*p != ']') {
+            return truncated && count > 0 ? count : -1;
+        }
+    }
+    return count;
+}
+
 static void
 publish(int count, int total) {
     mutex_lock(&fetch_mutex);
@@ -392,7 +552,9 @@ run_fetch(dcnow_network_t network) {
         fetch_reset(DCNOW_FETCH_IDLE);
         return;
     }
-    dcnow_presence_lookup();
+    if (network == DCNOW_NET_DCNOW) {
+        dcnow_presence_lookup();
+    }
 
     fetch_push("Connecting to server...", 0);
     line = fetch_last_index();
@@ -498,7 +660,12 @@ run_fetch(dcnow_network_t network) {
         fetch_fail("The server answer could not be read.");
         return;
     }
-    count = parse_users(json + 4, used == DCNOW_BODY_MAX, &total);
+    count = network == DCNOW_NET_DCNET ? parse_dcnet_players(json + 4, used == DCNOW_BODY_MAX, &total)
+                                       : parse_users(json + 4, used == DCNOW_BODY_MAX, &total);
+    if (count == DCNET_STATUS_OFFLINE) {
+        fetch_fail("DCNet is currently offline.");
+        return;
+    }
     if (count < 0) {
         fetch_fail("The server answer could not be read.");
         return;

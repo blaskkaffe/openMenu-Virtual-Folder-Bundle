@@ -116,13 +116,14 @@ dcnow_read_isp(dcnow_isp_t* out) {
 #define DCNOW_DIAL_TIMEOUT_MS     90000
 #define DCNOW_COOLDOWN_MS         5000
 
-/* modem_wait_dialtone() takes multiples of 100 ms, minimum 100. Dialing right
- * after opening the line (the previous behavior) sometimes raced DreamPi's
- * own <LISTENING> state, and its digit reader can drop a digit that arrives
- * while it isn't polling yet. Waiting for dial tone first, then spacing the
- * DTMF digits out, gives DreamPi time to be listening for every one of them. */
+/* modem_wait_dialtone() takes multiples of 100 ms, minimum 100, and returns
+ * as soon as it hears a tone (it polls every 100 ms), so this is a ceiling
+ * for a dead line, not a delay every call pays: DreamPi's dial tone is up
+ * within well under a second, so the normal case waits close to nothing.
+ * Dialing right after opening the line (the previous behavior) sometimes
+ * raced DreamPi's own <LISTENING> state; waiting for the tone first gives
+ * it time to be listening before the number goes out. */
 #define DCNOW_DIALTONE_TIMEOUT_MS 5000
-#define DCNOW_DIAL_DIGIT_GAP_MS   250
 
 static mutex_t status_mutex = MUTEX_INITIALIZER;
 static dcnow_status_t status = {DCNOW_CONN_IDLE, 0, 0, -1, 0, {{0}}, 0, 0};
@@ -419,24 +420,12 @@ run_modem(void) {
         return;
     }
 
-    /* Dialed one digit at a time, with a pause between each, so every DTMF
-     * tone lands while DreamPi is listening for it (see the constants above). */
     snprintf(line, sizeof(line), "Dialing %s...", dial_number);
     status_push(line, 0);
-    for (size_t i = 0; dial_number[i] != '\0'; i++) {
-        char digit[2] = {dial_number[i], '\0'};
-
-        if (!modem_dial(digit)) {
-            modem_shutdown();
-            fail("Dialing failed (modem -3).", NULL);
-            return;
-        }
-        if (dial_number[i + 1] != '\0') {
-            thd_sleep(DCNOW_DIAL_DIGIT_GAP_MS);
-            if (cancel_now(0)) {
-                return;
-            }
-        }
+    if (!modem_dial(dial_number)) {
+        modem_shutdown();
+        fail("Dialing failed (modem -3).", NULL);
+        return;
     }
     snprintf(line, sizeof(line), "Dialing %s... OK", dial_number);
     status_replace(status_last_index(), line);
