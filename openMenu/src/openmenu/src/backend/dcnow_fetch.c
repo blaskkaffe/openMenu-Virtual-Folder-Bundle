@@ -24,15 +24,28 @@
 
 #define DCNOW_HOST            "dreamcast.online"
 #define DCNOW_PATH            "/now/api/users.json"
+/* DCNet's online list, same JSON shape as dreamcast.online's ("users": an
+ * array of {"username","country","current_game_display","current_game",
+ * "online"}). This build environment could not reach dc99.net to confirm the
+ * path, so this is a best guess; if the feed comes back malformed,
+ * parse_users() fails closed (the fetch just reports an error) rather than
+ * showing wrong data, but the path should be verified against the real site
+ * before this ships. */
+#define DCNET_HOST            "dc99.net"
+#define DCNET_PATH            "/api/users.json"
 #define DCNOW_BODY_MAX        98304
 #define DCNOW_STEP_TIMEOUT_MS 10000
 #define DCNOW_GET_TIMEOUT_MS  60000
 
 static mutex_t fetch_mutex = MUTEX_INITIALIZER;
-static dcnow_fetch_status_t fetch = {DCNOW_FETCH_IDLE, -1, 0, {{0}}, 0, 0, 0, 0, 0, 0};
+static dcnow_fetch_status_t fetch = {DCNOW_FETCH_IDLE, -1, 0, {{0}}, 0, 0, 0, 0, 0, 0, DCNOW_NET_DCNOW};
 static dcnow_player_t players[DCNOW_PLAYER_MAX];
 static kthread_t* fetch_worker = NULL;
 static volatile int abort_requested = 0;
+/* The network the running (or most recently started) fetch is for. Set by
+ * dcnow_fetch_start() before the worker starts, the same way dcnow_net.c
+ * hands active_device/worker_job to its worker. */
+static dcnow_network_t fetch_network = DCNOW_NET_DCNOW;
 
 /* The worker's own buffers. */
 static char body[DCNOW_BODY_MAX + 1];
@@ -346,7 +359,7 @@ publish(int count, int total) {
 }
 
 static void
-run_fetch(void) {
+run_fetch(dcnow_network_t network) {
     struct sockaddr_in addr;
     char request[160];
     char text[DCNOW_STATUS_WIDTH];
@@ -360,13 +373,16 @@ run_fetch(void) {
     int count;
     int total = 0;
     const char* json;
+    const char* host = network == DCNOW_NET_DCNET ? DCNET_HOST : DCNOW_HOST;
+    const char* path = network == DCNOW_NET_DCNET ? DCNET_PATH : DCNOW_PATH;
 
     fetch_reset(DCNOW_FETCH_RUNNING);
-    fetch_push("Fetching player list from " DCNOW_HOST "...", 0);
+    snprintf(text, sizeof(text), "Fetching player list from %s...", host);
+    fetch_push(text, 0);
 
     fetch_push("Resolving host...", 0);
     line = fetch_last_index();
-    if (!dcnow_resolve(DCNOW_HOST, 80, &addr)) {
+    if (!dcnow_resolve(host, 80, &addr)) {
         fetch_replace(line, "Resolving host... Failed");
         fetch_fail("DNS lookup failed. Check the DNS server.");
         return;
@@ -410,8 +426,7 @@ run_fetch(void) {
     fetch_replace(line, "Connecting to server... OK");
 
     snprintf(request, sizeof(request),
-             "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: openMenu\r\nConnection: close\r\n\r\n", DCNOW_PATH,
-             DCNOW_HOST);
+             "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: openMenu\r\nConnection: close\r\n\r\n", path, host);
     fetch_push("HTTP GET", 1);
     line = fetch_last_index();
     deadline = timer_ms_gettime64() + DCNOW_GET_TIMEOUT_MS;
@@ -494,7 +509,7 @@ run_fetch(void) {
 static void*
 fetch_main(void* param) {
     (void)param;
-    run_fetch();
+    run_fetch(fetch_network);
     return NULL;
 }
 
@@ -507,7 +522,7 @@ join_worker(void) {
 }
 
 void
-dcnow_fetch_start(void) {
+dcnow_fetch_start(dcnow_network_t network) {
     dcnow_fetch_status_t snap;
 
     dcnow_fetch_poll(&snap);
@@ -516,6 +531,10 @@ dcnow_fetch_start(void) {
     }
     join_worker();
     abort_requested = 0;
+    fetch_network = network;
+    mutex_lock(&fetch_mutex);
+    fetch.network = network;
+    mutex_unlock(&fetch_mutex);
     fetch_reset(DCNOW_FETCH_RUNNING);
     fetch_worker = thd_create(false, fetch_main, NULL);
     if (fetch_worker == NULL) {

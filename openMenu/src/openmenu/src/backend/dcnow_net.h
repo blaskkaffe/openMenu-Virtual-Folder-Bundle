@@ -27,10 +27,30 @@ typedef struct dcnow_isp {
     uint8_t dns[4];
 } dcnow_isp_t;
 
-/* What the modem dials. DreamPi answers any number and accepts any login. */
+/* What the modem dials for Dreamcast Now!. DreamPi answers any number and
+ * accepts any login. This is also the number the DreamPiAutoToggle add-on
+ * (https://github.com/blaskkaffe/DreamPiAutoToggle) treats as "always DC
+ * Now", so Auto-Connect and a plain Connect keep working the same way with
+ * or without that add-on installed. */
 #define DCNOW_DIAL_NUMBER   "1111111"
 #define DCNOW_DIAL_LOGIN    "openMenu"
 #define DCNOW_DIAL_PASSWORD "openMenu"
+
+/* What the modem dials to reach DCNet instead, through the DreamPiAutoToggle
+ * add-on: dialing this number both selects DCNet on the DreamPi and connects
+ * through it. Without the add-on installed, DreamPi's own netlink.py treats
+ * it like any other number and connects through DC Now instead, so dialing
+ * it is always safe. The login is Flycast's published default DCNet ISP
+ * account (flycast1/flycast2, password "password"); the DCNet endpoint on
+ * the DreamPi (dcnet.rpi) does its own PPP negotiation independently of
+ * DreamPi's normal pppd, so this does not have to match DCNOW_DIAL_LOGIN. */
+#define DCNET_DIAL_NUMBER   "3333333"
+#define DCNET_DIAL_LOGIN    "flycast1"
+#define DCNET_DIAL_PASSWORD "password"
+
+/* Which network a modem dial connects through. Only meaningful for
+ * DCNOW_DEV_MODEM; an adapter always reaches DC Now directly. */
+typedef enum dcnow_network { DCNOW_NET_DCNOW = 0, DCNOW_NET_DCNET } dcnow_network_t;
 
 /* Reads the console's adapter settings from the flash ROM. */
 void dcnow_read_isp(dcnow_isp_t* out);
@@ -61,12 +81,15 @@ typedef struct dcnow_status {
     int hanging_up; /* a Disconnect or a lost carrier is being torn down */
 } dcnow_status_t;
 
-/* Starts the modem dial or the adapter bring-up on the worker thread.
- * Returns 0 when started, -1 when busy, already online, or nothing is fitted. */
-int dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp);
+/* Starts the modem dial or the adapter bring-up on the worker thread. network
+ * picks which number a modem dials; an adapter ignores it and always reaches
+ * DC Now. Returns 0 when started, -1 when busy, already online, or nothing is
+ * fitted. */
+int dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp, dcnow_network_t network);
 
 /* Probes the device and reads the ISP settings on the worker, then connects.
- * For the boot-time Auto-Connect, where no frame may stall. */
+ * For the boot-time Auto-Connect, where no frame may stall. Always dials
+ * DC Now: Auto-Connect has no way to ask the player which network to use. */
 void dcnow_conn_autostart(void);
 
 /* The probed device without probing: DCNOW_DEV_NONE until the probe has run. */
@@ -74,6 +97,10 @@ dcnow_device_t dcnow_device_hint(void);
 
 /* The ISP settings the engine last connected with. Returns 0 before the first connection. */
 int dcnow_conn_isp(dcnow_isp_t* out);
+
+/* The network the engine is connected to, connecting to, or last tried.
+ * DCNOW_NET_DCNOW before the first connection. */
+dcnow_network_t dcnow_conn_network(void);
 
 /* Stops a modem dial before the carrier is up. Ignored at any other time. */
 void dcnow_conn_cancel(void);

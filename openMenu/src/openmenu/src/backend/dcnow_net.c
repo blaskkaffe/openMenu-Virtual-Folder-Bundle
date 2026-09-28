@@ -111,10 +111,18 @@ dcnow_read_isp(dcnow_isp_t* out) {
 
 /* Dial speed. MODEM_SPEED_V8_AUTO lets the modems pick the best rate. Set to
  * MODEM_SPEED_V8_14400 to cap the handshake for a marginal DreamPi line. */
-#define DCNOW_MODEM_SPEED     MODEM_SPEED_V8_AUTO
+#define DCNOW_MODEM_SPEED         MODEM_SPEED_V8_AUTO
 
-#define DCNOW_DIAL_TIMEOUT_MS 90000
-#define DCNOW_COOLDOWN_MS     5000
+#define DCNOW_DIAL_TIMEOUT_MS     90000
+#define DCNOW_COOLDOWN_MS         5000
+
+/* modem_wait_dialtone() takes multiples of 100 ms, minimum 100. Dialing right
+ * after opening the line (the previous behavior) sometimes raced DreamPi's
+ * own <LISTENING> state, and its digit reader can drop a digit that arrives
+ * while it isn't polling yet. Waiting for dial tone first, then spacing the
+ * DTMF digits out, gives DreamPi time to be listening for every one of them. */
+#define DCNOW_DIALTONE_TIMEOUT_MS 5000
+#define DCNOW_DIAL_DIGIT_GAP_MS   250
 
 static mutex_t status_mutex = MUTEX_INITIALIZER;
 static dcnow_status_t status = {DCNOW_CONN_IDLE, 0, 0, -1, 0, {{0}}, 0, 0};
@@ -122,6 +130,7 @@ static volatile int cancel_requested = 0;
 static kthread_t* worker = NULL;
 static int net_started = 0;
 static dcnow_device_t active_device = DCNOW_DEV_NONE;
+static dcnow_network_t active_network = DCNOW_NET_DCNOW;
 static uint64_t hangup_time = 0; /* guarded by status_mutex */
 
 typedef enum worker_job { JOB_CONNECT, JOB_HANGUP, JOB_AUTOSTART, JOB_LOST } worker_job_t;
@@ -382,6 +391,9 @@ static void
 run_modem(void) {
     char line[DCNOW_STATUS_WIDTH];
     int rc;
+    const char* dial_number = active_network == DCNOW_NET_DCNET ? DCNET_DIAL_NUMBER : DCNOW_DIAL_NUMBER;
+    const char* dial_login = active_network == DCNOW_NET_DCNET ? DCNET_DIAL_LOGIN : DCNOW_DIAL_LOGIN;
+    const char* dial_password = active_network == DCNOW_NET_DCNET ? DCNET_DIAL_PASSWORD : DCNOW_DIAL_PASSWORD;
 
     modem_was_used = 1;
     status_set_state(DCNOW_CONN_CONNECTING, 1);
@@ -396,14 +408,37 @@ run_modem(void) {
         return;
     }
 
-    snprintf(line, sizeof(line), "Dialing %s...", DCNOW_DIAL_NUMBER);
-    status_push(line, 0);
-    if (!modem_dial(DCNOW_DIAL_NUMBER)) {
+    status_push("Waiting for dial tone...", 0);
+    if (modem_wait_dialtone(DCNOW_DIALTONE_TIMEOUT_MS) != 0) {
         modem_shutdown();
-        fail("Dialing failed (modem -3).", NULL);
+        fail("No dial tone after 5 seconds (modem -2).", "Check DreamPi and the phone cable.");
         return;
     }
-    snprintf(line, sizeof(line), "Dialing %s... OK", DCNOW_DIAL_NUMBER);
+    status_replace(status_last_index(), "Waiting for dial tone... OK");
+    if (cancel_now(0)) {
+        return;
+    }
+
+    /* Dialed one digit at a time, with a pause between each, so every DTMF
+     * tone lands while DreamPi is listening for it (see the constants above). */
+    snprintf(line, sizeof(line), "Dialing %s...", dial_number);
+    status_push(line, 0);
+    for (size_t i = 0; dial_number[i] != '\0'; i++) {
+        char digit[2] = {dial_number[i], '\0'};
+
+        if (!modem_dial(digit)) {
+            modem_shutdown();
+            fail("Dialing failed (modem -3).", NULL);
+            return;
+        }
+        if (dial_number[i + 1] != '\0') {
+            thd_sleep(DCNOW_DIAL_DIGIT_GAP_MS);
+            if (cancel_now(0)) {
+                return;
+            }
+        }
+    }
+    snprintf(line, sizeof(line), "Dialing %s... OK", dial_number);
     status_replace(status_last_index(), line);
 
     status_push("Modem: Negotiating", 1);
@@ -436,7 +471,7 @@ run_modem(void) {
         return;
     }
     ppp_set_device(&modem_dev);
-    ppp_set_login(DCNOW_DIAL_LOGIN, DCNOW_DIAL_PASSWORD);
+    ppp_set_login(dial_login, dial_password);
     status_push("PPP: Negotiating", 1);
     if (ppp_connect() != 0) {
         ppp_release();
@@ -548,6 +583,8 @@ static void
 run_autostart(void) {
     dcnow_isp_t isp;
 
+    /* Auto-Connect never asks which network to use, so it always dials DC Now. */
+    active_network = DCNOW_NET_DCNOW;
     active_device = dcnow_detect_device();
     if (active_device == DCNOW_DEV_NONE) {
         status_reset(DCNOW_CONN_IDLE);
@@ -602,7 +639,7 @@ finish_worker(void) {
 }
 
 int
-dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp) {
+dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp, dcnow_network_t network) {
     dcnow_status_t snap;
 
     dcnow_conn_poll(&snap);
@@ -618,6 +655,7 @@ dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp) {
     take_isp(isp);
 
     active_device = dev;
+    active_network = dev == DCNOW_DEV_MODEM ? network : DCNOW_NET_DCNOW;
     worker_job = JOB_CONNECT;
     cancel_requested = 0;
     status_reset(DCNOW_CONN_CONNECTING);
@@ -658,6 +696,11 @@ dcnow_conn_isp(dcnow_isp_t* out) {
     }
     mutex_unlock(&status_mutex);
     return valid;
+}
+
+dcnow_network_t
+dcnow_conn_network(void) {
+    return active_network;
 }
 
 void

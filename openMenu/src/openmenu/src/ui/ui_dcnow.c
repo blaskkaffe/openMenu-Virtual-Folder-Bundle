@@ -35,7 +35,7 @@ static dcnow_device_t device = DCNOW_DEV_NONE;
 static dcnow_isp_t isp;
 
 /* Device and ISP lines shown above the separator */
-#define INFO_MAX_LINES   4
+#define INFO_MAX_LINES   5
 #define INFO_LABEL_WIDTH 10
 static char info_label[INFO_MAX_LINES][12];
 static char info_value[INFO_MAX_LINES][48];
@@ -64,13 +64,21 @@ build_info(void) {
     add_info("Device", dcnow_device_name(device));
 
     switch (device) {
-        case DCNOW_DEV_MODEM:
-            add_info("Phone", DCNOW_DIAL_NUMBER);
-            add_info("Login", DCNOW_DIAL_LOGIN);
-            memset(value, '*', strlen(DCNOW_DIAL_PASSWORD));
-            value[strlen(DCNOW_DIAL_PASSWORD)] = '\0';
+        case DCNOW_DEV_MODEM: {
+            /* Reflects whichever network was last selected: the two Connect
+             * options below dial different numbers with different logins. */
+            dcnow_network_t net = dcnow_conn_network();
+            const char* phone = net == DCNOW_NET_DCNET ? DCNET_DIAL_NUMBER : DCNOW_DIAL_NUMBER;
+            const char* login = net == DCNOW_NET_DCNET ? DCNET_DIAL_LOGIN : DCNOW_DIAL_LOGIN;
+            const char* password = net == DCNOW_NET_DCNET ? DCNET_DIAL_PASSWORD : DCNOW_DIAL_PASSWORD;
+
+            add_info("Network", net == DCNOW_NET_DCNET ? "DCNet" : "DC Now");
+            add_info("Phone", phone);
+            add_info("Login", login);
+            memset(value, '*', strlen(password));
+            value[strlen(password)] = '\0';
             add_info("Password", value);
-            break;
+        } break;
         case DCNOW_DEV_BBA:
         case DCNOW_DEV_LAN: {
             if (isp.ethernet_static) {
@@ -93,14 +101,16 @@ build_info(void) {
 }
 
 /* Options offered below the status lines, by connection state */
-#define OPT_CONNECT    0
-#define OPT_CANCEL     1
-#define OPT_RETRY      2
-#define OPT_DISCONNECT 3
-#define OPT_CLOSE      4
-#define OPT_REFRESH    5
+#define OPT_CONNECT       0
+#define OPT_CANCEL        1
+#define OPT_RETRY         2
+#define OPT_DISCONNECT    3
+#define OPT_CLOSE         4
+#define OPT_REFRESH       5
+#define OPT_CONNECT_DCNET 6
 
-static const char* option_text[] = {"Connect", "Cancel", "Retry", "Disconnect", "Close", "Refresh"};
+static const char* option_text[] = {"Connect: DC Now", "Cancel",  "Retry",         "Disconnect",
+                                    "Close",           "Refresh", "Connect: DCNet"};
 
 static dcnow_status_t status;
 static int options[6];
@@ -139,6 +149,7 @@ build_options(void) {
         case DCNOW_CONN_IDLE:
             if (device == DCNOW_DEV_MODEM) {
                 options[option_count++] = OPT_CONNECT;
+                options[option_count++] = OPT_CONNECT_DCNET;
             }
             options[option_count++] = OPT_CLOSE;
             break;
@@ -168,6 +179,7 @@ build_options(void) {
         case DCNOW_CONN_CANCELED:
             if (status.cooldown_seconds == 0) {
                 options[option_count++] = OPT_CONNECT;
+                options[option_count++] = OPT_CONNECT_DCNET;
             }
             options[option_count++] = OPT_CLOSE;
             break;
@@ -262,17 +274,22 @@ clamp_list_scroll(void) {
 }
 
 static void
-start_connection(void) {
-    if (dcnow_conn_start(device, &isp) == 0) {
+start_connection(dcnow_network_t network) {
+    if (dcnow_conn_start(device, &isp, network) == 0) {
         dcnow_conn_poll(&status);
+        /* Refreshes the Network/Phone/Login/Password lines for this attempt,
+         * since a Retry or a second Connect can switch networks. */
+        build_info();
         build_options();
     }
 }
 
+/* The player list always matches whichever network the engine is currently
+ * connected through (DC Now for an adapter, DC Now or DCNet for a modem). */
 static void
 start_fetch(void) {
     last_fetch_started = timer_ms_gettime64();
-    dcnow_fetch_start();
+    dcnow_fetch_start(dcnow_conn_network());
     dcnow_fetch_poll(&fetch);
     build_options();
 }
@@ -301,18 +318,19 @@ format_clock(char* out, size_t out_len, time_t when) {
 static void
 summary_line(char* out, size_t out_len) {
     char when[16];
+    const char* net_name = fetch.network == DCNOW_NET_DCNET ? "DCNet" : "DC Now";
 
     format_clock(when, sizeof(when), fetch.updated);
     if (fetch.state == DCNOW_FETCH_RUNNING) {
-        snprintf(out, out_len, "Refreshing player list...");
+        snprintf(out, out_len, "Refreshing %s player list...", net_name);
     } else if (fetch.state == DCNOW_FETCH_FAILED) {
         snprintf(out, out_len, "Refresh failed, showing the %s list.", when);
     } else if (list_total == 0) {
-        snprintf(out, out_len, "No players online (updated %s)", when);
+        snprintf(out, out_len, "No players on %s (updated %s)", net_name, when);
     } else if (list_total == 1) {
-        snprintf(out, out_len, "1 player online (updated %s)", when);
+        snprintf(out, out_len, "1 player on %s (updated %s)", net_name, when);
     } else {
-        snprintf(out, out_len, "%d players online (updated %s)", list_total, when);
+        snprintf(out, out_len, "%d players on %s (updated %s)", list_total, net_name, when);
     }
 }
 
@@ -415,7 +433,7 @@ finish_probe(void) {
     /* Adapters need no Connect step. The modem waits for Connect here, since
      * Auto-Connect only dials at boot. */
     if (status.state == DCNOW_CONN_IDLE && (device == DCNOW_DEV_BBA || device == DCNOW_DEV_LAN)) {
-        start_connection();
+        start_connection(DCNOW_NET_DCNOW);
     }
 }
 
@@ -458,11 +476,25 @@ option_accept(void) {
     }
     switch (options[focus - list_count]) {
         case OPT_CONNECT:
+            if (status.state == DCNOW_CONN_ONLINE) {
+                start_fetch();
+            } else {
+                start_connection(DCNOW_NET_DCNOW);
+            }
+            break;
+        case OPT_CONNECT_DCNET:
+            if (status.state == DCNOW_CONN_ONLINE) {
+                start_fetch();
+            } else {
+                start_connection(DCNOW_NET_DCNET);
+            }
+            break;
         case OPT_RETRY:
             if (status.state == DCNOW_CONN_ONLINE) {
                 start_fetch();
             } else {
-                start_connection();
+                /* Retries whichever network the failed or canceled attempt used. */
+                start_connection(dcnow_conn_network());
             }
             break;
         case OPT_REFRESH:

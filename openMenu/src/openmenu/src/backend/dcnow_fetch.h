@@ -35,15 +35,17 @@ typedef struct dcnow_fetch_status {
     uint64_t counter_since; /* when that counter started */
     char lines[DCNOW_STATUS_LINES][DCNOW_STATUS_WIDTH];
     int count;
-    int generation;   /* grows by one for every list that arrived */
-    int player_count; /* online players in the newest list */
-    int online_total; /* online players in the feed, the list keeps at most DCNOW_PLAYER_MAX */
-    time_t updated;   /* console clock when the newest list arrived */
-    int list_valid;   /* a list is in the store, kept until the store is cleared */
+    int generation;          /* grows by one for every list that arrived */
+    int player_count;        /* online players in the newest list */
+    int online_total;        /* online players in the feed, the list keeps at most DCNOW_PLAYER_MAX */
+    time_t updated;          /* console clock when the newest list arrived */
+    int list_valid;          /* a list is in the store, kept until the store is cleared */
+    dcnow_network_t network; /* which network this list (or fetch in progress) is for */
 } dcnow_fetch_status_t;
 
-/* Starts a fetch on the worker. Does nothing while one is running. */
-void dcnow_fetch_start(void);
+/* Starts a fetch of the given network's player list on the worker. Does
+ * nothing while one is running. */
+void dcnow_fetch_start(dcnow_network_t network);
 
 /* Stops a running fetch and waits for the worker. The last list is kept. */
 void dcnow_fetch_abort(void);
