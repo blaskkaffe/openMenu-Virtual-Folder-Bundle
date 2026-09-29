@@ -68,10 +68,11 @@ build_info(void) {
             /* Reflects whichever network was last selected: the two Connect
              * options below dial different numbers with different logins. */
             dcnow_network_t net = dcnow_conn_network();
-            const char* phone = net == DCNOW_NET_DCNET ? DCNET_DIAL_NUMBER : DCNOW_DIAL_NUMBER;
-            const char* login = net == DCNOW_NET_DCNET ? DCNET_DIAL_LOGIN : DCNOW_DIAL_LOGIN;
-            const char* password = net == DCNOW_NET_DCNET ? DCNET_DIAL_PASSWORD : DCNOW_DIAL_PASSWORD;
+            const char* phone;
+            const char* login;
+            const char* password;
 
+            dcnow_dial_credentials(net, &phone, &login, &password);
             add_info("Network", net == DCNOW_NET_DCNET ? "DCNet" : "DC Now");
             add_info("Phone", phone);
             add_info("Login", login);

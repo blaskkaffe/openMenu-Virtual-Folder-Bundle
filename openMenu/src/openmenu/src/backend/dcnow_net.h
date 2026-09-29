@@ -52,6 +52,10 @@ typedef struct dcnow_isp {
  * DCNOW_DEV_MODEM; an adapter always reaches DC Now directly. */
 typedef enum dcnow_network { DCNOW_NET_DCNOW = 0, DCNOW_NET_DCNET } dcnow_network_t;
 
+/* The DCNOW_DIAL_* or DCNET_DIAL_* constants for network, so the connect
+ * worker and the window that displays them (Phone/Login/Password) agree. */
+void dcnow_dial_credentials(dcnow_network_t network, const char** number, const char** login, const char** password);
+
 /* Reads the console's adapter settings from the flash ROM. */
 void dcnow_read_isp(dcnow_isp_t* out);
 

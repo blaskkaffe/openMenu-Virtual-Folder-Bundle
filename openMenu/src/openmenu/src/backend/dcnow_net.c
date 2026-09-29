@@ -35,6 +35,11 @@ static int modem_was_used = 0;
 /* KOS declares this in kernel/net/net_dhcp.h, which it does not install, yet
  * it is the only way to ask for a lease again once net_init() has run. */
 extern int net_dhcp_request(uint32_t required_address);
+/* KOS's own modem_wait_dialtone() has no way to cancel out of it early, so it
+ * is reimplemented below the same way wait_for_carrier() polls
+ * modem_is_connecting(): this is the check modem_wait_dialtone() itself polls
+ * in a loop, not declared in modem.h. */
+extern int modem_dialtone_detected(void);
 
 static mutex_t probe_mutex = MUTEX_INITIALIZER;
 static dcnow_device_t device_found = DCNOW_DEV_NONE;
@@ -96,6 +101,19 @@ address_from_flashrom(dcnow_isp_t* out, const flashrom_ispcfg_t* cfg) {
 }
 
 void
+dcnow_dial_credentials(dcnow_network_t network, const char** number, const char** login, const char** password) {
+    if (network == DCNOW_NET_DCNET) {
+        *number = DCNET_DIAL_NUMBER;
+        *login = DCNET_DIAL_LOGIN;
+        *password = DCNET_DIAL_PASSWORD;
+    } else {
+        *number = DCNOW_DIAL_NUMBER;
+        *login = DCNOW_DIAL_LOGIN;
+        *password = DCNOW_DIAL_PASSWORD;
+    }
+}
+
+void
 dcnow_read_isp(dcnow_isp_t* out) {
     flashrom_ispcfg_t sega;
     flashrom_ispcfg_t pw;
@@ -116,13 +134,12 @@ dcnow_read_isp(dcnow_isp_t* out) {
 #define DCNOW_DIAL_TIMEOUT_MS     90000
 #define DCNOW_COOLDOWN_MS         5000
 
-/* modem_wait_dialtone() takes multiples of 100 ms, minimum 100, and returns
- * as soon as it hears a tone (it polls every 100 ms), so this is a ceiling
- * for a dead line, not a delay every call pays: DreamPi's dial tone is up
- * within well under a second, so the normal case waits close to nothing.
- * Dialing right after opening the line (the previous behavior) sometimes
- * raced DreamPi's own <LISTENING> state; waiting for the tone first gives
- * it time to be listening before the number goes out. */
+/* wait_for_dialtone() (below) returns as soon as it hears a tone, so this is
+ * a ceiling for a dead line, not a delay every call pays: DreamPi's dial tone
+ * is up within well under a second, so the normal case waits close to
+ * nothing. Dialing right after opening the line (the previous behavior)
+ * sometimes raced DreamPi's own <LISTENING> state; waiting for the tone
+ * first gives it time to be listening before the number goes out. */
 #define DCNOW_DIALTONE_TIMEOUT_MS 5000
 
 static mutex_t status_mutex = MUTEX_INITIALIZER;
@@ -268,6 +285,26 @@ wait_for_carrier(void) {
     return 1;
 }
 
+/* Same shape as wait_for_carrier(), but for the dial tone: modem_wait_dialtone()
+ * blocks for its whole timeout with no way to cancel out of it, so this polls
+ * the same check it does (modem_dialtone_detected()) by hand instead. Returns
+ * 1 once a tone is heard, 0 on timeout, -1 when the user canceled. */
+static int
+wait_for_dialtone(void) {
+    uint64_t start = timer_ms_gettime64();
+
+    while (!modem_dialtone_detected()) {
+        if (cancel_requested) {
+            return -1;
+        }
+        if (timer_ms_gettime64() - start >= DCNOW_DIALTONE_TIMEOUT_MS) {
+            return 0;
+        }
+        thd_sleep(100);
+    }
+    return 1;
+}
+
 /* The PPP device for the modem, the same shape libppp uses internally. */
 static int
 ppp_dev_noop(ppp_device_t* self) {
@@ -392,10 +429,11 @@ static void
 run_modem(void) {
     char line[DCNOW_STATUS_WIDTH];
     int rc;
-    const char* dial_number = active_network == DCNOW_NET_DCNET ? DCNET_DIAL_NUMBER : DCNOW_DIAL_NUMBER;
-    const char* dial_login = active_network == DCNOW_NET_DCNET ? DCNET_DIAL_LOGIN : DCNOW_DIAL_LOGIN;
-    const char* dial_password = active_network == DCNOW_NET_DCNET ? DCNET_DIAL_PASSWORD : DCNOW_DIAL_PASSWORD;
+    const char* dial_number;
+    const char* dial_login;
+    const char* dial_password;
 
+    dcnow_dial_credentials(active_network, &dial_number, &dial_login, &dial_password);
     modem_was_used = 1;
     status_set_state(DCNOW_CONN_CONNECTING, 1);
     status_push("Initializing modem...", 0);
@@ -410,15 +448,17 @@ run_modem(void) {
     }
 
     status_push("Waiting for dial tone...", 0);
-    if (modem_wait_dialtone(DCNOW_DIALTONE_TIMEOUT_MS) != 0) {
+    rc = wait_for_dialtone();
+    if (rc < 0) {
+        cancel_now(0);
+        return;
+    }
+    if (rc == 0) {
         modem_shutdown();
         fail("No dial tone after 5 seconds (modem -2).", "Check DreamPi and the phone cable.");
         return;
     }
     status_replace(status_last_index(), "Waiting for dial tone... OK");
-    if (cancel_now(0)) {
-        return;
-    }
 
     snprintf(line, sizeof(line), "Dialing %s...", dial_number);
     status_push(line, 0);
