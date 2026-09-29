@@ -146,8 +146,11 @@ dcnow_read_isp(dcnow_isp_t* out) {
 
 /* How long run_switch() waits after the last digit before hanging up (see
  * the comment there for why this must clear DreamPi's own 2000 ms silence
- * window, not just DCNOW_DIAL_DIGIT_GAP_MS). */
-#define DCNOW_SWITCH_SETTLE_MS    2600
+ * window, not just DCNOW_DIAL_DIGIT_GAP_MS). Two hardware captures both
+ * showed DreamPi finalizing at exactly 2000 ms after its own last heard
+ * digit, with no real detection lag, so 300 ms of margin above that floor
+ * is deliberate, not generous. */
+#define DCNOW_SWITCH_SETTLE_MS    2300
 
 static mutex_t status_mutex = MUTEX_INITIALIZER;
 static dcnow_status_t status = {DCNOW_CONN_IDLE, 0, 0, -1, 0, {{0}}, 0, 0};
