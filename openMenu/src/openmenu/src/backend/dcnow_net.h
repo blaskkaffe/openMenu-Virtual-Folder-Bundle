@@ -32,9 +32,9 @@ typedef struct dcnow_isp {
  * (https://github.com/blaskkaffe/DreamPiAutoToggle) treats as "always DC
  * Now", so Auto-Connect and a plain Connect keep working the same way with
  * or without that add-on installed. */
-#define DCNOW_DIAL_NUMBER   "1111111"
-#define DCNOW_DIAL_LOGIN    "openMenu"
-#define DCNOW_DIAL_PASSWORD "openMenu"
+#define DCNOW_DIAL_NUMBER        "1111111"
+#define DCNOW_DIAL_LOGIN         "openMenu"
+#define DCNOW_DIAL_PASSWORD      "openMenu"
 
 /* What the modem dials to reach DCNet instead, through the DreamPiAutoToggle
  * add-on: dialing this number both selects DCNet on the DreamPi and connects
@@ -44,9 +44,18 @@ typedef struct dcnow_isp {
  * account (flycast1/flycast2, password "password"); the DCNet endpoint on
  * the DreamPi (dcnet.rpi) does its own PPP negotiation independently of
  * DreamPi's normal pppd, so this does not have to match DCNOW_DIAL_LOGIN. */
-#define DCNET_DIAL_NUMBER   "3333333"
-#define DCNET_DIAL_LOGIN    "flycast1"
-#define DCNET_DIAL_PASSWORD "password"
+#define DCNET_DIAL_NUMBER        "3333333"
+#define DCNET_DIAL_LOGIN         "flycast1"
+#define DCNET_DIAL_PASSWORD      "password"
+
+/* What the modem dials to select DC Now without connecting, through the
+ * DreamPiAutoToggle add-on: this only sets DreamPi's selection back to DC
+ * Now, the same way DCNET_DIAL_NUMBER selects DCNet. Unlike DCNOW_DIAL_NUMBER
+ * (always DC Now regardless of the current selection), this number only
+ * matters with the add-on installed; without it, DreamPi's netlink.py treats
+ * it like any other number and connects through DC Now anyway, so dialing it
+ * is still safe. */
+#define DCNOW_SWITCH_DIAL_NUMBER "2222222"
 
 /* Which network a modem dial connects through. Only meaningful for
  * DCNOW_DEV_MODEM; an adapter always reaches DC Now directly. */
@@ -90,6 +99,14 @@ typedef struct dcnow_status {
  * DC Now. Returns 0 when started, -1 when busy, already online, or nothing is
  * fitted. */
 int dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp, dcnow_network_t network);
+
+/* Dials network's select-only number (2222222 for DC Now, 3333333 for
+ * DCNet) and hangs up right after, without ever waiting for a carrier: the
+ * DreamPiAutoToggle add-on's routing hook records the selection purely from
+ * hearing the digits, so there is nothing to connect for. Only meaningful
+ * over a modem. Returns 0 when started, -1 when busy, already online, or
+ * dev isn't DCNOW_DEV_MODEM. */
+int dcnow_conn_switch(dcnow_device_t dev, dcnow_network_t network);
 
 /* Probes the device and reads the ISP settings on the worker, then connects.
  * For the boot-time Auto-Connect, where no frame may stall. Always dials

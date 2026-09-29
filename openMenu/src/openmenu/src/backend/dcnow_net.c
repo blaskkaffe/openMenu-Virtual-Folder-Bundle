@@ -158,7 +158,7 @@ static dcnow_device_t active_device = DCNOW_DEV_NONE;
 static dcnow_network_t active_network = DCNOW_NET_DCNOW;
 static uint64_t hangup_time = 0; /* guarded by status_mutex */
 
-typedef enum worker_job { JOB_CONNECT, JOB_HANGUP, JOB_AUTOSTART, JOB_LOST } worker_job_t;
+typedef enum worker_job { JOB_CONNECT, JOB_HANGUP, JOB_AUTOSTART, JOB_LOST, JOB_SWITCH } worker_job_t;
 
 static worker_job_t worker_job = JOB_CONNECT;
 
@@ -432,38 +432,37 @@ cancel_now(int dialed) {
     return 1;
 }
 
-static void
-run_modem(void) {
+/* Powers up the modem, waits for dial tone, and dials dial_number one digit
+ * at a time (shared by a full connect and a quick network switch). Returns 1
+ * with the number fully dialed, or 0 when it failed or was canceled -
+ * status/fail() already reported it and the modem is already shut down
+ * either way, so the caller just returns. */
+static int
+dial_number_paced(const char* dial_number) {
     char line[DCNOW_STATUS_WIDTH];
     int rc;
-    const char* dial_number;
-    const char* dial_login;
-    const char* dial_password;
 
-    dcnow_dial_credentials(active_network, &dial_number, &dial_login, &dial_password);
-    modem_was_used = 1;
-    status_set_state(DCNOW_CONN_CONNECTING, 1);
     status_push("Initializing modem...", 0);
     if (!modem_init()) {
         fail("Modem did not respond (modem -1).", "Power off and check the modem is seated.");
-        return;
+        return 0;
     }
     status_replace(status_last_index(), "Initializing modem... OK");
     modem_set_mode(MODEM_MODE_REMOTE, DCNOW_MODEM_SPEED);
     if (cancel_now(0)) {
-        return;
+        return 0;
     }
 
     status_push("Waiting for dial tone...", 0);
     rc = wait_for_dialtone();
     if (rc < 0) {
         cancel_now(0);
-        return;
+        return 0;
     }
     if (rc == 0) {
         modem_shutdown();
         fail("No dial tone after 5 seconds (modem -2).", "Check DreamPi and the phone cable.");
-        return;
+        return 0;
     }
     status_replace(status_last_index(), "Waiting for dial tone... OK");
 
@@ -475,17 +474,33 @@ run_modem(void) {
         if (!modem_dial(digit)) {
             modem_shutdown();
             fail("Dialing failed (modem -3).", NULL);
-            return;
+            return 0;
         }
         if (dial_number[i + 1] != '\0') {
             thd_sleep(DCNOW_DIAL_DIGIT_GAP_MS);
             if (cancel_now(0)) {
-                return;
+                return 0;
             }
         }
     }
     snprintf(line, sizeof(line), "Dialing %s... OK", dial_number);
     status_replace(status_last_index(), line);
+    return 1;
+}
+
+static void
+run_modem(void) {
+    int rc;
+    const char* dial_number;
+    const char* dial_login;
+    const char* dial_password;
+
+    dcnow_dial_credentials(active_network, &dial_number, &dial_login, &dial_password);
+    modem_was_used = 1;
+    status_set_state(DCNOW_CONN_CONNECTING, 1);
+    if (!dial_number_paced(dial_number)) {
+        return;
+    }
 
     status_push("Modem: Negotiating", 1);
     rc = wait_for_carrier();
@@ -529,6 +544,31 @@ run_modem(void) {
     status_replace(status_last_index(), "PPP: Connected");
     dcnow_presence_lookup();
     status_set_state(DCNOW_CONN_ONLINE, 0);
+}
+
+/* Dials the network's select-only number and hangs up right after, without
+ * ever waiting for a carrier: the DreamPiAutoToggle add-on's routing hook
+ * records the selection purely from hearing the digits, before DreamPi would
+ * answer the call, so there is nothing else to connect. For switching the
+ * network before launching a game that dials out on its own, not for the
+ * player list here (which still needs a real connection). */
+static void
+run_switch(void) {
+    const char* dial_number = active_network == DCNOW_NET_DCNET ? DCNET_DIAL_NUMBER : DCNOW_SWITCH_DIAL_NUMBER;
+
+    modem_was_used = 1;
+    status_set_state(DCNOW_CONN_CONNECTING, 1);
+    if (!dial_number_paced(dial_number)) {
+        return;
+    }
+
+    /* A short settle before dropping the line, since the digits only just
+     * finished going out. */
+    thd_sleep(500);
+    status_push("Switching network...", 0);
+    modem_hangup();
+    status_replace(status_last_index(), "Switching network... OK");
+    enter_cooldown();
 }
 
 /* Fills in the fixed address before the stack starts, so net_init() skips its
@@ -665,6 +705,7 @@ worker_main(void* param) {
         case JOB_HANGUP: run_hangup(); break;
         case JOB_AUTOSTART: run_autostart(); break;
         case JOB_LOST: run_lost(); break;
+        case JOB_SWITCH: run_switch(); break;
         default:
             if (active_device == DCNOW_DEV_MODEM) {
                 run_modem();
@@ -703,6 +744,33 @@ dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp, dcnow_network_t net
     active_device = dev;
     active_network = dev == DCNOW_DEV_MODEM ? network : DCNOW_NET_DCNOW;
     worker_job = JOB_CONNECT;
+    cancel_requested = 0;
+    status_reset(DCNOW_CONN_CONNECTING);
+    worker = thd_create(false, worker_main, NULL);
+    if (worker == NULL) {
+        fail("Network did not start (net -1).", NULL);
+        return -1;
+    }
+    return 0;
+}
+
+int
+dcnow_conn_switch(dcnow_device_t dev, dcnow_network_t network) {
+    dcnow_status_t snap;
+
+    dcnow_conn_poll(&snap);
+    if (snap.state == DCNOW_CONN_CONNECTING || snap.state == DCNOW_CONN_ONLINE || snap.state == DCNOW_CONN_COOLDOWN
+        || snap.cooldown_seconds > 0) {
+        return -1;
+    }
+    if (dev != DCNOW_DEV_MODEM) {
+        return -1;
+    }
+    finish_worker();
+
+    active_device = dev;
+    active_network = network;
+    worker_job = JOB_SWITCH;
     cancel_requested = 0;
     status_reset(DCNOW_CONN_CONNECTING);
     worker = thd_create(false, worker_main, NULL);

@@ -109,9 +109,11 @@ build_info(void) {
 #define OPT_CLOSE         4
 #define OPT_REFRESH       5
 #define OPT_CONNECT_DCNET 6
+#define OPT_SWITCH_DCNOW  7
+#define OPT_SWITCH_DCNET  8
 
-static const char* option_text[] = {"Connect: DC Now", "Cancel",  "Retry",         "Disconnect",
-                                    "Close",           "Refresh", "Connect: DCNet"};
+static const char* option_text[] = {"Connect: DC Now", "Cancel",         "Retry",          "Disconnect",   "Close",
+                                    "Refresh",         "Connect: DCNet", "Switch: DC Now", "Switch: DCNet"};
 
 static dcnow_status_t status;
 static int options[6];
@@ -150,7 +152,9 @@ build_options(void) {
         case DCNOW_CONN_IDLE:
             if (device == DCNOW_DEV_MODEM) {
                 options[option_count++] = OPT_CONNECT;
+                options[option_count++] = OPT_SWITCH_DCNOW;
                 options[option_count++] = OPT_CONNECT_DCNET;
+                options[option_count++] = OPT_SWITCH_DCNET;
             }
             options[option_count++] = OPT_CLOSE;
             break;
@@ -180,7 +184,9 @@ build_options(void) {
         case DCNOW_CONN_CANCELED:
             if (status.cooldown_seconds == 0) {
                 options[option_count++] = OPT_CONNECT;
+                options[option_count++] = OPT_SWITCH_DCNOW;
                 options[option_count++] = OPT_CONNECT_DCNET;
+                options[option_count++] = OPT_SWITCH_DCNET;
             }
             options[option_count++] = OPT_CLOSE;
             break;
@@ -280,6 +286,18 @@ start_connection(dcnow_network_t network) {
         dcnow_conn_poll(&status);
         /* Refreshes the Network/Phone/Login/Password lines for this attempt,
          * since a Retry or a second Connect can switch networks. */
+        build_info();
+        build_options();
+    }
+}
+
+/* Dials network's select-only number and hangs up right after, to switch
+ * DreamPi's routing before launching a game rather than to browse a player
+ * list here. */
+static void
+start_switch(dcnow_network_t network) {
+    if (dcnow_conn_switch(device, network) == 0) {
+        dcnow_conn_poll(&status);
         build_info();
         build_options();
     }
@@ -490,6 +508,8 @@ option_accept(void) {
                 start_connection(DCNOW_NET_DCNET);
             }
             break;
+        case OPT_SWITCH_DCNOW: start_switch(DCNOW_NET_DCNOW); break;
+        case OPT_SWITCH_DCNET: start_switch(DCNOW_NET_DCNET); break;
         case OPT_RETRY:
             if (status.state == DCNOW_CONN_ONLINE) {
                 start_fetch();
