@@ -1454,11 +1454,11 @@ static const char* const vmu_time_sync_warning_lines[] = {
 static const char* const serial_sd_warning_lines[] = {
     "No serial SD card reader was detected.",
     "",
-    "To enable Serial VMU functionality,",
-    "either power cycle the console, or",
-    "restart openMenu by exiting to BIOS",
-    "and selecting \"Play\".",
+    "This can happen if the reader was",
+    "still powering up. Select Retry to",
+    "try again without restarting.",
     "",
+    "Retry",
     "Exit to BIOS",
     "Close",
 };
@@ -1468,8 +1468,9 @@ static bool device_warning_drawn;
 static device_warning_t drawn_device_warning;
 static int device_warning_selection;
 static enum control device_warning_last_direction;
+static bool device_warning_a_was_held; /* debounces A the same way UP/DOWN debounce direction */
 static int device_warning_action_x, device_warning_action_width, device_warning_action_height;
-static int device_warning_action_y[2];
+static int device_warning_action_y[3];
 static int device_warning_action_count;
 
 static device_warning_t
@@ -1494,6 +1495,7 @@ reset_device_warning_input(void) {
     device_warning_action_height = 0;
     device_warning_action_y[0] = 0;
     device_warning_action_y[1] = 0;
+    device_warning_action_y[2] = 0;
     device_warning_action_count = 0;
     menu_mouse_invalidate();
     mouse_reset();
@@ -1539,6 +1541,10 @@ handle_input_device_warnings(enum control input) {
     bool close_requested = input == B || input == START || (mouse->present && (mouse->pressed & MOUSE_RIGHT));
 
     if (warning == DEVICE_WARNING_VMU_TIME_SYNC) {
+        /* Kept in sync here too, so it can't go stale while this warning is
+         * up and then swallow the first Retry press after it's replaced by
+         * the serial SD warning below. */
+        device_warning_a_was_held = (input == A);
         if (input == A || close_requested || left_clicked) {
             vmu_time_sync_warning_dismiss();
             reset_device_warning_input();
@@ -1553,19 +1559,37 @@ handle_input_device_warnings(enum control input) {
         device_warning_selection = mouse_row;
     }
 
-    if (input == A || left_clicked) {
-        bool exit_to_bios = device_warning_selection == 0;
-        serial_sd_warning_pending = false;
-        reset_device_warning_input();
-        if (exit_to_bios) {
-            exit_to_bios_ex(0, 0);
+    /* input==A is held across many frames for one physical press, unlike a
+     * mouse click. A Retry that fails leaves this same popup up for another
+     * frame (unlike the other two actions, which always make it go away one
+     * way or another), so without this it would re-fire sd_init() every
+     * frame for as long as the button stayed down. */
+    bool a_pressed = (input == A && !device_warning_a_was_held) || left_clicked;
+    device_warning_a_was_held = (input == A);
+
+    if (a_pressed) {
+        /* 0 = Retry, 1 = Exit to BIOS, 2 = Close, matching serial_sd_warning_lines. */
+        int action = device_warning_selection;
+        if (action == 0) {
+            savefile_refresh_sd_status();
+            if (savefile_sd_available()) {
+                serial_sd_warning_pending = false;
+            }
+            reset_device_warning_input();
+        } else {
+            bool exit_to_bios = action == 1;
+            serial_sd_warning_pending = false;
+            reset_device_warning_input();
+            if (exit_to_bios) {
+                exit_to_bios_ex(0, 0);
+            }
         }
     } else if (close_requested) {
         serial_sd_warning_pending = false;
         reset_device_warning_input();
     } else if (input == UP || input == DOWN) {
         if (input != device_warning_last_direction) {
-            device_warning_selection = (device_warning_selection + 1) % 2;
+            device_warning_selection = (device_warning_selection + 1) % 3;
             device_warning_last_direction = input;
         }
     } else {
@@ -1589,7 +1613,7 @@ draw_device_warnings(theme_color* colors, uint32_t title_color, int ui_mode) {
     const int count = warning == DEVICE_WARNING_VMU_TIME_SYNC
                           ? (int)(sizeof(vmu_time_sync_warning_lines) / sizeof(vmu_time_sync_warning_lines[0]))
                           : (int)(sizeof(serial_sd_warning_lines) / sizeof(serial_sd_warning_lines[0]));
-    const int action_start = warning == DEVICE_WARNING_VMU_TIME_SYNC ? count - 1 : count - 2;
+    const int action_start = warning == DEVICE_WARNING_VMU_TIME_SYNC ? count - 1 : count - 3;
     bool bitmap = ui_mode == UI_SCROLL || ui_mode == UI_FOLDERS;
     const int line_height = bitmap ? 24 : 26;
     const int width = 38 * (bitmap ? 8 : 10) + 16;
