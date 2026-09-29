@@ -35,11 +35,6 @@ static int modem_was_used = 0;
 /* KOS declares this in kernel/net/net_dhcp.h, which it does not install, yet
  * it is the only way to ask for a lease again once net_init() has run. */
 extern int net_dhcp_request(uint32_t required_address);
-/* KOS's own modem_wait_dialtone() has no way to cancel out of it early, so it
- * is reimplemented below the same way wait_for_carrier() polls
- * modem_is_connecting(): this is the check modem_wait_dialtone() itself polls
- * in a loop, not declared in modem.h. */
-extern int modem_dialtone_detected(void);
 
 static mutex_t probe_mutex = MUTEX_INITIALIZER;
 static dcnow_device_t device_found = DCNOW_DEV_NONE;
@@ -301,24 +296,27 @@ wait_for_carrier(void) {
     return 1;
 }
 
-/* Same shape as wait_for_carrier(), but for the dial tone: modem_wait_dialtone()
- * blocks for its whole timeout with no way to cancel out of it, so this polls
- * the same check it does (modem_dialtone_detected()) by hand instead. Returns
- * 1 once a tone is heard, 0 on timeout, -1 when the user canceled. */
+/* Same shape as wait_for_carrier(), but for the dial tone. modem_wait_dialtone()
+ * itself blocks for whatever timeout it's given with no way to cancel out of
+ * it early, so this calls it repeatedly with a short 100 ms timeout instead,
+ * checking cancel_requested between calls - using only KOS's public API
+ * (an earlier version of this called an internal symbol not declared in
+ * modem.h, which regressed dialing entirely; not worth the risk for a
+ * cancel-latency nicety). Returns 1 once a tone is heard, 0 on timeout, -1
+ * when the user canceled. */
 static int
 wait_for_dialtone(void) {
     uint64_t start = timer_ms_gettime64();
 
-    while (!modem_dialtone_detected()) {
+    while (timer_ms_gettime64() - start < DCNOW_DIALTONE_TIMEOUT_MS) {
+        if (modem_wait_dialtone(100) == 0) {
+            return 1;
+        }
         if (cancel_requested) {
             return -1;
         }
-        if (timer_ms_gettime64() - start >= DCNOW_DIALTONE_TIMEOUT_MS) {
-            return 0;
-        }
-        thd_sleep(100);
     }
-    return 1;
+    return 0;
 }
 
 /* The PPP device for the modem, the same shape libppp uses internally. */
