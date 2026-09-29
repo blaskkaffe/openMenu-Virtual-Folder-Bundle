@@ -149,6 +149,11 @@ dcnow_read_isp(dcnow_isp_t* out) {
  * gives it time to be polling for every one of them. */
 #define DCNOW_DIAL_DIGIT_GAP_MS   250
 
+/* How long run_switch() waits after the last digit before hanging up (see
+ * the comment there for why this needs to be well past DCNOW_DIAL_DIGIT_GAP_MS,
+ * not just a token pause). */
+#define DCNOW_SWITCH_SETTLE_MS    1200
+
 static mutex_t status_mutex = MUTEX_INITIALIZER;
 static dcnow_status_t status = {DCNOW_CONN_IDLE, 0, 0, -1, 0, {{0}}, 0, 0};
 static volatile int cancel_requested = 0;
@@ -566,9 +571,16 @@ run_switch(void) {
         return;
     }
 
-    /* A short settle before dropping the line, since the digits only just
-     * finished going out. */
-    thd_sleep(500);
+    /* DreamPi's own digit reader (netlink.py's digit_parser()) polls the
+     * serial port non-blocking in a tight loop and only finalizes the number
+     * after 2 full seconds of silence; a byte it isn't polling at the exact
+     * instant it arrives is simply missed. A full connect never has this
+     * problem because it lingers on the line through carrier and PPP, giving
+     * that loop many seconds to catch every digit; a switch hangs up right
+     * after dialing, so the last digit gets far fewer chances to be read
+     * before the line drops. DCNOW_SWITCH_SETTLE_MS gives it a real window
+     * to do so before we hang up. */
+    thd_sleep(DCNOW_SWITCH_SETTLE_MS);
     status_push("Switching network...", 0);
     modem_hangup();
     status_replace(status_last_index(), "Switching network... OK");
