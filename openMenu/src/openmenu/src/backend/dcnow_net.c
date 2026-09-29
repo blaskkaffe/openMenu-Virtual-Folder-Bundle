@@ -142,6 +142,13 @@ dcnow_read_isp(dcnow_isp_t* out) {
  * first gives it time to be listening before the number goes out. */
 #define DCNOW_DIALTONE_TIMEOUT_MS 5000
 
+/* Confirmed on real hardware: even with the dial tone wait above, DreamPi's
+ * digit reader (a non-blocking read that drops a digit if the byte isn't
+ * there yet) can still lose digits when the whole number goes out in one
+ * modem_dial() call. Dialing one digit at a time with a pause between each
+ * gives it time to be polling for every one of them. */
+#define DCNOW_DIAL_DIGIT_GAP_MS   250
+
 static mutex_t status_mutex = MUTEX_INITIALIZER;
 static dcnow_status_t status = {DCNOW_CONN_IDLE, 0, 0, -1, 0, {{0}}, 0, 0};
 static volatile int cancel_requested = 0;
@@ -462,10 +469,20 @@ run_modem(void) {
 
     snprintf(line, sizeof(line), "Dialing %s...", dial_number);
     status_push(line, 0);
-    if (!modem_dial(dial_number)) {
-        modem_shutdown();
-        fail("Dialing failed (modem -3).", NULL);
-        return;
+    for (size_t i = 0; dial_number[i] != '\0'; i++) {
+        char digit[2] = {dial_number[i], '\0'};
+
+        if (!modem_dial(digit)) {
+            modem_shutdown();
+            fail("Dialing failed (modem -3).", NULL);
+            return;
+        }
+        if (dial_number[i + 1] != '\0') {
+            thd_sleep(DCNOW_DIAL_DIGIT_GAP_MS);
+            if (cancel_now(0)) {
+                return;
+            }
+        }
     }
     snprintf(line, sizeof(line), "Dialing %s... OK", dial_number);
     status_replace(status_last_index(), line);
