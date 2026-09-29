@@ -144,14 +144,6 @@ dcnow_read_isp(dcnow_isp_t* out) {
  * gives it time to be polling for every one of them. */
 #define DCNOW_DIAL_DIGIT_GAP_MS   250
 
-/* How long run_switch() waits after the last digit before hanging up (see
- * the comment there for why this must clear DreamPi's own 2000 ms silence
- * window, not just DCNOW_DIAL_DIGIT_GAP_MS). Two hardware captures both
- * showed DreamPi finalizing at exactly 2000 ms after its own last heard
- * digit, with no real detection lag, so 300 ms of margin above that floor
- * is deliberate, not generous. */
-#define DCNOW_SWITCH_SETTLE_MS    2300
-
 static mutex_t status_mutex = MUTEX_INITIALIZER;
 static dcnow_status_t status = {DCNOW_CONN_IDLE, 0, 0, -1, 0, {{0}}, 0, 0};
 static volatile int cancel_requested = 0;
@@ -556,15 +548,25 @@ run_modem(void) {
     status_set_state(DCNOW_CONN_ONLINE, 0);
 }
 
-/* Dials the network's select-only number and hangs up right after, without
- * ever waiting for a carrier: the DreamPiAutoToggle add-on's routing hook
- * records the selection purely from hearing the digits, before DreamPi would
- * answer the call, so there is nothing else to connect. For switching the
+/* Dials the network's select number, waits for DreamPi to answer, and hangs
+ * up right there without going on to PPP. DreamPiAutoToggle's own README
+ * documents 2222222/3333333 as real connect numbers ("selects DCNow!/DCNET
+ * and connects to it"), meant to be dialed the way an ISP config would; its
+ * routing hook records the selection the moment the digits are heard,
+ * before it ever tries to answer, so there is nothing left to do here once
+ * carrier is up. Hanging up right after dialing instead - without waiting
+ * for DreamPi to answer - was tried and confirmed bad on hardware: DreamPi
+ * still goes on to spend several seconds prepping its modem and issuing ATA
+ * against an already-dead line, then sits retrying it for a full 60 seconds
+ * before giving up, leaving its modem unusable the whole time. Waiting for
+ * carrier here costs a few more seconds up front but lets DreamPi's own
+ * call teardown run normally instead of timing out. For switching the
  * network before launching a game that dials out on its own, not for the
  * player list here (which still needs a real connection). */
 static void
 run_switch(void) {
     const char* dial_number = active_network == DCNOW_NET_DCNET ? DCNET_DIAL_NUMBER : DCNOW_SWITCH_DIAL_NUMBER;
+    int rc;
 
     modem_was_used = 1;
     status_set_state(DCNOW_CONN_CONNECTING, 1);
@@ -572,18 +574,20 @@ run_switch(void) {
         return;
     }
 
-    /* DreamPi's own digit reader (netlink.py's digit_parser()) only finalizes
-     * the dialed string, and hands it to check_number(), once a full 2000 ms
-     * have passed with no new digit - and DreamPi's modem hardware still
-     * needs some of that time itself to decode and report the last tone
-     * before the silence clock can even start. A full connect never races
-     * this: it lingers on the line through carrier and PPP, tens of seconds
-     * past the last digit. A switch hangs up right after dialing, so
-     * DCNOW_SWITCH_SETTLE_MS has to clear that whole 2000 ms window on its
-     * own, with margin, or the line drops before DreamPi ever finalizes the
-     * number - which is exactly what a real capture showed at 1200 ms: the
-     * last digit's tone never made it into the reported string at all. */
-    thd_sleep(DCNOW_SWITCH_SETTLE_MS);
+    status_push("Modem: Negotiating", 1);
+    rc = wait_for_carrier();
+    if (rc < 0) {
+        cancel_now(1);
+        return;
+    }
+    if (rc == 0 || !modem_is_connected()) {
+        modem_hangup();
+        fail("No carrier after 90 seconds (modem -4).", "Check DreamPi and the phone cable.");
+        start_cooldown_clock();
+        return;
+    }
+    status_replace(status_last_index(), "Modem: Connected");
+
     status_push("Switching network...", 0);
     modem_hangup();
     status_replace(status_last_index(), "Switching network... OK");
