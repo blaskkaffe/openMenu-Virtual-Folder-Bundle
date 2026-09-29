@@ -145,9 +145,9 @@ dcnow_read_isp(dcnow_isp_t* out) {
 #define DCNOW_DIAL_DIGIT_GAP_MS   250
 
 /* How long run_switch() waits after the last digit before hanging up (see
- * the comment there for why this needs to be well past DCNOW_DIAL_DIGIT_GAP_MS,
- * not just a token pause). */
-#define DCNOW_SWITCH_SETTLE_MS    1200
+ * the comment there for why this must clear DreamPi's own 2000 ms silence
+ * window, not just DCNOW_DIAL_DIGIT_GAP_MS). */
+#define DCNOW_SWITCH_SETTLE_MS    2600
 
 static mutex_t status_mutex = MUTEX_INITIALIZER;
 static dcnow_status_t status = {DCNOW_CONN_IDLE, 0, 0, -1, 0, {{0}}, 0, 0};
@@ -569,15 +569,17 @@ run_switch(void) {
         return;
     }
 
-    /* DreamPi's own digit reader (netlink.py's digit_parser()) polls the
-     * serial port non-blocking in a tight loop and only finalizes the number
-     * after 2 full seconds of silence; a byte it isn't polling at the exact
-     * instant it arrives is simply missed. A full connect never has this
-     * problem because it lingers on the line through carrier and PPP, giving
-     * that loop many seconds to catch every digit; a switch hangs up right
-     * after dialing, so the last digit gets far fewer chances to be read
-     * before the line drops. DCNOW_SWITCH_SETTLE_MS gives it a real window
-     * to do so before we hang up. */
+    /* DreamPi's own digit reader (netlink.py's digit_parser()) only finalizes
+     * the dialed string, and hands it to check_number(), once a full 2000 ms
+     * have passed with no new digit - and DreamPi's modem hardware still
+     * needs some of that time itself to decode and report the last tone
+     * before the silence clock can even start. A full connect never races
+     * this: it lingers on the line through carrier and PPP, tens of seconds
+     * past the last digit. A switch hangs up right after dialing, so
+     * DCNOW_SWITCH_SETTLE_MS has to clear that whole 2000 ms window on its
+     * own, with margin, or the line drops before DreamPi ever finalizes the
+     * number - which is exactly what a real capture showed at 1200 ms: the
+     * last digit's tone never made it into the reported string at all. */
     thd_sleep(DCNOW_SWITCH_SETTLE_MS);
     status_push("Switching network...", 0);
     modem_hangup();
