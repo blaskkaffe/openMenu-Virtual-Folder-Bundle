@@ -300,9 +300,9 @@ start_connection(dcnow_network_t network) {
     }
 }
 
-/* Dials network's select number, waits for DreamPi to answer, and hangs up
- * right there, to switch DreamPi's routing before launching a game rather
- * than to browse a player list here. */
+/* Dials network's select number and hangs up right after, to switch
+ * DreamPi's routing before launching a game rather than to browse a player
+ * list here. */
 static void
 start_switch(dcnow_network_t network) {
     if (dcnow_conn_switch(device, network) == 0) {

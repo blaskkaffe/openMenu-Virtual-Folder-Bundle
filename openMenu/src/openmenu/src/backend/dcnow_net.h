@@ -37,27 +37,29 @@ typedef struct dcnow_isp {
 #define DCNOW_DIAL_PASSWORD      "openMenu"
 
 /* What the modem dials to select DCNet, through the DreamPiAutoToggle
- * add-on. Only used for the Switch action (dial, wait for DreamPi to answer,
- * hang up without going on to PPP - see dcnow_conn_switch()): there is no
- * full DCNet connect from openMenu, since DCNet is meant to be dialed out to
- * from within a game after switching, not browsed from this menu the way DC
- * Now is. Without the add-on installed, DreamPi's own netlink.py treats this
- * like any other number and connects through DC Now instead, so dialing it
- * is always safe. DCNET_DIAL_LOGIN/
- * PASSWORD are Flycast's published default DCNet ISP account
- * (flycast1/flycast2, password "password"), kept here in case a full DCNet
- * connect is ever added back; dcnow_dial_credentials() never hands them to
- * anything today since nothing sets up a DCNet PPP session anymore. */
+ * add-on. Used plain for a full DCNet connect (dcnow_dial_credentials()),
+ * and with a trailing '#' appended for the quick Switch action (dial and
+ * hang up, see dcnow_conn_switch()): there is no full DCNet connect from
+ * openMenu today, since DCNet is meant to be dialed out to from within a
+ * game after switching, not browsed from this menu the way DC Now is.
+ * Without the add-on installed, DreamPi's own netlink.py treats this like
+ * any other number and connects through DC Now instead, so dialing it is
+ * always safe. DCNET_DIAL_LOGIN/PASSWORD are Flycast's published default
+ * DCNet ISP account (flycast1/flycast2, password "password"), kept here in
+ * case a full DCNet connect is ever added back; dcnow_dial_credentials()
+ * never hands them to anything today since nothing sets up a DCNet PPP
+ * session anymore. */
 #define DCNET_DIAL_NUMBER        "3333333"
 #define DCNET_DIAL_LOGIN         "flycast1"
 #define DCNET_DIAL_PASSWORD      "password"
 
 /* What the modem dials to select DC Now without connecting, through the
- * DreamPiAutoToggle add-on: this only sets DreamPi's selection back to DC
- * Now, the same way DCNET_DIAL_NUMBER selects DCNet. Unlike DCNOW_DIAL_NUMBER
- * (always DC Now regardless of the current selection), this number only
- * matters with the add-on installed; without it, DreamPi's netlink.py treats
- * it like any other number and connects through DC Now anyway, so dialing it
+ * DreamPiAutoToggle add-on: with a trailing '#' appended (see
+ * DCNET_DIAL_NUMBER), this only sets DreamPi's selection back to DC Now, the
+ * same way DCNET_DIAL_NUMBER selects DCNet. Unlike DCNOW_DIAL_NUMBER (always
+ * DC Now regardless of the current selection), this number only matters
+ * with the add-on installed; without it, DreamPi's netlink.py treats it
+ * like any other number and connects through DC Now anyway, so dialing it
  * is still safe. */
 #define DCNOW_SWITCH_DIAL_NUMBER "2222222"
 
@@ -104,12 +106,12 @@ typedef struct dcnow_status {
  * fitted. */
 int dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp, dcnow_network_t network);
 
-/* Dials network's select number (2222222 for DC Now, 3333333 for DCNet),
- * waits for DreamPi to answer, and hangs up right there without going on to
- * PPP: the DreamPiAutoToggle add-on's routing hook records the selection the
- * moment it hears the digits, before it ever answers, so there is nothing
- * left to do once carrier is up. Only meaningful over a modem. Returns 0
- * when started, -1 when busy, already online, or dev isn't DCNOW_DEV_MODEM. */
+/* Dials network's select number with a trailing '#' (2222222# for DC Now,
+ * 3333333# for DCNet) and hangs up shortly after, without ever waiting for a
+ * carrier: a patched DreamPiAutoToggle add-on's routing hook records the
+ * selection from the digits and, seeing the '#', stops there instead of
+ * going on to answer the call. Only meaningful over a modem. Returns 0 when
+ * started, -1 when busy, already online, or dev isn't DCNOW_DEV_MODEM. */
 int dcnow_conn_switch(dcnow_device_t dev, dcnow_network_t network);
 
 /* Probes the device and reads the ISP settings on the worker, then connects.

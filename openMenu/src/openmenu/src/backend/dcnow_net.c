@@ -137,12 +137,14 @@ dcnow_read_isp(dcnow_isp_t* out) {
  * first gives it time to be listening before the number goes out. */
 #define DCNOW_DIALTONE_TIMEOUT_MS 5000
 
-/* Confirmed on real hardware: even with the dial tone wait above, DreamPi's
- * digit reader (a non-blocking read that drops a digit if the byte isn't
- * there yet) can still lose digits when the whole number goes out in one
- * modem_dial() call. Dialing one digit at a time with a pause between each
- * gives it time to be polling for every one of them. */
-#define DCNOW_DIAL_DIGIT_GAP_MS   250
+/* How long run_switch() waits after dialing before hanging up. DreamPi's
+ * digit reader only finalizes what it heard, and hands it to
+ * check_number(), after a full 2000 ms of silence, so this has to clear
+ * that window with margin or the line drops before DreamPi ever finalizes
+ * the number - confirmed on real hardware at values under this one. A full
+ * connect never needs this: it lingers on the line through carrier and PPP,
+ * tens of seconds past the last digit. */
+#define DCNOW_SWITCH_SETTLE_MS    2600
 
 static mutex_t status_mutex = MUTEX_INITIALIZER;
 static dcnow_status_t status = {DCNOW_CONN_IDLE, 0, 0, -1, 0, {{0}}, 0, 0};
@@ -434,13 +436,19 @@ cancel_now(int dialed) {
     return 1;
 }
 
-/* Powers up the modem, waits for dial tone, and dials dial_number one digit
- * at a time (shared by a full connect and a quick network switch). Returns 1
- * with the number fully dialed, or 0 when it failed or was canceled -
- * status/fail() already reported it and the modem is already shut down
- * either way, so the caller just returns. */
+/* Powers up the modem, waits for dial tone, and dials number (shared by a
+ * full connect and a quick network switch). Returns 1 with the number sent,
+ * or 0 when it failed or was canceled - status/fail() already reported it
+ * and the modem is already shut down either way, so the caller just
+ * returns.
+ *
+ * modem_dial() takes the whole string in one call and queues it in the
+ * modem's own transmit buffer; KOS then feeds it to the hardware one digit
+ * at a time, interrupt-driven, only once the modem signals it is ready for
+ * the next one. That is the normal dialing path any other Dreamcast
+ * software relies on, and it paces the DTMF tones correctly on its own. */
 static int
-dial_number_paced(const char* dial_number) {
+dial_out(const char* number) {
     char line[DCNOW_STATUS_WIDTH];
     int rc;
 
@@ -468,24 +476,14 @@ dial_number_paced(const char* dial_number) {
     }
     status_replace(status_last_index(), "Waiting for dial tone... OK");
 
-    snprintf(line, sizeof(line), "Dialing %s...", dial_number);
+    snprintf(line, sizeof(line), "Dialing %s...", number);
     status_push(line, 0);
-    for (size_t i = 0; dial_number[i] != '\0'; i++) {
-        char digit[2] = {dial_number[i], '\0'};
-
-        if (!modem_dial(digit)) {
-            modem_shutdown();
-            fail("Dialing failed (modem -3).", NULL);
-            return 0;
-        }
-        if (dial_number[i + 1] != '\0') {
-            thd_sleep(DCNOW_DIAL_DIGIT_GAP_MS);
-            if (cancel_now(0)) {
-                return 0;
-            }
-        }
+    if (!modem_dial(number)) {
+        modem_shutdown();
+        fail("Dialing failed (modem -3).", NULL);
+        return 0;
     }
-    snprintf(line, sizeof(line), "Dialing %s... OK", dial_number);
+    snprintf(line, sizeof(line), "Dialing %s... OK", number);
     status_replace(status_last_index(), line);
     return 1;
 }
@@ -500,7 +498,7 @@ run_modem(void) {
     dcnow_dial_credentials(active_network, &dial_number, &dial_login, &dial_password);
     modem_was_used = 1;
     status_set_state(DCNOW_CONN_CONNECTING, 1);
-    if (!dial_number_paced(dial_number)) {
+    if (!dial_out(dial_number)) {
         return;
     }
 
@@ -548,46 +546,31 @@ run_modem(void) {
     status_set_state(DCNOW_CONN_ONLINE, 0);
 }
 
-/* Dials the network's select number, waits for DreamPi to answer, and hangs
- * up right there without going on to PPP. DreamPiAutoToggle's own README
- * documents 2222222/3333333 as real connect numbers ("selects DCNow!/DCNET
- * and connects to it"), meant to be dialed the way an ISP config would; its
- * routing hook records the selection the moment the digits are heard,
- * before it ever tries to answer, so there is nothing left to do here once
- * carrier is up. Hanging up right after dialing instead - without waiting
- * for DreamPi to answer - was tried and confirmed bad on hardware: DreamPi
- * still goes on to spend several seconds prepping its modem and issuing ATA
- * against an already-dead line, then sits retrying it for a full 60 seconds
- * before giving up, leaving its modem unusable the whole time. Waiting for
- * carrier here costs a few more seconds up front but lets DreamPi's own
- * call teardown run normally instead of timing out. For switching the
+/* Dials the network's select number with a trailing '#' and hangs up
+ * shortly after, without waiting for a carrier. DreamPiAutoToggle's own
+ * README documents 2222222/3333333 as real connect numbers ("selects
+ * DCNow!/DCNET and connects to it"), meant to be dialed the way an ISP
+ * config would; a patched DreamPiAutoToggle treats a trailing '#' as asking
+ * to record the selection and stop there, so it never goes on to answer the
+ * call the way it otherwise would. Without that: confirmed on hardware that
+ * DreamPi still goes on to spend several seconds prepping its modem and
+ * retries ATA against an already-dead line for a full 60 seconds before
+ * giving up, leaving its modem unusable the whole time. For switching the
  * network before launching a game that dials out on its own, not for the
  * player list here (which still needs a real connection). */
 static void
 run_switch(void) {
-    const char* dial_number = active_network == DCNOW_NET_DCNET ? DCNET_DIAL_NUMBER : DCNOW_SWITCH_DIAL_NUMBER;
-    int rc;
+    const char* number = active_network == DCNOW_NET_DCNET ? DCNET_DIAL_NUMBER : DCNOW_SWITCH_DIAL_NUMBER;
+    char dial_number[16];
 
+    snprintf(dial_number, sizeof(dial_number), "%s#", number);
     modem_was_used = 1;
     status_set_state(DCNOW_CONN_CONNECTING, 1);
-    if (!dial_number_paced(dial_number)) {
+    if (!dial_out(dial_number)) {
         return;
     }
 
-    status_push("Modem: Negotiating", 1);
-    rc = wait_for_carrier();
-    if (rc < 0) {
-        cancel_now(1);
-        return;
-    }
-    if (rc == 0 || !modem_is_connected()) {
-        modem_hangup();
-        fail("No carrier after 90 seconds (modem -4).", "Check DreamPi and the phone cable.");
-        start_cooldown_clock();
-        return;
-    }
-    status_replace(status_last_index(), "Modem: Connected");
-
+    thd_sleep(DCNOW_SWITCH_SETTLE_MS);
     status_push("Switching network...", 0);
     modem_hangup();
     status_replace(status_last_index(), "Switching network... OK");
