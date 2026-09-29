@@ -25,30 +25,33 @@
 #define DCNOW_HOST            "dreamcast.online"
 #define DCNOW_PATH            "/now/api/users.json"
 /* dc99.net's combined DreamPi/DCNet status feed. Confirmed against a live
- * response: {"generated":..,"dreampi":{...},"dcnet":{"online":bool,
- * "error":..,"games":[...],"players":[{"name","gameId","gameName",
- * "geoloc":{"country",...}},...],"users":[...]}}. Only dcnet.online and
- * dcnet.players are used below. The response also carries a full dreampi
- * (DC Now) section we don't need, so it's larger than dreamcast.online's own
- * feed; DCNOW_BODY_MAX has room for the sample this was checked against, but
- * a very busy DreamPi (many users, each with a long game history) could
- * outgrow it, in which case parse_dcnet_players() fails closed rather than
- * showing a wrong list. */
-#define DCNET_HOST            "dc99.net"
-#define DCNET_PATH            "/online/dcnet_status.php"
+ * response: {"generated":..,"dreampi":{"users":[{"username","country",
+ * "current_game_display","current_game","online",...},...]},"dcnet":{
+ * "online":bool,"error":..,"games":[...],"players":[{"name","gameId",
+ * "gameName","geoloc":{"country",...}},...],"users":[...]}}. dreampi.users
+ * is the same shape as dreamcast.online's own feed (DC Now); dcnet.players
+ * is DCNet's online players, nested one level deeper for country. Both are
+ * combined into one list below. The response carries more than we need (a
+ * full per-user game history under dreampi, dcnet.games, dcnet.users), so
+ * it's larger than dreamcast.online's own feed; DCNOW_BODY_MAX has room for
+ * the sample this was checked against, but a very busy DreamPi could outgrow
+ * it, in which case parse_dc99_combined() fails closed rather than showing a
+ * wrong list. */
+#define DC99_HOST             "dc99.net"
+#define DC99_PATH             "/online/dcnet_status.php"
 #define DCNOW_BODY_MAX        98304
 #define DCNOW_STEP_TIMEOUT_MS 10000
 #define DCNOW_GET_TIMEOUT_MS  60000
 
 static mutex_t fetch_mutex = MUTEX_INITIALIZER;
-static dcnow_fetch_status_t fetch = {DCNOW_FETCH_IDLE, -1, 0, {{0}}, 0, 0, 0, 0, 0, 0, DCNOW_NET_DCNOW};
+static dcnow_fetch_status_t fetch = {DCNOW_FETCH_IDLE, -1, 0, {{0}}, 0, 0, 0, 0, 0, 0, DCNOW_FETCH_SRC_DCNOW_ONLY};
 static dcnow_player_t players[DCNOW_PLAYER_MAX];
 static kthread_t* fetch_worker = NULL;
 static volatile int abort_requested = 0;
-/* The network the running (or most recently started) fetch is for. Set by
+/* The source the running (or most recently started) fetch is for. Set by
  * dcnow_fetch_start() before the worker starts, the same way dcnow_net.c
  * hands active_device/worker_job to its worker. */
-static dcnow_network_t fetch_network = DCNOW_NET_DCNOW;
+static dcnow_fetch_source_t fetch_source = DCNOW_FETCH_SRC_DCNOW_ONLY;
 
 /* The worker's own buffers. */
 static char body[DCNOW_BODY_MAX + 1];
@@ -256,6 +259,7 @@ json_user(const char* p, dcnow_player_t* out, int* online) {
     char key[32];
 
     memset(out, 0, sizeof(*out));
+    out->network = DCNOW_NET_DCNOW;
     *online = 0;
     p = json_ws(p);
     if (*p != '{') {
@@ -398,6 +402,7 @@ json_dcnet_player(const char* p, dcnow_player_t* out) {
     char key[32];
 
     memset(out, 0, sizeof(*out));
+    out->network = DCNOW_NET_DCNET;
     p = json_ws(p);
     if (*p != '{') {
         return NULL;
@@ -437,33 +442,77 @@ json_dcnet_player(const char* p, dcnow_player_t* out) {
     return p + 1;
 }
 
-/* Returned by parse_dcnet_players() when dcnet.online is false: DCNet itself
- * is down, which deserves a clearer message than a generic parse failure. */
-#define DCNET_STATUS_OFFLINE (-2)
-
-/* Fills parsed[] from dcnet.players, up to the store's size, and counts every
- * player in the feed in *total. Returns the stored count, DCNET_STATUS_OFFLINE,
- * or -1 when the text is not the shape we expect. A body cut at the cap ends
- * inside a record, so with truncated set the players already read still count. */
+/* Appends dc99.net's dreampi.users (online-filtered, DC Now) into parsed[]
+ * starting at *count, counting every online entry in *total. Returns 1 when
+ * the section was found and fully read (even if it added zero players), 0
+ * when the section is simply missing (not an error - the dcnet section can
+ * still stand alone), or -1 when it was found but malformed. */
 static int
-parse_dcnet_players(const char* text, int truncated, int* total) {
+append_dc99_dreampi(const char* text, int truncated, int* count, int* total) {
+    const char* dreampi = strstr(text, "\"dreampi\"");
+    const char* p;
+
+    if (dreampi == NULL) {
+        return 0;
+    }
+    p = strstr(dreampi, "\"users\"");
+    if (p == NULL) {
+        return -1;
+    }
+    p = json_ws(p + 7);
+    if (*p != ':') {
+        return -1;
+    }
+    p = json_ws(p + 1);
+    if (*p != '[') {
+        return -1;
+    }
+    p = json_ws(p + 1);
+    while (*p != ']') {
+        dcnow_player_t entry;
+        int online;
+
+        p = json_user(p, &entry, &online);
+        if (p == NULL) {
+            return truncated && *count > 0 ? 1 : -1;
+        }
+        if (online && entry.name[0] != '\0') {
+            (*total)++;
+            if (*count < DCNOW_PLAYER_MAX) {
+                parsed[(*count)++] = entry;
+            }
+        }
+        p = json_ws(p);
+        if (*p == ',') {
+            p = json_ws(p + 1);
+        } else if (*p != ']') {
+            return truncated && *count > 0 ? 1 : -1;
+        }
+    }
+    return 1;
+}
+
+/* Appends dc99.net's dcnet.players (DCNet) into parsed[] starting at *count,
+ * counting every entry in *total. Same return convention as
+ * append_dc99_dreampi(). dcnet.online is read but not treated as a failure
+ * either way: an offline DCNet simply has no players to add, and the dreampi
+ * section can still stand alone. */
+static int
+append_dc99_dcnet(const char* text, int truncated, int* count, int* total) {
     const char* dcnet = strstr(text, "\"dcnet\"");
     const char* online;
     const char* p;
-    int count = 0;
 
-    *total = 0;
     if (dcnet == NULL) {
-        return -1;
+        return 0;
     }
-    /* "online" is dcnet's own first field, well before "players". */
     online = strstr(dcnet, "\"online\"");
     if (online != NULL) {
         const char* v = json_ws(online + 8);
         if (*v == ':') {
             v = json_ws(v + 1);
             if (strncmp(v, "false", 5) == 0) {
-                return DCNET_STATUS_OFFLINE;
+                return 1;
             }
         }
     }
@@ -485,20 +534,42 @@ parse_dcnet_players(const char* text, int truncated, int* total) {
 
         p = json_dcnet_player(p, &entry);
         if (p == NULL) {
-            return truncated && count > 0 ? count : -1;
+            return truncated && *count > 0 ? 1 : -1;
         }
         if (entry.name[0] != '\0') {
             (*total)++;
-            if (count < DCNOW_PLAYER_MAX) {
-                parsed[count++] = entry;
+            if (*count < DCNOW_PLAYER_MAX) {
+                parsed[(*count)++] = entry;
             }
         }
         p = json_ws(p);
         if (*p == ',') {
             p = json_ws(p + 1);
         } else if (*p != ']') {
-            return truncated && count > 0 ? count : -1;
+            return truncated && *count > 0 ? 1 : -1;
         }
+    }
+    return 1;
+}
+
+/* Fills parsed[] from dc99.net's dreampi.users (DC Now) and dcnet.players
+ * (DCNet) combined, up to the store's size, and counts every player from
+ * both in *total. Returns the stored count, or -1 when neither section was
+ * found (the feed isn't the shape we expect at all). */
+static int
+parse_dc99_combined(const char* text, int truncated, int* total) {
+    int count = 0;
+    int dreampi_rc;
+    int dcnet_rc;
+
+    *total = 0;
+    dreampi_rc = append_dc99_dreampi(text, truncated, &count, total);
+    dcnet_rc = append_dc99_dcnet(text, truncated, &count, total);
+    if (dreampi_rc < 0 || dcnet_rc < 0) {
+        return count > 0 ? count : -1;
+    }
+    if (dreampi_rc == 0 && dcnet_rc == 0) {
+        return -1;
     }
     return count;
 }
@@ -519,7 +590,7 @@ publish(int count, int total) {
 }
 
 static void
-run_fetch(dcnow_network_t network) {
+run_fetch(dcnow_fetch_source_t source) {
     struct sockaddr_in addr;
     char request[160];
     char text[DCNOW_STATUS_WIDTH];
@@ -533,8 +604,8 @@ run_fetch(dcnow_network_t network) {
     int count;
     int total = 0;
     const char* json;
-    const char* host = network == DCNOW_NET_DCNET ? DCNET_HOST : DCNOW_HOST;
-    const char* path = network == DCNOW_NET_DCNET ? DCNET_PATH : DCNOW_PATH;
+    const char* host = source == DCNOW_FETCH_SRC_DC99_COMBINED ? DC99_HOST : DCNOW_HOST;
+    const char* path = source == DCNOW_FETCH_SRC_DC99_COMBINED ? DC99_PATH : DCNOW_PATH;
 
     fetch_reset(DCNOW_FETCH_RUNNING);
     snprintf(text, sizeof(text), "Fetching player list from %s...", host);
@@ -552,7 +623,7 @@ run_fetch(dcnow_network_t network) {
         fetch_reset(DCNOW_FETCH_IDLE);
         return;
     }
-    if (network == DCNOW_NET_DCNOW) {
+    if (source == DCNOW_FETCH_SRC_DCNOW_ONLY) {
         dcnow_presence_lookup();
     }
 
@@ -660,12 +731,8 @@ run_fetch(dcnow_network_t network) {
         fetch_fail("The server answer could not be read.");
         return;
     }
-    count = network == DCNOW_NET_DCNET ? parse_dcnet_players(json + 4, used == DCNOW_BODY_MAX, &total)
-                                       : parse_users(json + 4, used == DCNOW_BODY_MAX, &total);
-    if (count == DCNET_STATUS_OFFLINE) {
-        fetch_fail("DCNet is currently offline.");
-        return;
-    }
+    count = source == DCNOW_FETCH_SRC_DC99_COMBINED ? parse_dc99_combined(json + 4, used == DCNOW_BODY_MAX, &total)
+                                                    : parse_users(json + 4, used == DCNOW_BODY_MAX, &total);
     if (count < 0) {
         fetch_fail("The server answer could not be read.");
         return;
@@ -676,7 +743,7 @@ run_fetch(dcnow_network_t network) {
 static void*
 fetch_main(void* param) {
     (void)param;
-    run_fetch(fetch_network);
+    run_fetch(fetch_source);
     return NULL;
 }
 
@@ -689,7 +756,7 @@ join_worker(void) {
 }
 
 void
-dcnow_fetch_start(dcnow_network_t network) {
+dcnow_fetch_start(dcnow_fetch_source_t source) {
     dcnow_fetch_status_t snap;
 
     dcnow_fetch_poll(&snap);
@@ -698,9 +765,9 @@ dcnow_fetch_start(dcnow_network_t network) {
     }
     join_worker();
     abort_requested = 0;
-    fetch_network = network;
+    fetch_source = source;
     mutex_lock(&fetch_mutex);
-    fetch.network = network;
+    fetch.source = source;
     mutex_unlock(&fetch_mutex);
     fetch_reset(DCNOW_FETCH_RUNNING);
     fetch_worker = thd_create(false, fetch_main, NULL);

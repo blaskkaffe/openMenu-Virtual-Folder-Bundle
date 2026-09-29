@@ -36,14 +36,17 @@ typedef struct dcnow_isp {
 #define DCNOW_DIAL_LOGIN         "openMenu"
 #define DCNOW_DIAL_PASSWORD      "openMenu"
 
-/* What the modem dials to reach DCNet instead, through the DreamPiAutoToggle
- * add-on: dialing this number both selects DCNet on the DreamPi and connects
- * through it. Without the add-on installed, DreamPi's own netlink.py treats
- * it like any other number and connects through DC Now instead, so dialing
- * it is always safe. The login is Flycast's published default DCNet ISP
- * account (flycast1/flycast2, password "password"); the DCNet endpoint on
- * the DreamPi (dcnet.rpi) does its own PPP negotiation independently of
- * DreamPi's normal pppd, so this does not have to match DCNOW_DIAL_LOGIN. */
+/* What the modem dials to select DCNet, through the DreamPiAutoToggle
+ * add-on. Only used for the quick Switch action (dial and hang up, see
+ * dcnow_conn_switch()): there is no full DCNet connect from openMenu, since
+ * DCNet is meant to be dialed out to from within a game after switching, not
+ * browsed from this menu the way DC Now is. Without the add-on installed,
+ * DreamPi's own netlink.py treats this like any other number and connects
+ * through DC Now instead, so dialing it is always safe. DCNET_DIAL_LOGIN/
+ * PASSWORD are Flycast's published default DCNet ISP account
+ * (flycast1/flycast2, password "password"), kept here in case a full DCNet
+ * connect is ever added back; dcnow_dial_credentials() never hands them to
+ * anything today since nothing sets up a DCNet PPP session anymore. */
 #define DCNET_DIAL_NUMBER        "3333333"
 #define DCNET_DIAL_LOGIN         "flycast1"
 #define DCNET_DIAL_PASSWORD      "password"
@@ -122,6 +125,11 @@ int dcnow_conn_isp(dcnow_isp_t* out);
 /* The network the engine is connected to, connecting to, or last tried.
  * DCNOW_NET_DCNOW before the first connection. */
 dcnow_network_t dcnow_conn_network(void);
+
+/* Whether the attempt dcnow_conn_network() reflects was dcnow_conn_switch()
+ * (1) rather than dcnow_conn_start() (0), so a Retry after it failed or was
+ * canceled can redo the same kind of attempt. */
+int dcnow_conn_was_switch(void);
 
 /* Stops a modem dial before the carrier is up. Ignored at any other time. */
 void dcnow_conn_cancel(void);

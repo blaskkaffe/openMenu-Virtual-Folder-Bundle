@@ -156,6 +156,10 @@ static kthread_t* worker = NULL;
 static int net_started = 0;
 static dcnow_device_t active_device = DCNOW_DEV_NONE;
 static dcnow_network_t active_network = DCNOW_NET_DCNOW;
+/* Whether the attempt active_network reflects was a full connect or a quick
+ * switch, so Retry after a failed or canceled one redoes the same kind
+ * instead of a switch's failure turning into a full connect attempt. */
+static int active_was_switch = 0;
 static uint64_t hangup_time = 0; /* guarded by status_mutex */
 
 typedef enum worker_job { JOB_CONNECT, JOB_HANGUP, JOB_AUTOSTART, JOB_LOST, JOB_SWITCH } worker_job_t;
@@ -671,6 +675,7 @@ run_autostart(void) {
 
     /* Auto-Connect never asks which network to use, so it always dials DC Now. */
     active_network = DCNOW_NET_DCNOW;
+    active_was_switch = 0;
     active_device = dcnow_detect_device();
     if (active_device == DCNOW_DEV_NONE) {
         status_reset(DCNOW_CONN_IDLE);
@@ -743,6 +748,7 @@ dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp, dcnow_network_t net
 
     active_device = dev;
     active_network = dev == DCNOW_DEV_MODEM ? network : DCNOW_NET_DCNOW;
+    active_was_switch = 0;
     worker_job = JOB_CONNECT;
     cancel_requested = 0;
     status_reset(DCNOW_CONN_CONNECTING);
@@ -770,6 +776,7 @@ dcnow_conn_switch(dcnow_device_t dev, dcnow_network_t network) {
 
     active_device = dev;
     active_network = network;
+    active_was_switch = 1;
     worker_job = JOB_SWITCH;
     cancel_requested = 0;
     status_reset(DCNOW_CONN_CONNECTING);
@@ -815,6 +822,11 @@ dcnow_conn_isp(dcnow_isp_t* out) {
 dcnow_network_t
 dcnow_conn_network(void) {
     return active_network;
+}
+
+int
+dcnow_conn_was_switch(void) {
+    return active_was_switch;
 }
 
 void

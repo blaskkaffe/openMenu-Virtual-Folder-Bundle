@@ -65,8 +65,7 @@ build_info(void) {
 
     switch (device) {
         case DCNOW_DEV_MODEM: {
-            /* Reflects whichever network was last selected: the two Connect
-             * options below dial different numbers with different logins. */
+            /* Reflects whichever network was last connected or switched to. */
             dcnow_network_t net = dcnow_conn_network();
             const char* phone;
             const char* login;
@@ -102,23 +101,29 @@ build_info(void) {
 }
 
 /* Options offered below the status lines, by connection state */
-#define OPT_CONNECT       0
-#define OPT_CANCEL        1
-#define OPT_RETRY         2
-#define OPT_DISCONNECT    3
-#define OPT_CLOSE         4
-#define OPT_REFRESH       5
-#define OPT_CONNECT_DCNET 6
-#define OPT_SWITCH_DCNOW  7
-#define OPT_SWITCH_DCNET  8
+#define OPT_CONNECT      0
+#define OPT_CANCEL       1
+#define OPT_RETRY        2
+#define OPT_DISCONNECT   3
+#define OPT_CLOSE        4
+#define OPT_REFRESH      5
+#define OPT_SWITCH_DCNOW 6
+#define OPT_SWITCH_DCNET 7
+#define OPT_SOURCE_DC99  8
+#define OPT_SOURCE_DCNOW 9
 
-static const char* option_text[] = {"Connect: DC Now", "Cancel",         "Retry",          "Disconnect",   "Close",
-                                    "Refresh",         "Connect: DCNet", "Switch: DC Now", "Switch: DCNet"};
+static const char* option_text[] = {"Connect: DC Now", "Cancel",        "Retry",          "Disconnect",
+                                    "Close",           "Refresh",       "Switch: DC Now", "Switch: DCNet",
+                                    "DC99 Players",    "DC Now Players"};
 
 static dcnow_status_t status;
 static int options[6];
 static int option_count = 0;
 static int probe_frames = 0; /* frames left before the device probe runs */
+
+/* Which source the next (and, once toggled, every following) fetch asks for.
+ * Refresh reuses it; the DC99/DC Now Players options switch it. */
+static dcnow_fetch_source_t current_source = DCNOW_FETCH_SRC_DCNOW_ONLY;
 
 /* The player list and the fetch state as the window saw them last frame */
 static dcnow_fetch_status_t fetch;
@@ -153,7 +158,6 @@ build_options(void) {
             if (device == DCNOW_DEV_MODEM) {
                 options[option_count++] = OPT_CONNECT;
                 options[option_count++] = OPT_SWITCH_DCNOW;
-                options[option_count++] = OPT_CONNECT_DCNET;
                 options[option_count++] = OPT_SWITCH_DCNET;
             }
             options[option_count++] = OPT_CLOSE;
@@ -170,6 +174,12 @@ build_options(void) {
             } else if (fetch.state != DCNOW_FETCH_RUNNING || have_list) {
                 options[option_count++] = OPT_REFRESH;
             }
+            /* dc99.net is reachable over any real internet connection (DC
+             * Now or an adapter), so this isn't modem-only like Switch. */
+            if (!(fetch.state == DCNOW_FETCH_RUNNING && !have_list)) {
+                options[option_count++] =
+                    current_source == DCNOW_FETCH_SRC_DC99_COMBINED ? OPT_SOURCE_DCNOW : OPT_SOURCE_DC99;
+            }
             if (device == DCNOW_DEV_MODEM && !(fetch.state == DCNOW_FETCH_RUNNING && !have_list)) {
                 options[option_count++] = OPT_DISCONNECT;
             }
@@ -185,7 +195,6 @@ build_options(void) {
             if (status.cooldown_seconds == 0) {
                 options[option_count++] = OPT_CONNECT;
                 options[option_count++] = OPT_SWITCH_DCNOW;
-                options[option_count++] = OPT_CONNECT_DCNET;
                 options[option_count++] = OPT_SWITCH_DCNET;
             }
             options[option_count++] = OPT_CLOSE;
@@ -303,12 +312,12 @@ start_switch(dcnow_network_t network) {
     }
 }
 
-/* The player list always matches whichever network the engine is currently
- * connected through (DC Now for an adapter, DC Now or DCNet for a modem). */
+/* Fetches whichever source is currently selected (current_source), toggled
+ * by the DC99/DC Now Players options. */
 static void
 start_fetch(void) {
     last_fetch_started = timer_ms_gettime64();
-    dcnow_fetch_start(dcnow_conn_network());
+    dcnow_fetch_start(current_source);
     dcnow_fetch_poll(&fetch);
     build_options();
 }
@@ -337,31 +346,41 @@ format_clock(char* out, size_t out_len, time_t when) {
 static void
 summary_line(char* out, size_t out_len) {
     char when[16];
-    const char* net_name = fetch.network == DCNOW_NET_DCNET ? "DCNet" : "DC Now";
+    const char* src_name = fetch.source == DCNOW_FETCH_SRC_DC99_COMBINED ? "dc99.net" : "DC Now";
 
     format_clock(when, sizeof(when), fetch.updated);
     if (fetch.state == DCNOW_FETCH_RUNNING) {
-        snprintf(out, out_len, "Refreshing %s player list...", net_name);
+        snprintf(out, out_len, "Refreshing %s player list...", src_name);
     } else if (fetch.state == DCNOW_FETCH_FAILED) {
         snprintf(out, out_len, "Refresh failed, showing the %s list.", when);
     } else if (list_total == 0) {
-        snprintf(out, out_len, "No players on %s (updated %s)", net_name, when);
+        snprintf(out, out_len, "No players on %s (updated %s)", src_name, when);
     } else if (list_total == 1) {
-        snprintf(out, out_len, "1 player on %s (updated %s)", net_name, when);
+        snprintf(out, out_len, "1 player on %s (updated %s)", src_name, when);
     } else {
-        snprintf(out, out_len, "%d players on %s (updated %s)", list_total, net_name, when);
+        snprintf(out, out_len, "%d players on %s (updated %s)", list_total, src_name, when);
     }
 }
 
 /* One list row: country, name, title, cut with "..." past the column widths.
  * A name keeps 20 columns, a title 24, one less when the scrollbar takes the
- * last one. A player without a game shows "(Idle)". */
+ * last one. A player without a game shows "(Idle)". show_source prefixes the
+ * name with which network the player is on ("N " DC Now, "T " DCNet), for
+ * the combined dc99.net list where that's otherwise not visible. */
 static void
-list_row(const dcnow_player_t* p, char* name, size_t name_len, char* title, size_t title_len, int title_max) {
-    if (strlen(p->name) > 20) {
-        snprintf(name, name_len, "%.17s...", p->name);
+list_row(const dcnow_player_t* p, char* name, size_t name_len, char* title, size_t title_len, int title_max,
+         int show_source) {
+    char tagged[DCNOW_NAME_LEN + 2];
+    const char* full_name = p->name;
+
+    if (show_source) {
+        snprintf(tagged, sizeof(tagged), "%s %s", p->network == DCNOW_NET_DCNET ? "T" : "N", p->name);
+        full_name = tagged;
+    }
+    if (strlen(full_name) > 20) {
+        snprintf(name, name_len, "%.17s...", full_name);
     } else {
-        snprintf(name, name_len, "%s", p->name);
+        snprintf(name, name_len, "%s", full_name);
     }
     const char* text = p->title[0] != '\0' ? p->title : "(Idle)";
     if ((int)strlen(text) > title_max) {
@@ -501,20 +520,16 @@ option_accept(void) {
                 start_connection(DCNOW_NET_DCNOW);
             }
             break;
-        case OPT_CONNECT_DCNET:
-            if (status.state == DCNOW_CONN_ONLINE) {
-                start_fetch();
-            } else {
-                start_connection(DCNOW_NET_DCNET);
-            }
-            break;
         case OPT_SWITCH_DCNOW: start_switch(DCNOW_NET_DCNOW); break;
         case OPT_SWITCH_DCNET: start_switch(DCNOW_NET_DCNET); break;
         case OPT_RETRY:
             if (status.state == DCNOW_CONN_ONLINE) {
                 start_fetch();
+            } else if (dcnow_conn_was_switch()) {
+                /* Retries the same switch, not a full connect to the same network. */
+                start_switch(dcnow_conn_network());
             } else {
-                /* Retries whichever network the failed or canceled attempt used. */
+                /* Retries whichever network the failed or canceled connect used. */
                 start_connection(dcnow_conn_network());
             }
             break;
@@ -522,6 +537,14 @@ option_accept(void) {
             if (fetch.state != DCNOW_FETCH_RUNNING) {
                 start_fetch();
             }
+            break;
+        case OPT_SOURCE_DC99:
+            current_source = DCNOW_FETCH_SRC_DC99_COMBINED;
+            start_fetch();
+            break;
+        case OPT_SOURCE_DCNOW:
+            current_source = DCNOW_FETCH_SRC_DCNOW_ONLY;
+            start_fetch();
             break;
         case OPT_CANCEL: dcnow_conn_cancel(); break;
         case OPT_DISCONNECT:
@@ -832,7 +855,8 @@ draw_dcnow_tr(void) {
                 char title[32];
                 const int row = list_scroll + i;
 
-                list_row(&list[row], name, sizeof(name), title, sizeof(title), list_count > rows ? 23 : 24);
+                list_row(&list[row], name, sizeof(name), title, sizeof(title), list_count > rows ? 23 : 24,
+                         fetch.source == DCNOW_FETCH_SRC_DC99_COMBINED);
                 snprintf(line_buf, sizeof(line_buf), "%-2s %-*s %s", list[row].country, list_count > rows ? 23 : 24,
                          title, name);
                 font_bmp_set_color(row == focus ? highlight_color : text_color);
@@ -898,7 +922,8 @@ draw_dcnow_tr(void) {
                 const int row = list_scroll + i;
                 const uint32_t color = row == focus ? highlight_color : text_color;
 
-                list_row(&list[row], name, sizeof(name), title, sizeof(title), list_count > rows ? 23 : 24);
+                list_row(&list[row], name, sizeof(name), title, sizeof(title), list_count > rows ? 23 : 24,
+                         fetch.source == DCNOW_FETCH_SRC_DC99_COMBINED);
                 /* The BMF drawer reads past an empty string, so a missing
                  * country draws nothing in its column. */
                 if (list[row].country[0] != '\0') {
