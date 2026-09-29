@@ -446,7 +446,7 @@ dcnow_vmu_tick(void) {
     if (status.state == DCNOW_CONN_ONLINE && fetch.state != DCNOW_FETCH_RUNNING
         && timer_ms_gettime64() - last_fetch_started >= (uint64_t)dcnow_refresh_seconds(sf_dcnow_refresh[0]) * 1000) {
         last_fetch_started = timer_ms_gettime64();
-        dcnow_fetch_start();
+        dcnow_fetch_start(dcnow_conn_network());
     }
 
     /* The library does not repaint the logo while the app owns the LCD, so
