@@ -36,32 +36,30 @@ typedef struct dcnow_isp {
 #define DCNOW_DIAL_LOGIN         "openMenu"
 #define DCNOW_DIAL_PASSWORD      "openMenu"
 
-/* What the modem dials to select DCNet, through the DreamPiAutoToggle
- * add-on. Used plain for a full DCNet connect (dcnow_dial_credentials()),
- * and with a trailing '#' appended for the quick Switch action (dial and
- * hang up, see dcnow_conn_switch()): there is no full DCNet connect from
- * openMenu today, since DCNet is meant to be dialed out to from within a
- * game after switching, not browsed from this menu the way DC Now is.
- * Without the add-on installed, DreamPi's own netlink.py treats this like
- * any other number and connects through DC Now instead, so dialing it is
- * always safe. DCNET_DIAL_LOGIN/PASSWORD are Flycast's published default
- * DCNet ISP account (flycast1/flycast2, password "password"), kept here in
- * case a full DCNet connect is ever added back; dcnow_dial_credentials()
+/* What the modem would dial for a full DCNet connect
+ * (dcnow_dial_credentials()); there is no such connect from openMenu today,
+ * since DCNet is meant to be dialed out to from within a game after
+ * switching (see DCNET_SWITCH_DIAL_NUMBER below), not browsed from this menu
+ * the way DC Now is. DCNET_DIAL_LOGIN/PASSWORD are Flycast's published
+ * default DCNet ISP account (flycast1/flycast2, password "password"), kept
+ * here in case a full DCNet connect is ever added back; dcnow_dial_credentials()
  * never hands them to anything today since nothing sets up a DCNet PPP
  * session anymore. */
 #define DCNET_DIAL_NUMBER        "3333333"
 #define DCNET_DIAL_LOGIN         "flycast1"
 #define DCNET_DIAL_PASSWORD      "password"
 
-/* What the modem dials to select DC Now without connecting, through the
- * DreamPiAutoToggle add-on: with a trailing '#' appended (see
- * DCNET_DIAL_NUMBER), this only sets DreamPi's selection back to DC Now, the
- * same way DCNET_DIAL_NUMBER selects DCNet. Unlike DCNOW_DIAL_NUMBER (always
- * DC Now regardless of the current selection), this number only matters
- * with the add-on installed; without it, DreamPi's netlink.py treats it
- * like any other number and connects through DC Now anyway, so dialing it
- * is still safe. */
-#define DCNOW_SWITCH_DIAL_NUMBER "2222222"
+/* What the modem dials to select a network without connecting, through the
+ * DreamPiAutoToggle add-on: this only sets DreamPi's selection, the same way
+ * DCNOW_DIAL_NUMBER always reaches DC Now regardless of the current
+ * selection. Repeated three times for the same reason the old all-one-digit
+ * codes were (DTMF digit loss confirmed on hardware): losing one whole
+ * repeat to a decode hiccup still leaves the other two to be heard. Without
+ * the add-on installed, DreamPi's own netlink.py treats either one like any
+ * other number and connects through DC Now anyway, so dialing them is
+ * always safe. */
+#define DCNOW_SWITCH_DIAL_NUMBER "*21#*21#*21#"
+#define DCNET_SWITCH_DIAL_NUMBER "*23#*23#*23#"
 
 /* Which network a modem dial connects through. Only meaningful for
  * DCNOW_DEV_MODEM; an adapter always reaches DC Now directly. */
@@ -106,12 +104,12 @@ typedef struct dcnow_status {
  * fitted. */
 int dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp, dcnow_network_t network);
 
-/* Dials network's select number with a trailing '#' (2222222# for DC Now,
- * 3333333# for DCNet) and hangs up shortly after, without ever waiting for a
- * carrier: a patched DreamPiAutoToggle add-on's routing hook records the
- * selection from the digits and, seeing the '#', stops there instead of
- * going on to answer the call. Only meaningful over a modem. Returns 0 when
- * started, -1 when busy, already online, or dev isn't DCNOW_DEV_MODEM. */
+/* Dials network's select number (DCNOW_SWITCH_DIAL_NUMBER or
+ * DCNET_SWITCH_DIAL_NUMBER) and hangs up shortly after, without ever waiting
+ * for a carrier: a patched DreamPiAutoToggle add-on's routing hook records
+ * the selection from the digits and stops there instead of going on to
+ * answer the call. Only meaningful over a modem. Returns 0 when started, -1
+ * when busy, already online, or dev isn't DCNOW_DEV_MODEM. */
 int dcnow_conn_switch(dcnow_device_t dev, dcnow_network_t network);
 
 /* Longest number dcnow_conn_dial_custom() accepts, including the terminator -
@@ -130,6 +128,13 @@ int dcnow_conn_dial_custom(dcnow_device_t dev, const char* number);
  * For the boot-time Auto-Connect, where no frame may stall. Always dials
  * DC Now: Auto-Connect has no way to ask the player which network to use. */
 void dcnow_conn_autostart(void);
+
+/* The boot-time start for Auto DCNet/Auto DCNow!: dials network's select
+ * number, hangs up, waits out DreamPi's cooldown, then connects the same way
+ * dcnow_conn_autostart() does (always DCNOW_DIAL_NUMBER - the switch is what
+ * tells DreamPi which network that now reaches). An adapter has nothing to
+ * switch, so it just connects directly, the same as dcnow_conn_autostart(). */
+void dcnow_conn_autostart_switch(dcnow_network_t network);
 
 /* The probed device without probing: DCNOW_DEV_NONE until the probe has run. */
 dcnow_device_t dcnow_device_hint(void);

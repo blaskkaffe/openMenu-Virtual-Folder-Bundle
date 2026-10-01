@@ -311,7 +311,8 @@ static const char* serial_vmu_choice_text[] = {"Off",     "On (A1)", "On (A2)", 
 static const char* serial_vmu_multislot_choice_text[] = {"Off", "On"};
 static const char* vm2_send_all_choice_text[] = {"Send to All", "Send to First", "Off"};
 static const char* boot_mode_choice_text[] = {"Full Boot", "License Only", "Animation Only", "Fast Boot"};
-static const char* dcnow_choice_text[] = {"Off", "On (Manual Connect)", "On (Auto-Connect)"};
+static const char* dcnow_choice_text[] = {"Off", "On (Manual Connect)", "On (Auto-Connect)", "On (Auto DCNet)",
+                                          "On (Auto DCNow!)"};
 static const char* dcnow_refresh_choice_text[] = {"Off",        "10 seconds", "20 seconds",
                                                   "30 seconds", "45 seconds", "60 seconds"};
 static const char* dcnow_vmu_choice_text[] = {"Off", "On"};
@@ -1344,12 +1345,30 @@ menu_cb_next(void) {
  * path as the DC Now! window's own Switch buttons (dcnow_conn_switch()),
  * just reached from this quicker menu instead of opening that window. A
  * non-modem device (BBA/LAN, or none detected) has nothing to switch, so
- * this silently does nothing then. */
+ * this silently does nothing then.
+ *
+ * Unlike the DC Now! window's own Switch buttons (never offered while
+ * online, since that window's options don't include them then), this one is
+ * reachable from the game list regardless of what's running in the
+ * background, so a DC Now! or DCNET session can already be up. There is no
+ * way to dial a new number without hanging that up first, and DreamPi then
+ * needs its usual cooldown before it will answer again - this is the actual
+ * reason a switch from here can take several seconds, not something to
+ * shortcut around. */
 static void
 run_switch_network(dcnow_network_t network) {
-    if (dcnow_detect_device() == DCNOW_DEV_MODEM && dcnow_conn_switch(DCNOW_DEV_MODEM, network) == 0) {
-        dcnow_status_t switch_status;
+    dcnow_status_t switch_status;
 
+    dcnow_conn_poll(&switch_status);
+    if (switch_status.state == DCNOW_CONN_ONLINE || switch_status.state == DCNOW_CONN_CONNECTING) {
+        dcnow_conn_disconnect();
+        do {
+            thd_sleep(50);
+            dcnow_conn_poll(&switch_status);
+        } while (switch_status.state != DCNOW_CONN_IDLE || switch_status.cooldown_seconds > 0);
+    }
+
+    if (dcnow_detect_device() == DCNOW_DEV_MODEM && dcnow_conn_switch(DCNOW_DEV_MODEM, network) == 0) {
         do {
             thd_sleep(50);
             dcnow_conn_poll(&switch_status);

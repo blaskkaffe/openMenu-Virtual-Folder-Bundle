@@ -162,7 +162,18 @@ static uint64_t hangup_time = 0; /* guarded by status_mutex */
 /* The number for JOB_DIAL_CUSTOM, copied in before the worker starts. */
 static char custom_dial_number[DCNOW_CUSTOM_NUMBER_LEN];
 
-typedef enum worker_job { JOB_CONNECT, JOB_HANGUP, JOB_AUTOSTART, JOB_LOST, JOB_SWITCH, JOB_DIAL_CUSTOM } worker_job_t;
+/* The network for JOB_AUTOSTART_SWITCH, copied in before the worker starts. */
+static dcnow_network_t autostart_switch_network = DCNOW_NET_DCNOW;
+
+typedef enum worker_job {
+    JOB_CONNECT,
+    JOB_HANGUP,
+    JOB_AUTOSTART,
+    JOB_LOST,
+    JOB_SWITCH,
+    JOB_DIAL_CUSTOM,
+    JOB_AUTOSTART_SWITCH
+} worker_job_t;
 
 static worker_job_t worker_job = JOB_CONNECT;
 
@@ -549,24 +560,19 @@ run_modem(void) {
     status_set_state(DCNOW_CONN_ONLINE, 0);
 }
 
-/* Dials the network's select number with a trailing '#' and hangs up
- * shortly after, without waiting for a carrier. DreamPiAutoToggle's own
- * README documents 2222222/3333333 as real connect numbers ("selects
- * DCNow!/DCNET and connects to it"), meant to be dialed the way an ISP
- * config would; a patched DreamPiAutoToggle treats a trailing '#' as asking
- * to record the selection and stop there, so it never goes on to answer the
- * call the way it otherwise would. Without that: confirmed on hardware that
- * DreamPi still goes on to spend several seconds prepping its modem and
- * retries ATA against an already-dead line for a full 60 seconds before
- * giving up, leaving its modem unusable the whole time. For switching the
- * network before launching a game that dials out on its own, not for the
- * player list here (which still needs a real connection). */
+/* Dials the network's select number and hangs up shortly after, without
+ * waiting for a carrier. A patched DreamPiAutoToggle records the selection
+ * from the digits and stops there, so it never goes on to answer the call
+ * the way it would for a real connect number. Without that: confirmed on
+ * hardware that DreamPi still goes on to spend several seconds prepping its
+ * modem and retries ATA against an already-dead line for a full 60 seconds
+ * before giving up, leaving its modem unusable the whole time. For
+ * switching the network before launching a game that dials out on its own,
+ * not for the player list here (which still needs a real connection). */
 static void
 run_switch(void) {
-    const char* number = active_network == DCNOW_NET_DCNET ? DCNET_DIAL_NUMBER : DCNOW_SWITCH_DIAL_NUMBER;
-    char dial_number[16];
+    const char* dial_number = active_network == DCNOW_NET_DCNET ? DCNET_SWITCH_DIAL_NUMBER : DCNOW_SWITCH_DIAL_NUMBER;
 
-    snprintf(dial_number, sizeof(dial_number), "%s#", number);
     modem_was_used = 1;
     status_set_state(DCNOW_CONN_CONNECTING, 1);
     if (!dial_out(dial_number)) {
@@ -715,6 +721,53 @@ run_autostart(void) {
     }
 }
 
+/* Auto DCNet/Auto DCNow!: dials autostart_switch_network's select number,
+ * hangs up, waits out DreamPi's post-hangup cooldown, then connects exactly
+ * like Auto-Connect - which always dials DCNOW_DIAL_NUMBER, since the switch
+ * just told DreamPi which network that number should now route through. An
+ * adapter has nothing to switch (DreamPi-specific), so it just does a plain
+ * Auto-Connect. */
+static void
+run_autostart_switch(void) {
+    dcnow_isp_t isp;
+    const char* switch_number =
+        autostart_switch_network == DCNOW_NET_DCNET ? DCNET_SWITCH_DIAL_NUMBER : DCNOW_SWITCH_DIAL_NUMBER;
+
+    active_network = DCNOW_NET_DCNOW;
+    active_was_switch = 0;
+    active_device = dcnow_detect_device();
+    if (active_device == DCNOW_DEV_NONE) {
+        status_reset(DCNOW_CONN_IDLE);
+        return;
+    }
+    dcnow_read_isp(&isp);
+    take_isp(&isp);
+    if (active_device != DCNOW_DEV_MODEM) {
+        run_adapter();
+        return;
+    }
+
+    modem_was_used = 1;
+    status_set_state(DCNOW_CONN_CONNECTING, 1);
+    if (!dial_out(switch_number)) {
+        return;
+    }
+    thd_sleep(DCNOW_SWITCH_SETTLE_MS);
+    status_push("Switching network...", 0);
+    modem_hangup();
+    status_replace(status_last_index(), "Switching network... OK");
+    if (cancel_now(0)) {
+        return;
+    }
+    status_push("Waiting for DreamPi to reset...", 1);
+    thd_sleep(DCNOW_COOLDOWN_MS);
+    if (cancel_now(0)) {
+        return;
+    }
+    status_replace(status_last_index(), "Waiting for DreamPi to reset... OK");
+    run_modem();
+}
+
 /* The carrier went away under a live link. Tears it down without the LCP
  * request, which has nobody to hear it. */
 static void
@@ -737,6 +790,7 @@ worker_main(void* param) {
         case JOB_LOST: run_lost(); break;
         case JOB_SWITCH: run_switch(); break;
         case JOB_DIAL_CUSTOM: run_dial_custom(); break;
+        case JOB_AUTOSTART_SWITCH: run_autostart_switch(); break;
         default:
             if (active_device == DCNOW_DEV_MODEM) {
                 run_modem();
@@ -851,6 +905,29 @@ dcnow_conn_autostart(void) {
     }
     finish_worker();
     worker_job = JOB_AUTOSTART;
+    cancel_requested = 0;
+    status_reset(DCNOW_CONN_CONNECTING);
+    worker = thd_create(false, worker_main, NULL);
+    if (worker == NULL) {
+        fail("Network did not start (net -1).", NULL);
+    }
+}
+
+/* Auto DCNet/Auto DCNow!'s boot-time start: switches network before
+ * connecting, see run_autostart_switch(). Same shape as
+ * dcnow_conn_autostart(), which it's used in place of for those two
+ * settings. */
+void
+dcnow_conn_autostart_switch(dcnow_network_t network) {
+    dcnow_status_t snap;
+
+    dcnow_conn_poll(&snap);
+    if (snap.state != DCNOW_CONN_IDLE) {
+        return;
+    }
+    finish_worker();
+    autostart_switch_network = network;
+    worker_job = JOB_AUTOSTART_SWITCH;
     cancel_requested = 0;
     status_reset(DCNOW_CONN_CONNECTING);
     worker = thd_create(false, worker_main, NULL);

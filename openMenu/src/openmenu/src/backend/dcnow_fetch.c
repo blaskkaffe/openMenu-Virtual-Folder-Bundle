@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include <arch/rtc.h>
@@ -35,8 +36,9 @@
  * full per-user game history under dreampi, dcnet.games, dcnet.users), so
  * it's larger than dreamcast.online's own feed; DCNOW_BODY_MAX has room for
  * the sample this was checked against, but a very busy DreamPi could outgrow
- * it, in which case parse_dc99_combined() fails closed rather than showing a
- * wrong list. */
+ * it, in which case parse_dc99_combined() reports this fetch as failed
+ * rather than showing a wrong list - dreamcast.online's own feed, fetched
+ * separately, is unaffected either way. */
 #define DC99_HOST             "dc99.net"
 #define DC99_PATH             "/online/dcnet_status.php"
 #define DCNOW_BODY_MAX        98304
@@ -44,14 +46,10 @@
 #define DCNOW_GET_TIMEOUT_MS  60000
 
 static mutex_t fetch_mutex = MUTEX_INITIALIZER;
-static dcnow_fetch_status_t fetch = {DCNOW_FETCH_IDLE, -1, 0, {{0}}, 0, 0, 0, 0, 0, 0, DCNOW_FETCH_SRC_DCNOW_ONLY};
+static dcnow_fetch_status_t fetch = {DCNOW_FETCH_IDLE, -1, 0, {{0}}, 0, 0, 0, 0, 0, 0};
 static dcnow_player_t players[DCNOW_PLAYER_MAX];
 static kthread_t* fetch_worker = NULL;
 static volatile int abort_requested = 0;
-/* The source the running (or most recently started) fetch is for. Set by
- * dcnow_fetch_start() before the worker starts, the same way dcnow_net.c
- * hands active_device/worker_job to its worker. */
-static dcnow_fetch_source_t fetch_source = DCNOW_FETCH_SRC_DCNOW_ONLY;
 
 /* The worker's own buffers. */
 static char body[DCNOW_BODY_MAX + 1];
@@ -443,12 +441,17 @@ json_dcnet_player(const char* p, dcnow_player_t* out) {
 }
 
 /* Appends dc99.net's dreampi.users (online-filtered, DC Now) into parsed[]
- * starting at *count, counting every online entry in *total. Returns 1 when
- * the section was found and fully read (even if it added zero players), 0
- * when the section is simply missing (not an error - the dcnet section can
- * still stand alone), or -1 when it was found but malformed. */
+ * starting at *count, counting every online entry not already in
+ * parsed[0..known_dcnow_count) in *total. known_dcnow_count is how many DC
+ * Now players dreamcast.online's own feed already contributed to parsed[]
+ * before this ran (0 if that fetch failed or found none): dc99.net mirrors
+ * the same DC Now presence, so a name already there is the same player
+ * heard twice, not a second one. Returns 1 when the section was found and
+ * fully read (even if it added zero players), 0 when the section is simply
+ * missing (not an error - the dcnet section can still stand alone), or -1
+ * when it was found but malformed. */
 static int
-append_dc99_dreampi(const char* text, int truncated, int* count, int* total) {
+append_dc99_dreampi(const char* text, int truncated, int* count, int* total, int known_dcnow_count) {
     const char* dreampi = strstr(text, "\"dreampi\"");
     const char* p;
 
@@ -471,15 +474,24 @@ append_dc99_dreampi(const char* text, int truncated, int* count, int* total) {
     while (*p != ']') {
         dcnow_player_t entry;
         int online;
+        int dup = 0;
 
         p = json_user(p, &entry, &online);
         if (p == NULL) {
             return truncated && *count > 0 ? 1 : -1;
         }
         if (online && entry.name[0] != '\0') {
-            (*total)++;
-            if (*count < DCNOW_PLAYER_MAX) {
-                parsed[(*count)++] = entry;
+            for (int i = 0; i < known_dcnow_count; i++) {
+                if (strcasecmp(parsed[i].name, entry.name) == 0) {
+                    dup = 1;
+                    break;
+                }
+            }
+            if (!dup) {
+                (*total)++;
+                if (*count < DCNOW_PLAYER_MAX) {
+                    parsed[(*count)++] = entry;
+                }
             }
         }
         p = json_ws(p);
@@ -552,26 +564,25 @@ append_dc99_dcnet(const char* text, int truncated, int* count, int* total) {
     return 1;
 }
 
-/* Fills parsed[] from dc99.net's dreampi.users (DC Now) and dcnet.players
- * (DCNet) combined, up to the store's size, and counts every player from
- * both in *total. Returns the stored count, or -1 when neither section was
- * found (the feed isn't the shape we expect at all). */
+/* Appends dc99.net's dreampi.users (DC Now, deduped against the
+ * known_dcnow_count players dreamcast.online's own feed already contributed
+ * to parsed[]) and dcnet.players (DCNet) into parsed[]/*count/*total, which
+ * carry over whatever an earlier dreamcast.online fetch already put there.
+ * Returns 0 when at least one section was read (even if it added zero
+ * players), or -1 when neither section was found at all (the feed isn't the
+ * shape we expect) or a section that was found turned out malformed. */
 static int
-parse_dc99_combined(const char* text, int truncated, int* total) {
-    int count = 0;
-    int dreampi_rc;
-    int dcnet_rc;
+parse_dc99_combined(const char* text, int truncated, int* count, int* total, int known_dcnow_count) {
+    int dreampi_rc = append_dc99_dreampi(text, truncated, count, total, known_dcnow_count);
+    int dcnet_rc = append_dc99_dcnet(text, truncated, count, total);
 
-    *total = 0;
-    dreampi_rc = append_dc99_dreampi(text, truncated, &count, total);
-    dcnet_rc = append_dc99_dcnet(text, truncated, &count, total);
     if (dreampi_rc < 0 || dcnet_rc < 0) {
-        return count > 0 ? count : -1;
+        return -1;
     }
     if (dreampi_rc == 0 && dcnet_rc == 0) {
         return -1;
     }
-    return count;
+    return 0;
 }
 
 static void
@@ -589,8 +600,16 @@ publish(int count, int total) {
     mutex_unlock(&fetch_mutex);
 }
 
-static void
-run_fetch(dcnow_fetch_source_t source) {
+/* Fetches path from host into body[], pushing status lines for each step.
+ * Returns the JSON payload (after the blank line separating headers from
+ * body) on success, with *used_out set to how many bytes were read - needed
+ * by the parser's own truncated check. Returns NULL on any failure; the
+ * step that failed is left as the last status line. The caller checks
+ * abort_requested right after this returns to tell a genuine failure (which
+ * it may still recover from if the other host answers) from an abort
+ * (which it must not: everything stops at IDLE instead). */
+static const char*
+fetch_body(const char* host, const char* path, size_t* used_out) {
     struct sockaddr_in addr;
     char request[160];
     char text[DCNOW_STATUS_WIDTH];
@@ -601,13 +620,8 @@ run_fetch(dcnow_fetch_source_t source) {
     int fd;
     int rc;
     int code;
-    int count;
-    int total = 0;
     const char* json;
-    const char* host = source == DCNOW_FETCH_SRC_DC99_COMBINED ? DC99_HOST : DCNOW_HOST;
-    const char* path = source == DCNOW_FETCH_SRC_DC99_COMBINED ? DC99_PATH : DCNOW_PATH;
 
-    fetch_reset(DCNOW_FETCH_RUNNING);
     snprintf(text, sizeof(text), "Fetching player list from %s...", host);
     fetch_push(text, 0);
 
@@ -615,16 +629,11 @@ run_fetch(dcnow_fetch_source_t source) {
     line = fetch_last_index();
     if (!dcnow_resolve(host, 80, &addr)) {
         fetch_replace(line, "Resolving host... Failed");
-        fetch_fail("DNS lookup failed. Check the DNS server.");
-        return;
+        return NULL;
     }
     fetch_replace(line, "Resolving host... OK");
     if (abort_requested) {
-        fetch_reset(DCNOW_FETCH_IDLE);
-        return;
-    }
-    if (source == DCNOW_FETCH_SRC_DCNOW_ONLY) {
-        dcnow_presence_lookup();
+        return NULL;
     }
 
     fetch_push("Connecting to server...", 0);
@@ -632,29 +641,25 @@ run_fetch(dcnow_fetch_source_t source) {
     fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
         fetch_replace(line, "Connecting to server... Failed");
-        fetch_fail("The server refused the connection.");
-        return;
+        return NULL;
     }
     fcntl(fd, F_SETFL, O_NONBLOCK);
     rc = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
     if (rc < 0 && errno != EWOULDBLOCK && errno != EINPROGRESS && errno != EAGAIN) {
         close(fd);
         fetch_replace(line, "Connecting to server... Failed");
-        fetch_fail("The server refused the connection.");
-        return;
+        return NULL;
     }
     deadline = timer_ms_gettime64() + DCNOW_STEP_TIMEOUT_MS;
     rc = wait_socket(fd, POLLWRNORM, deadline);
     if (rc < 0) {
         close(fd);
-        fetch_reset(DCNOW_FETCH_IDLE);
-        return;
+        return NULL;
     }
     if (rc == 0 || (rc & (POLLHUP | POLLERR))) {
         close(fd);
         fetch_replace(line, "Connecting to server... Failed");
-        fetch_fail(rc == 0 ? "The server did not answer in time." : "The server refused the connection.");
-        return;
+        return NULL;
     }
     fetch_replace(line, "Connecting to server... OK");
 
@@ -673,8 +678,7 @@ run_fetch(dcnow_fetch_source_t source) {
             rc = wait_socket(fd, POLLWRNORM, deadline);
             if (rc < 0) {
                 close(fd);
-                fetch_reset(DCNOW_FETCH_IDLE);
-                return;
+                return NULL;
             }
             if (rc > 0) {
                 continue;
@@ -682,8 +686,7 @@ run_fetch(dcnow_fetch_source_t source) {
         }
         close(fd);
         fetch_replace(line, "HTTP GET failed after 60 seconds.");
-        fetch_fail("The server did not answer in time.");
-        return;
+        return NULL;
     }
 
     for (;;) {
@@ -692,14 +695,12 @@ run_fetch(dcnow_fetch_source_t source) {
         rc = wait_socket(fd, POLLRDNORM, deadline);
         if (rc < 0) {
             close(fd);
-            fetch_reset(DCNOW_FETCH_IDLE);
-            return;
+            return NULL;
         }
         if (rc == 0) {
             close(fd);
             fetch_replace(line, "HTTP GET failed after 60 seconds.");
-            fetch_fail("The server did not answer in time.");
-            return;
+            return NULL;
         }
         got = recv(fd, body + used, DCNOW_BODY_MAX - used, 0);
         if (got > 0) {
@@ -718,23 +719,67 @@ run_fetch(dcnow_fetch_source_t source) {
     body[used] = '\0';
 
     if (sscanf(body, "HTTP/%*d.%*d %d", &code) != 1) {
-        fetch_fail("The server answer could not be read.");
-        return;
+        fetch_replace(line, "The server answer could not be read.");
+        return NULL;
     }
     if (code != 200) {
         snprintf(text, sizeof(text), "The server answered with error %d.", code);
-        fetch_fail(text);
-        return;
+        fetch_replace(line, text);
+        return NULL;
     }
     json = strstr(body, "\r\n\r\n");
     if (json == NULL) {
-        fetch_fail("The server answer could not be read.");
+        fetch_replace(line, "The server answer could not be read.");
+        return NULL;
+    }
+    *used_out = used;
+    return json + 4;
+}
+
+/* Fetches both dreamcast.online's own feed and dc99.net's combined one, and
+ * merges them: dc99.net's dreampi section mirrors the same DC Now presence
+ * dreamcast.online reports directly, so a player already added from there
+ * is skipped rather than listed twice (see append_dc99_dreampi()). Either
+ * host failing on its own is not treated as a failure as long as the other
+ * answered; only failing both is. */
+static void
+run_fetch(void) {
+    size_t used1 = 0;
+    size_t used2 = 0;
+    const char* json1;
+    const char* json2;
+    int count = 0;
+    int total = 0;
+    int dcnow_ok = 0;
+    int dc99_ok = 0;
+
+    fetch_reset(DCNOW_FETCH_RUNNING);
+
+    json1 = fetch_body(DCNOW_HOST, DCNOW_PATH, &used1);
+    if (abort_requested) {
+        fetch_reset(DCNOW_FETCH_IDLE);
         return;
     }
-    count = source == DCNOW_FETCH_SRC_DC99_COMBINED ? parse_dc99_combined(json + 4, used == DCNOW_BODY_MAX, &total)
-                                                    : parse_users(json + 4, used == DCNOW_BODY_MAX, &total);
-    if (count < 0) {
-        fetch_fail("The server answer could not be read.");
+    if (json1 != NULL) {
+        int rc = parse_users(json1, used1 == DCNOW_BODY_MAX, &total);
+        if (rc >= 0) {
+            count = rc;
+            dcnow_ok = 1;
+        }
+    }
+    dcnow_presence_lookup();
+
+    json2 = fetch_body(DC99_HOST, DC99_PATH, &used2);
+    if (abort_requested) {
+        fetch_reset(DCNOW_FETCH_IDLE);
+        return;
+    }
+    if (json2 != NULL && parse_dc99_combined(json2, used2 == DCNOW_BODY_MAX, &count, &total, count) == 0) {
+        dc99_ok = 1;
+    }
+
+    if (!dcnow_ok && !dc99_ok) {
+        fetch_fail("Check the network and try again.");
         return;
     }
     publish(count, total);
@@ -743,7 +788,7 @@ run_fetch(dcnow_fetch_source_t source) {
 static void*
 fetch_main(void* param) {
     (void)param;
-    run_fetch(fetch_source);
+    run_fetch();
     return NULL;
 }
 
@@ -756,7 +801,7 @@ join_worker(void) {
 }
 
 void
-dcnow_fetch_start(dcnow_fetch_source_t source) {
+dcnow_fetch_start(void) {
     dcnow_fetch_status_t snap;
 
     dcnow_fetch_poll(&snap);
@@ -765,10 +810,6 @@ dcnow_fetch_start(dcnow_fetch_source_t source) {
     }
     join_worker();
     abort_requested = 0;
-    fetch_source = source;
-    mutex_lock(&fetch_mutex);
-    fetch.source = source;
-    mutex_unlock(&fetch_mutex);
     fetch_reset(DCNOW_FETCH_RUNNING);
     fetch_worker = thd_create(false, fetch_main, NULL);
     if (fetch_worker == NULL) {
