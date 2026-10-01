@@ -114,6 +114,18 @@ int dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp, dcnow_network_t
  * started, -1 when busy, already online, or dev isn't DCNOW_DEV_MODEM. */
 int dcnow_conn_switch(dcnow_device_t dev, dcnow_network_t network);
 
+/* Longest number dcnow_conn_dial_custom() accepts, including the terminator -
+ * generous for any real dial string, the UI's numpad enforces it while typing. */
+#define DCNOW_CUSTOM_NUMBER_LEN 24
+
+/* Dials number (digits, '*' and '#' only - whatever the numpad that builds it
+ * offers) and hangs up shortly after, the same way dcnow_conn_switch() does:
+ * no login is collected for it, so this is for testing that a number dials
+ * cleanly, not for reaching a service. Only meaningful over a modem. Returns
+ * 0 when started, -1 when busy, already online, number is empty, or dev
+ * isn't DCNOW_DEV_MODEM. */
+int dcnow_conn_dial_custom(dcnow_device_t dev, const char* number);
+
 /* Probes the device and reads the ISP settings on the worker, then connects.
  * For the boot-time Auto-Connect, where no frame may stall. Always dials
  * DC Now: Auto-Connect has no way to ask the player which network to use. */

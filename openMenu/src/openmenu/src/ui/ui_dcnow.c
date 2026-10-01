@@ -111,13 +111,14 @@ build_info(void) {
 #define OPT_SWITCH_DCNET 7
 #define OPT_SOURCE_DC99  8
 #define OPT_SOURCE_DCNOW 9
+#define OPT_CUSTOM_DIAL  10
 
-static const char* option_text[] = {"Connect: DC Now", "Cancel",        "Retry",          "Disconnect",
-                                    "Close",           "Refresh",       "Switch: DC Now", "Switch: DCNet",
-                                    "DC99 Players",    "DC Now Players"};
+static const char* option_text[] = {"Connect: DC Now", "Cancel",         "Retry",          "Disconnect",
+                                    "Close",           "Refresh",        "Switch: DC Now", "Switch: DCNet",
+                                    "DC99 Players",    "DC Now Players", "Custom Dial"};
 
 static dcnow_status_t status;
-static int options[6];
+static int options[7];
 static int option_count = 0;
 static int probe_frames = 0; /* frames left before the device probe runs */
 
@@ -136,6 +137,27 @@ static int have_list = 0;  /* a player list has arrived and is still valid */
 static int list_total = 0; /* online players in the feed, the list keeps at most DCNOW_PLAYER_MAX */
 static char focused_name[DCNOW_NAME_LEN];
 static uint64_t last_fetch_started = 0; /* for the Auto-Refresh interval */
+
+/* Custom Dial: a numpad for typing any number, to test whether it dials
+ * cleanly (DreamPi's debug log shows what it heard) rather than to reach a
+ * service - see dcnow_conn_dial_custom(). A uniform 5x3 grid so Up/Down/
+ * Left/Right navigate it the same way regardless of cell; Back/Dial/Close
+ * are just the grid's last row. */
+#define DIALPAD_ROWS 5
+#define DIALPAD_COLS 3
+static const char* const dialpad_keys[DIALPAD_ROWS * DIALPAD_COLS] = {
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#", "Back", "Dial", "Close",
+};
+#define DIALPAD_BACK  12
+#define DIALPAD_DIAL  13
+#define DIALPAD_CLOSE 14
+static int show_dialpad = 0;
+static int dial_focus = 0;
+static char custom_number[DCNOW_CUSTOM_NUMBER_LEN];
+/* Whether the last dial Retry should redo was this custom number rather than
+ * a network, so a Custom Dial failure's Retry doesn't turn into a Connect. */
+static int last_was_custom = 0;
+static char last_custom_number[DCNOW_CUSTOM_NUMBER_LEN];
 
 /* Frames between two accepted presses, the same value as the settings rows. */
 #define DCNOW_INPUT_TIMEOUT 10
@@ -159,6 +181,7 @@ build_options(void) {
                 options[option_count++] = OPT_CONNECT;
                 options[option_count++] = OPT_SWITCH_DCNOW;
                 options[option_count++] = OPT_SWITCH_DCNET;
+                options[option_count++] = OPT_CUSTOM_DIAL;
             }
             options[option_count++] = OPT_CLOSE;
             break;
@@ -196,6 +219,7 @@ build_options(void) {
                 options[option_count++] = OPT_CONNECT;
                 options[option_count++] = OPT_SWITCH_DCNOW;
                 options[option_count++] = OPT_SWITCH_DCNET;
+                options[option_count++] = OPT_CUSTOM_DIAL;
             }
             options[option_count++] = OPT_CLOSE;
             break;
@@ -292,6 +316,7 @@ clamp_list_scroll(void) {
 static void
 start_connection(dcnow_network_t network) {
     if (dcnow_conn_start(device, &isp, network) == 0) {
+        last_was_custom = 0;
         dcnow_conn_poll(&status);
         /* Refreshes the Network/Phone/Login/Password lines for this attempt,
          * since a Retry or a second Connect can switch networks. */
@@ -306,6 +331,21 @@ start_connection(dcnow_network_t network) {
 static void
 start_switch(dcnow_network_t network) {
     if (dcnow_conn_switch(device, network) == 0) {
+        last_was_custom = 0;
+        dcnow_conn_poll(&status);
+        build_info();
+        build_options();
+    }
+}
+
+/* Dials a free-form number typed on the Custom Dial numpad and hangs up
+ * shortly after, to test whether it dials cleanly rather than to reach a
+ * service - see dcnow_conn_dial_custom(). */
+static void
+start_dial_custom(const char* number) {
+    if (dcnow_conn_dial_custom(device, number) == 0) {
+        snprintf(last_custom_number, sizeof(last_custom_number), "%s", number);
+        last_was_custom = 1;
         dcnow_conn_poll(&status);
         build_info();
         build_options();
@@ -410,6 +450,7 @@ dcnow_setup(enum draw_state* state, theme_color* _colors, int* timeout_ptr, uint
     option_count = 0;
     focus = 0;
     list_scroll = 0;
+    show_dialpad = 0;
     dcnow_fetch_poll(&fetch);
     if (fetch.generation != list_generation) {
         take_list();
@@ -522,9 +563,17 @@ option_accept(void) {
             break;
         case OPT_SWITCH_DCNOW: start_switch(DCNOW_NET_DCNOW); break;
         case OPT_SWITCH_DCNET: start_switch(DCNOW_NET_DCNET); break;
+        case OPT_CUSTOM_DIAL:
+            show_dialpad = 1;
+            dial_focus = 0;
+            custom_number[0] = '\0';
+            break;
         case OPT_RETRY:
             if (status.state == DCNOW_CONN_ONLINE) {
                 start_fetch();
+            } else if (last_was_custom) {
+                /* Retries the same number, not a connect to a network. */
+                start_dial_custom(last_custom_number);
             } else if (dcnow_conn_was_switch()) {
                 /* Retries the same switch, not a full connect to the same network. */
                 start_switch(dcnow_conn_network());
@@ -563,9 +612,97 @@ option_accept(void) {
     }
 }
 
+/* Moves dial_focus within the 5x3 grid, wrapping on every edge. */
+static void
+move_dial_focus(int d_row, int d_col) {
+    int row = dial_focus / DIALPAD_COLS;
+    int col = dial_focus % DIALPAD_COLS;
+
+    row = (row + d_row + DIALPAD_ROWS) % DIALPAD_ROWS;
+    col = (col + d_col + DIALPAD_COLS) % DIALPAD_COLS;
+    dial_focus = row * DIALPAD_COLS + col;
+}
+
+/* Input while the Custom Dial numpad is up, in place of the normal list and
+ * options. Close (B/Start or the grid's Close cell) goes back to the window
+ * underneath rather than leaving it, the way option_accept()'s own OPT_CLOSE
+ * does for the window itself. */
+static void
+handle_input_dialpad(enum control input) {
+    size_t len;
+
+    if (mouse_command && mouse_command_signature != dcnow_mouse_signature()) {
+        input = NONE;
+    }
+    mouse_command = false;
+
+    switch (input) {
+        case LEFT:
+            if (*input_timeout_ptr > 0) {
+                break;
+            }
+            move_dial_focus(0, -1);
+            *input_timeout_ptr = DCNOW_INPUT_TIMEOUT;
+            break;
+        case RIGHT:
+            if (*input_timeout_ptr > 0) {
+                break;
+            }
+            move_dial_focus(0, 1);
+            *input_timeout_ptr = DCNOW_INPUT_TIMEOUT;
+            break;
+        case UP:
+            if (*input_timeout_ptr > 0) {
+                break;
+            }
+            move_dial_focus(-1, 0);
+            *input_timeout_ptr = DCNOW_INPUT_TIMEOUT;
+            break;
+        case DOWN:
+            if (*input_timeout_ptr > 0) {
+                break;
+            }
+            move_dial_focus(1, 0);
+            *input_timeout_ptr = DCNOW_INPUT_TIMEOUT;
+            break;
+        case A:
+            if (*input_timeout_ptr > 0) {
+                break;
+            }
+            if (dial_focus == DIALPAD_BACK) {
+                len = strlen(custom_number);
+                if (len > 0) {
+                    custom_number[len - 1] = '\0';
+                }
+            } else if (dial_focus == DIALPAD_DIAL) {
+                if (custom_number[0] != '\0') {
+                    show_dialpad = 0;
+                    start_dial_custom(custom_number);
+                }
+            } else if (dial_focus == DIALPAD_CLOSE) {
+                show_dialpad = 0;
+            } else {
+                len = strlen(custom_number);
+                if (len + 1 < sizeof(custom_number)) {
+                    custom_number[len] = dialpad_keys[dial_focus][0];
+                    custom_number[len + 1] = '\0';
+                }
+            }
+            *input_timeout_ptr = DCNOW_INPUT_TIMEOUT;
+            break;
+        case B:
+        case START: show_dialpad = 0; break;
+        default: break;
+    }
+}
+
 void
 handle_input_dcnow(enum control input) {
     if (probe_frames > 0) {
+        return;
+    }
+    if (show_dialpad) {
+        handle_input_dialpad(input);
         return;
     }
 
@@ -741,6 +878,87 @@ draw_detecting(void) {
     }
 }
 
+/* The Custom Dial numpad, replacing the window's own content while up. */
+static void
+draw_dialpad(void) {
+    char number_line[40];
+
+    snprintf(number_line, sizeof(number_line), "Dial: %s", custom_number[0] != '\0' ? custom_number : "(none typed)");
+
+    if (sf_ui[0] == UI_SCROLL || sf_ui[0] == UI_FOLDERS) {
+        const int line_height = 24;
+        const int width = 408;
+        const int pad = 8;
+        const int height = 20 + pad + line_height + pad + 2 + pad + DIALPAD_ROWS * line_height + pad;
+        const int x = (640 / 2) - (width / 2);
+        const int y = (480 / 2) - (height / 2);
+        const int x_item = x + 8;
+        const int sep_y = y + 20 + pad + line_height + pad;
+        const int cell_width = (width - 16) / DIALPAD_COLS;
+        int cur_y;
+
+        draw_popup_menu_ex(x, y, width, height, sf_ui[0]);
+        draw_draw_quad(x, sep_y, width, 2, menu_bkg_border_color);
+
+        font_bmp_begin_draw();
+        font_bmp_set_color(menu_title_color);
+        font_bmp_draw_main(x + width / 2 - (14 * 8 / 2), y + 2, "Dreamcast Now!");
+        font_bmp_set_color(text_color);
+        font_bmp_draw_main(x_item, y + 20 + pad + 4, number_line);
+
+        cur_y = sep_y + 2 + pad;
+        for (int row = 0; row < DIALPAD_ROWS; row++) {
+            for (int col = 0; col < DIALPAD_COLS; col++) {
+                int idx = row * DIALPAD_COLS + col;
+                int cell_x = x_item + col * cell_width;
+                const char* label = dialpad_keys[idx];
+
+                menu_mouse_row(cell_x, cur_y - 4, cell_width, line_height, &dial_focus, idx, A);
+                font_bmp_set_color(idx == dial_focus ? highlight_color : text_color);
+                font_bmp_draw_main(cell_x + cell_width / 2 - (int)strlen(label) * 8 / 2, cur_y, label);
+            }
+            cur_y += line_height;
+        }
+        font_bmp_set_color(text_color);
+    } else {
+        const int line_height = 26;
+        const int width = 484;
+        const int title_height = 28;
+        const int pad = 8;
+        const int height = title_height + pad + line_height + pad + 2 + pad + DIALPAD_ROWS * line_height + pad;
+        const int x = (640 / 2) - (width / 2);
+        const int y = (480 / 2) - (height / 2);
+        const int x_item = x + 4;
+        const int sep_y = y + title_height + pad + line_height + pad;
+        const int cell_width = (width - 8) / DIALPAD_COLS;
+        int cur_y;
+
+        draw_popup_menu_ex(x, y, width, height, sf_ui[0]);
+        draw_draw_quad(x, sep_y, width, 2, menu_bkg_border_color);
+
+        font_bmf_begin_draw();
+        font_bmf_set_height(24.0f);
+        font_bmf_draw(x_item, y + 2, text_color, "Dreamcast Now!");
+        font_bmf_draw(x_item, y + title_height + pad, text_color, number_line);
+
+        cur_y = sep_y + 2 + pad;
+        for (int row = 0; row < DIALPAD_ROWS; row++) {
+            for (int col = 0; col < DIALPAD_COLS; col++) {
+                int idx = row * DIALPAD_COLS + col;
+                int cell_x = x_item + col * cell_width;
+                const char* label = dialpad_keys[idx];
+                float w = font_bmf_text_width(label);
+
+                menu_mouse_row(cell_x, cur_y, cell_width, line_height, &dial_focus, idx, A);
+                font_bmf_draw(cell_x + (int)((float)cell_width / 2.0f - w / 2.0f), cur_y,
+                              idx == dial_focus ? highlight_color : text_color, label);
+            }
+            cur_y += line_height;
+        }
+        font_bmf_set_height_default();
+    }
+}
+
 void
 draw_dcnow_tr(void) {
     char lines[DCNOW_STATUS_LINES][DCNOW_STATUS_WIDTH];
@@ -763,6 +981,10 @@ draw_dcnow_tr(void) {
     }
     if (probe_frames > 0) {
         draw_detecting();
+        return;
+    }
+    if (show_dialpad) {
+        draw_dialpad();
         return;
     }
     dcnow_fetch_poll(&fetch);
@@ -978,7 +1200,9 @@ dcnow_mouse_signature(void) {
                    list_scroll,
                    option_count,
                    info_count,
-                   have_list};
+                   have_list,
+                   show_dialpad,
+                   dial_focus};
     uint32_t hash = menu_mouse_hash(2166136261u, state, sizeof(state));
     return menu_mouse_hash(hash, options, option_count * sizeof(int));
 }

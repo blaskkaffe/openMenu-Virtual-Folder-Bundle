@@ -159,7 +159,10 @@ static dcnow_network_t active_network = DCNOW_NET_DCNOW;
 static int active_was_switch = 0;
 static uint64_t hangup_time = 0; /* guarded by status_mutex */
 
-typedef enum worker_job { JOB_CONNECT, JOB_HANGUP, JOB_AUTOSTART, JOB_LOST, JOB_SWITCH } worker_job_t;
+/* The number for JOB_DIAL_CUSTOM, copied in before the worker starts. */
+static char custom_dial_number[DCNOW_CUSTOM_NUMBER_LEN];
+
+typedef enum worker_job { JOB_CONNECT, JOB_HANGUP, JOB_AUTOSTART, JOB_LOST, JOB_SWITCH, JOB_DIAL_CUSTOM } worker_job_t;
 
 static worker_job_t worker_job = JOB_CONNECT;
 
@@ -577,6 +580,26 @@ run_switch(void) {
     enter_cooldown();
 }
 
+/* Dials custom_dial_number (a free-form number typed on the Custom Dial
+ * numpad) and hangs up shortly after, the same way run_switch() does: no
+ * login is collected for it, so there is nothing to connect for past
+ * confirming the digits went out - useful on its own for testing a number by
+ * ear/DreamPi's debug log, the way the special numbers above were tested. */
+static void
+run_dial_custom(void) {
+    modem_was_used = 1;
+    status_set_state(DCNOW_CONN_CONNECTING, 1);
+    if (!dial_out(custom_dial_number)) {
+        return;
+    }
+
+    thd_sleep(DCNOW_SWITCH_SETTLE_MS);
+    status_push("Dialing complete.", 0);
+    modem_hangup();
+    status_replace(status_last_index(), "Dialing complete. OK");
+    enter_cooldown();
+}
+
 /* Fills in the fixed address before the stack starts, so net_init() skips its
  * DHCP request. */
 static void
@@ -713,6 +736,7 @@ worker_main(void* param) {
         case JOB_AUTOSTART: run_autostart(); break;
         case JOB_LOST: run_lost(); break;
         case JOB_SWITCH: run_switch(); break;
+        case JOB_DIAL_CUSTOM: run_dial_custom(); break;
         default:
             if (active_device == DCNOW_DEV_MODEM) {
                 run_modem();
@@ -780,6 +804,33 @@ dcnow_conn_switch(dcnow_device_t dev, dcnow_network_t network) {
     active_network = network;
     active_was_switch = 1;
     worker_job = JOB_SWITCH;
+    cancel_requested = 0;
+    status_reset(DCNOW_CONN_CONNECTING);
+    worker = thd_create(false, worker_main, NULL);
+    if (worker == NULL) {
+        fail("Network did not start (net -1).", NULL);
+        return -1;
+    }
+    return 0;
+}
+
+int
+dcnow_conn_dial_custom(dcnow_device_t dev, const char* number) {
+    dcnow_status_t snap;
+
+    dcnow_conn_poll(&snap);
+    if (snap.state == DCNOW_CONN_CONNECTING || snap.state == DCNOW_CONN_ONLINE || snap.state == DCNOW_CONN_COOLDOWN
+        || snap.cooldown_seconds > 0) {
+        return -1;
+    }
+    if (dev != DCNOW_DEV_MODEM || number[0] == '\0') {
+        return -1;
+    }
+    finish_worker();
+
+    active_device = dev;
+    snprintf(custom_dial_number, sizeof(custom_dial_number), "%s", number);
+    worker_job = JOB_DIAL_CUSTOM;
     cancel_requested = 0;
     status_reset(DCNOW_CONN_CONNECTING);
     worker = thd_create(false, worker_main, NULL);
