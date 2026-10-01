@@ -20,6 +20,7 @@
 #include <backend/bgm.h>
 #include <backend/boot_defaults.h>
 #include <backend/db_item.h>
+#include <backend/dcnow_net.h>
 #include <backend/gd_item.h>
 #include <backend/gd_list.h>
 #include <backend/gdemu_sdk.h>
@@ -211,17 +212,34 @@ format_game_row(char* out, size_t out_size, const gd_item* item) {
 
 #pragma region CodeBreaker_Menu
 
-/* CodeBreaker menu option strings */
-static const char* cb_option_text[] = {"Launch selected disc with CodeBreaker", "Close"};
+typedef enum CB_OPTION { CB_OPT_SWITCH_DCNET = 0, CB_OPT_SWITCH_DCNOW, CB_OPT_LAUNCH_CB, CB_OPT_CLOSE } CB_OPTION;
+
+/* Options menu strings, indexed by CB_OPTION. */
+static const char* cb_option_text[] = {"Change DreamPi to DCNET", "Change DreamPi to DCNow!",
+                                       "Launch selected disc with CodeBreaker", "Close"};
 
 static int cb_menu_choice = 0;
-#define CB_MENU_NUM_OPTIONS 2
 
-/* Probed when the menu opens. Without PELICAN.BIN the window only shows
- * a notice and a Close button. */
+/* Probed when the menu opens. Without PELICAN.BIN, CB_OPT_LAUNCH_CB is left
+ * out of cb_menu_options rather than shown unusable. */
 static int cb_available = 1;
 
-typedef enum CB_OPTION { CB_OPT_LAUNCH = 0, CB_OPT_CLOSE } CB_OPTION;
+/* Which CB_OPTION each visible row is, built once when the menu opens since
+ * cb_available doesn't change while it's up. CB_OPT_SWITCH_DCNET/DCNOW and
+ * CB_OPT_CLOSE are always present, so this is never empty. */
+static CB_OPTION cb_menu_options[4];
+static int cb_menu_option_count = 0;
+
+static void
+build_cb_menu_options(void) {
+    cb_menu_option_count = 0;
+    cb_menu_options[cb_menu_option_count++] = CB_OPT_SWITCH_DCNET;
+    cb_menu_options[cb_menu_option_count++] = CB_OPT_SWITCH_DCNOW;
+    if (cb_available) {
+        cb_menu_options[cb_menu_option_count++] = CB_OPT_LAUNCH_CB;
+    }
+    cb_menu_options[cb_menu_option_count++] = CB_OPT_CLOSE;
+}
 
 #pragma endregion CodeBreaker_Menu
 
@@ -1291,8 +1309,9 @@ cb_menu_setup(enum draw_state* state, theme_color* _colors, int* timeout_ptr, ui
     menu_title_color = title_color;
 
     cb_available = codebreaker_available();
+    build_cb_menu_options();
 
-    /* Reset selection to first option (Launch) */
+    /* Reset selection to first option */
     cb_menu_choice = 0;
 }
 
@@ -1303,7 +1322,7 @@ menu_cb_prev(void) {
     }
     cb_menu_choice--;
     if (cb_menu_choice < 0) {
-        cb_menu_choice = CB_MENU_NUM_OPTIONS - 1; /* Wrap to last option */
+        cb_menu_choice = cb_menu_option_count - 1; /* Wrap to last option */
     }
     *input_timeout_ptr = INPUT_TIMEOUT;
 }
@@ -1314,18 +1333,46 @@ menu_cb_next(void) {
         return;
     }
     cb_menu_choice++;
-    if (cb_menu_choice >= CB_MENU_NUM_OPTIONS) {
+    if (cb_menu_choice >= cb_menu_option_count) {
         cb_menu_choice = 0; /* Wrap to first option */
     }
     *input_timeout_ptr = INPUT_TIMEOUT;
 }
 
+/* Dials DreamPi's select number for network and hangs up shortly after,
+ * blocking here until that finishes (or fails) - the same dial-and-hang-up
+ * path as the DC Now! window's own Switch buttons (dcnow_conn_switch()),
+ * just reached from this quicker menu instead of opening that window. A
+ * non-modem device (BBA/LAN, or none detected) has nothing to switch, so
+ * this silently does nothing then. */
+static void
+run_switch_network(dcnow_network_t network) {
+    if (dcnow_detect_device() == DCNOW_DEV_MODEM && dcnow_conn_switch(DCNOW_DEV_MODEM, network) == 0) {
+        dcnow_status_t switch_status;
+
+        do {
+            thd_sleep(50);
+            dcnow_conn_poll(&switch_status);
+        } while (switch_status.state == DCNOW_CONN_CONNECTING);
+    }
+}
+
 static void
 menu_cb_accept(void) {
-    CB_OPTION selected = (CB_OPTION)cb_menu_choice;
+    CB_OPTION selected = cb_menu_options[cb_menu_choice];
 
     switch (selected) {
-        case CB_OPT_LAUNCH: start_cb = 1; break;
+        case CB_OPT_SWITCH_DCNET:
+            run_switch_network(DCNOW_NET_DCNET);
+            menu_leave();
+            break;
+
+        case CB_OPT_SWITCH_DCNOW:
+            run_switch_network(DCNOW_NET_DCNOW);
+            menu_leave();
+            break;
+
+        case CB_OPT_LAUNCH_CB: start_cb = 1; break;
 
         case CB_OPT_CLOSE: menu_leave(); break;
 
@@ -1385,12 +1432,6 @@ handle_input_exit(enum control input) {
 
 void
 handle_input_codebreaker(enum control input) {
-    if (!cb_available) {
-        if (input == A || input == B) {
-            menu_leave();
-        }
-        return;
-    }
     switch (input) {
         case UP: menu_cb_prev(); break;
         case DOWN: menu_cb_next(); break;
@@ -2416,42 +2457,13 @@ draw_codebreaker_tr(void) {
         /* Menu size and placement. Width calculated based on actual options */
         const int line_height = 24;
         const int title_gap = 2;
-        const int padding = 16;         /* 8px margin on each side */
-        const int title_width = 10 * 8; /* "Use Cheats" = 10 chars */
-
-        if (!cb_available) {
-            const int content_width = 24 * 8; /* "CodeBreaker not found in" */
-            const int width = (content_width > title_width ? content_width : title_width) + padding;
-            const int height = (4 + 1) * line_height + 4;
-            const int x = (640 / 2) - (width / 2);
-            const int y = (480 / 2) - (height / 2);
-            const int x_item = x + (padding / 2);
-
-            draw_popup_menu(x, y, width, height);
-
-            int cur_y = y + 2;
-            font_bmp_begin_draw();
-            font_bmp_set_color(menu_title_color);
-            font_bmp_draw_main(x + width / 2 - (10 * 8 / 2), cur_y, "Use Cheats");
-
-            cur_y += title_gap;
-            cur_y += line_height;
-            font_bmp_set_color(text_color);
-            font_bmp_draw_main(x_item, cur_y, "CodeBreaker not found in");
-            cur_y += line_height;
-            font_bmp_draw_main(x_item, cur_y, "this openMenu build.");
-            cur_y += line_height; /* blank */
-            cur_y += line_height;
-            font_bmp_set_color(highlight_color);
-            menu_mouse_row(x_item, cur_y, width - 16, 20, NULL, 0, B);
-            font_bmp_draw_main(x_item, cur_y, "Close");
-            return;
-        }
+        const int padding = 16;        /* 8px margin on each side */
+        const int title_width = 7 * 8; /* "Options" = 7 chars */
 
         /* Find the longest option text */
         int max_option_len = 0;
-        for (int i = 0; i < CB_MENU_NUM_OPTIONS; i++) {
-            int len = strlen(cb_option_text[i]);
+        for (int i = 0; i < cb_menu_option_count; i++) {
+            int len = strlen(cb_option_text[cb_menu_options[i]]);
             if (len > max_option_len) {
                 max_option_len = len;
             }
@@ -2460,7 +2472,7 @@ draw_codebreaker_tr(void) {
         /* Width is the larger of title or max option, plus padding */
         const int content_width = max_option_len * 8;
         const int width = (content_width > title_width ? content_width : title_width) + padding;
-        const int height = (CB_MENU_NUM_OPTIONS + 1) * line_height + 4;
+        const int height = (cb_menu_option_count + 1) * line_height + 4;
         const int x = (640 / 2) - (width / 2);
         const int y = (480 / 2) - (height / 2);
         const int x_item = x + (padding / 2);
@@ -2471,10 +2483,10 @@ draw_codebreaker_tr(void) {
         font_bmp_begin_draw();
         font_bmp_set_color(menu_title_color);
 
-        font_bmp_draw_main(x + width / 2 - (10 * 8 / 2), cur_y, "Use Cheats");
+        font_bmp_draw_main(x + width / 2 - (7 * 8 / 2), cur_y, "Options");
 
         cur_y += title_gap;
-        for (int i = 0; i < CB_MENU_NUM_OPTIONS; i++) {
+        for (int i = 0; i < cb_menu_option_count; i++) {
             cur_y += line_height;
             if (i == cb_menu_choice) {
                 font_bmp_set_color(highlight_color);
@@ -2482,7 +2494,7 @@ draw_codebreaker_tr(void) {
                 font_bmp_set_color(text_color);
             }
             menu_mouse_row(x_item, cur_y, width - 16, 20, &cb_menu_choice, i, A);
-            font_bmp_draw_main(x_item, cur_y, cb_option_text[i]);
+            font_bmp_draw_main(x_item, cur_y, cb_option_text[cb_menu_options[i]]);
         }
     } else {
         /* LineDesc/Grid modes. Dynamic menu with larger font */
@@ -2490,37 +2502,10 @@ draw_codebreaker_tr(void) {
         const int title_gap = line_height / 4;
         const int padding = 20;
 
-        if (!cb_available) {
-            const int content_width = 24 * 10; /* "CodeBreaker not found in" */
-            const int title_width = 10 * 10;   /* "Use Cheats" */
-            const int width = (content_width > title_width ? content_width : title_width) + padding;
-            const int height = (4 + 1) * line_height + (line_height / 2);
-            const int x = (640 / 2) - (width / 2);
-            const int y = (480 / 2) - (height / 2);
-            const int x_item = x + 10;
-
-            draw_popup_menu(x, y, width, height);
-
-            int cur_y = y + 2;
-            font_bmf_begin_draw();
-            font_bmf_set_height_default();
-            font_bmf_draw_centered(x + width / 2, cur_y, text_color, "Use Cheats");
-
-            cur_y += title_gap;
-            cur_y += line_height;
-            font_bmf_draw_auto_size(x_item, cur_y, text_color, "CodeBreaker not found in", width - 20);
-            cur_y += line_height;
-            font_bmf_draw_auto_size(x_item, cur_y, text_color, "this openMenu build.", width - 20);
-            cur_y += line_height; /* blank */
-            cur_y += line_height;
-            font_bmf_draw_auto_size(x_item, cur_y, highlight_color, "Close", width - 20);
-            return;
-        }
-
         /* Find the longest option text */
         int max_option_len = 0;
-        for (int i = 0; i < CB_MENU_NUM_OPTIONS; i++) {
-            int len = strlen(cb_option_text[i]);
+        for (int i = 0; i < cb_menu_option_count; i++) {
+            int len = strlen(cb_option_text[cb_menu_options[i]]);
             if (len > max_option_len) {
                 max_option_len = len;
             }
@@ -2528,9 +2513,9 @@ draw_codebreaker_tr(void) {
 
         /* Estimate width based on font (roughly 10-12px per char for bmf font) */
         const int content_width = max_option_len * 10;
-        const int title_width = 10 * 10; /* "Use Cheats" */
+        const int title_width = 7 * 10; /* "Options" */
         const int width = (content_width > title_width ? content_width : title_width) + padding;
-        const int height = (CB_MENU_NUM_OPTIONS + 1) * line_height + (line_height / 2);
+        const int height = (cb_menu_option_count + 1) * line_height + (line_height / 2);
         const int x = (640 / 2) - (width / 2);
         const int y = (480 / 2) - (height / 2);
         const int x_item = x + 10;
@@ -2541,16 +2526,16 @@ draw_codebreaker_tr(void) {
         font_bmf_begin_draw();
         font_bmf_set_height_default();
 
-        font_bmf_draw_centered(x + width / 2, cur_y, text_color, "Use Cheats");
+        font_bmf_draw_centered(x + width / 2, cur_y, text_color, "Options");
 
         cur_y += title_gap;
-        for (int i = 0; i < CB_MENU_NUM_OPTIONS; i++) {
+        for (int i = 0; i < cb_menu_option_count; i++) {
             cur_y += line_height;
             uint32_t temp_color = text_color;
             if (i == cb_menu_choice) {
                 temp_color = highlight_color;
             }
-            font_bmf_draw_auto_size(x_item, cur_y, temp_color, cb_option_text[i], width - 20);
+            font_bmf_draw_auto_size(x_item, cur_y, temp_color, cb_option_text[cb_menu_options[i]], width - 20);
         }
     }
 }

@@ -1168,7 +1168,7 @@ draw_disc_options(void) {
     for (int i = 0; i < count; i++) {
         font_bmp_set_color(i == disc_options.selection ? cur_theme->colors.menu_highlight_color
                                                        : cur_theme->colors.menu_text_color);
-        font_bmp_draw_main(x + 8, y + 28 + i * 24, disc_options.cheats && i == 0 ? "Use Cheats" : "Exit to BIOS");
+        font_bmp_draw_main(x + 8, y + 28 + i * 24, disc_options.cheats && i == 0 ? "Options" : "Exit to BIOS");
     }
 }
 
