@@ -99,17 +99,32 @@ build_info(void) {
 #define OPT_DISCONNECT 3
 #define OPT_CLOSE      4
 #define OPT_REFRESH    5
+#define OPT_NETWORK    6
 
-static const char* option_text[] = {"Connect", "Cancel", "Retry", "Disconnect", "Close", "Refresh"};
+static const char* option_text[] = {"Connect", "Cancel", "Retry", "Disconnect", "Close", "Refresh", "Show: All"};
+
+/* Which network's players the list shows when the DreamPi add-on supplies several. Kept until openMenu restarts. */
+#define NET_ALL   0
+#define NET_DCNOW 1
+#define NET_DCNET 2
+static int net_filter = NET_ALL;
+static const char* net_filter_text[] = {"Show: All", "Show: DCNow!", "Show: DCNET"};
+
+static const char*
+option_label(int option) {
+    return option == OPT_NETWORK ? net_filter_text[net_filter] : option_text[option];
+}
 
 static dcnow_status_t status;
-static int options[6];
+static int options[7];
 static int option_count = 0;
 static int probe_frames = 0; /* frames left before the device probe runs */
 
 /* The player list and the fetch state as the window saw them last frame */
 static dcnow_fetch_status_t fetch;
-static dcnow_player_t list[DCNOW_PLAYER_MAX];
+static dcnow_player_t all_list[DCNOW_PLAYER_MAX]; /* every player of the newest list, before the network filter */
+static int all_count = 0;
+static dcnow_player_t list[DCNOW_PLAYER_MAX];     /* what the window shows */
 static int list_count = 0;
 static int list_generation = -1;
 static int list_scroll = 0;
@@ -125,7 +140,8 @@ static uint64_t last_fetch_started = 0; /* for the Auto-Refresh interval */
 /* Rows of the list that fit above the options. */
 static int
 list_rows(void) {
-    return device == DCNOW_DEV_MODEM ? 5 : 6;
+    /* The network option takes one more line below the list. */
+    return (device == DCNOW_DEV_MODEM ? 5 : 6) - (have_list && fetch.from_pi ? 1 : 0);
 }
 
 /* Rebuilds the option list for the current state. Close is always last. */
@@ -153,6 +169,9 @@ build_options(void) {
                 options[option_count++] = OPT_RETRY;
             } else if (fetch.state != DCNOW_FETCH_RUNNING || have_list) {
                 options[option_count++] = OPT_REFRESH;
+            }
+            if (have_list && fetch.from_pi) {
+                options[option_count++] = OPT_NETWORK;
             }
             if (device == DCNOW_DEV_MODEM && !(fetch.state == DCNOW_FETCH_RUNNING && !have_list)) {
                 options[option_count++] = OPT_DISCONNECT;
@@ -207,6 +226,24 @@ player_order(const void* left, const void* right) {
     return strcasecmp(a->name, b->name);
 }
 
+/* Fills list[] from all_list[] for the chosen network, sorted. */
+static void
+apply_filter(void) {
+    list_count = 0;
+    for (int i = 0; i < all_count; i++) {
+        const char* net = all_list[i].network;
+
+        if (net_filter == NET_DCNOW && strcmp(net, "DCNow!") != 0) {
+            continue;
+        }
+        if (net_filter == NET_DCNET && strcmp(net, "DCNET") != 0) {
+            continue;
+        }
+        list[list_count++] = all_list[i];
+    }
+    qsort(list, (size_t)list_count, sizeof(list[0]), player_order);
+}
+
 /* Copies a newly arrived list, sorted. The first list puts the cursor on its
  * first player. A refresh keeps it on the same player or the same option. */
 static void
@@ -215,8 +252,11 @@ take_list(void) {
     int option_index = focus - previous_list_count;
     int had_list = have_list;
 
-    list_count = dcnow_fetch_copy(list, DCNOW_PLAYER_MAX);
-    qsort(list, (size_t)list_count, sizeof(list[0]), player_order);
+    all_count = dcnow_fetch_copy(all_list, DCNOW_PLAYER_MAX);
+    if (!fetch.from_pi) {
+        net_filter = NET_ALL; /* dreamcast.online only has DCNow! */
+    }
+    apply_filter();
     list_generation = fetch.generation;
     have_list = fetch.list_valid;
     list_total = fetch.online_total;
@@ -307,6 +347,11 @@ summary_line(char* out, size_t out_len) {
         snprintf(out, out_len, "Refreshing player list...");
     } else if (fetch.state == DCNOW_FETCH_FAILED) {
         snprintf(out, out_len, "Refresh failed, showing the %s list.", when);
+    } else if (net_filter != NET_ALL) {
+        const char* net = net_filter == NET_DCNOW ? "DCNow!" : "DCNET";
+
+        snprintf(out, out_len, "%d %s %s online (updated %s)", list_count, net, list_count == 1 ? "player" : "players",
+                 when);
     } else if (list_total == 0) {
         snprintf(out, out_len, "No players online (updated %s)", when);
     } else if (list_total == 1) {
@@ -327,6 +372,13 @@ list_row(const dcnow_player_t* p, char* name, size_t name_len, char* title, size
         snprintf(name, name_len, "%s", p->name);
     }
     const char* text = p->title[0] != '\0' ? p->title : "(Idle)";
+    char tagged[DCNOW_TITLE_LEN + 12];
+
+    /* With every network listed, a player who is not on DCNow! says where. */
+    if (net_filter == NET_ALL && p->network[0] != '\0' && strcmp(p->network, "DCNow!") != 0) {
+        snprintf(tagged, sizeof(tagged), "[%s] %s", p->network, text);
+        text = tagged;
+    }
     if ((int)strlen(text) > title_max) {
         snprintf(title, title_len, "%.*s...", title_max - 3, text);
     } else {
@@ -470,9 +522,20 @@ option_accept(void) {
                 start_fetch();
             }
             break;
+        case OPT_NETWORK: {
+            int index = focus - list_count;
+
+            net_filter = (net_filter + 1) % 3;
+            apply_filter();
+            list_scroll = 0;
+            build_options();
+            focus = list_count + (index < option_count ? index : option_count - 1);
+            break;
+        }
         case OPT_CANCEL: dcnow_conn_cancel(); break;
         case OPT_DISCONNECT:
             dcnow_conn_disconnect();
+            all_count = 0;
             list_count = 0;
             list_total = 0;
             list_generation = -1;
@@ -695,6 +758,7 @@ draw_dcnow_tr(void) {
         build_options();
     }
     if (status.state != DCNOW_CONN_ONLINE && (list_count > 0 || have_list)) {
+        all_count = 0;
         list_count = 0;
         list_total = 0;
         list_generation = -1;
@@ -802,7 +866,7 @@ draw_dcnow_tr(void) {
         for (int i = 0; i < option_count; i++) {
             font_bmp_set_color(list_count + i == focus ? highlight_color : text_color);
             menu_mouse_row(x_item, cur_y, width - 16, 20, &focus, list_count + i, A);
-            font_bmp_draw_main(x_item, cur_y, option_text[options[i]]);
+            font_bmp_draw_main(x_item, cur_y, option_label(options[i]));
             cur_y += line_height;
         }
     } else {
@@ -869,7 +933,7 @@ draw_dcnow_tr(void) {
         cur_y += gap_rows * line_height;
         for (int i = 0; i < option_count; i++) {
             font_bmf_draw(x_item, cur_y, list_count + i == focus ? highlight_color : text_color,
-                          option_text[options[i]]);
+                          option_label(options[i]));
             cur_y += line_height;
         }
         font_bmf_set_height_default();

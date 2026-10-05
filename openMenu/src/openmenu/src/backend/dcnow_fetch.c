@@ -10,6 +10,7 @@
 #include <poll.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -21,15 +22,17 @@
 #include <sys/socket.h>
 
 #include "backend/dcnow_fetch.h"
+#include "backend/dreampi_link.h"
 
 #define DCNOW_HOST            "dreamcast.online"
 #define DCNOW_PATH            "/now/api/users.json"
 #define DCNOW_BODY_MAX        98304
 #define DCNOW_STEP_TIMEOUT_MS 10000
 #define DCNOW_GET_TIMEOUT_MS  60000
+#define DCNOW_PI_TIMEOUT_MS   15000
 
 static mutex_t fetch_mutex = MUTEX_INITIALIZER;
-static dcnow_fetch_status_t fetch = {DCNOW_FETCH_IDLE, -1, 0, {{0}}, 0, 0, 0, 0, 0, 0};
+static dcnow_fetch_status_t fetch = {DCNOW_FETCH_IDLE, -1, 0, {{0}}, 0, 0, 0, 0, 0, 0, 0};
 static dcnow_player_t players[DCNOW_PLAYER_MAX];
 static kthread_t* fetch_worker = NULL;
 static volatile int abort_requested = 0;
@@ -236,11 +239,11 @@ json_skip(const char* p) {
 /* Reads one entry of the users array into out. Returns the position after
  * the object, or NULL on malformed text. *online tells whether to keep it. */
 static const char*
-json_user(const char* p, dcnow_player_t* out, int* online) {
+json_user(const char* p, dcnow_player_t* out, int* online, int default_online) {
     char key[32];
 
     memset(out, 0, sizeof(*out));
-    *online = 0;
+    *online = default_online;
     p = json_ws(p);
     if (*p != '{') {
         return NULL;
@@ -256,11 +259,14 @@ json_user(const char* p, dcnow_player_t* out, int* online) {
             return NULL;
         }
         p = json_ws(p + 1);
-        if (strcmp(key, "username") == 0 && *p == '"') {
+        /* dreamcast.online names its fields username / current_game_display, the DreamPi add-on player / game. */
+        if ((strcmp(key, "username") == 0 || strcmp(key, "player") == 0) && *p == '"') {
             p = json_string(p, out->name, sizeof(out->name));
+        } else if (strcmp(key, "network") == 0 && *p == '"') {
+            p = json_string(p, out->network, sizeof(out->network));
         } else if (strcmp(key, "country") == 0 && *p == '"') {
             p = json_string(p, out->country, sizeof(out->country));
-        } else if (strcmp(key, "current_game_display") == 0 && *p == '"') {
+        } else if ((strcmp(key, "current_game_display") == 0 || strcmp(key, "game") == 0) && *p == '"') {
             p = json_string(p, out->title, sizeof(out->title));
         } else if (strcmp(key, "current_game") == 0 && *p == '"') {
             p = json_string(p, out->code, sizeof(out->code));
@@ -288,8 +294,8 @@ json_user(const char* p, dcnow_player_t* out, int* online) {
  * is not the feed we expect. A body cut at the cap ends inside a record, so
  * with truncated set the players already read still count. */
 static int
-parse_users(const char* text, int truncated, int* total) {
-    const char* p = strstr(text, "\"users\"");
+parse_list(const char* text, const char* key, int default_online, int truncated, int* total) {
+    const char* p = strstr(text, key);
     int count = 0;
 
     *total = 0;
@@ -297,7 +303,7 @@ parse_users(const char* text, int truncated, int* total) {
     if (p == NULL) {
         return -1;
     }
-    p = json_ws(p + 7);
+    p = json_ws(p + strlen(key));
     if (*p != ':') {
         return -1;
     }
@@ -310,11 +316,14 @@ parse_users(const char* text, int truncated, int* total) {
         dcnow_player_t entry;
         int online;
 
-        p = json_user(p, &entry, &online);
+        p = json_user(p, &entry, &online, default_online);
         if (p == NULL) {
             return truncated && count > 0 ? count : -1;
         }
         if (online && entry.name[0] != '\0') {
+            if (entry.network[0] == '\0') {
+                snprintf(entry.network, sizeof(entry.network), "DCNow!");
+            }
             (*total)++;
             if (count < DCNOW_PLAYER_MAX) {
                 parsed[count++] = entry;
@@ -330,6 +339,29 @@ parse_users(const char* text, int truncated, int* total) {
     return count;
 }
 
+static int
+parse_users(const char* text, int truncated, int* total) {
+    return parse_list(text, "\"users\"", 0, truncated, total);
+}
+
+/* The add-on's GET /players: {"time": N, "players": [{"player", "game", "network", "country", ...}], ...}. A time of
+ * zero means it has not fetched its feeds yet, which is -2 so the caller asks dreamcast.online instead. */
+static int
+parse_pi_players(const char* text, int truncated, int* total) {
+    const char* t = strstr(text, "\"time\"");
+
+    *total = 0;
+    if (t != NULL) {
+        t = json_ws(t + 6);
+        if (*t == ':' && strtol(json_ws(t + 1), NULL, 10) <= 0) {
+            return -2;
+        }
+    }
+    return parse_list(text, "\"players\"", 1, truncated, total);
+}
+
+static int from_pi_list = 0;
+
 static void
 publish(int count, int total) {
     mutex_lock(&fetch_mutex);
@@ -338,11 +370,114 @@ publish(int count, int total) {
     fetch.online_total = total;
     fetch.updated = rtc_unix_secs();
     fetch.list_valid = 1;
+    fetch.from_pi = from_pi_list;
     fetch.generation++;
     fetch.state = DCNOW_FETCH_DONE;
     fetch.counter_line = -1;
     fetch.count = 0;
     mutex_unlock(&fetch_mutex);
+}
+
+/* One plain HTTP GET into body[]. Returns the status code, -1 on any failure and -2 when the fetch was aborted. */
+static int
+http_get(const struct sockaddr_in* addr, const char* host, const char* path, uint64_t timeout_ms, size_t* used) {
+    char request[160];
+    uint64_t deadline = timer_ms_gettime64() + timeout_ms;
+    size_t sent = 0;
+    int code = -1;
+    int fd;
+    int rc;
+
+    *used = 0;
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    fcntl(fd, F_SETFL, O_NONBLOCK);
+    rc = connect(fd, (const struct sockaddr*)addr, sizeof(*addr));
+    if (rc < 0 && errno != EWOULDBLOCK && errno != EINPROGRESS && errno != EAGAIN) {
+        close(fd);
+        return -1;
+    }
+    rc = wait_socket(fd, POLLWRNORM, deadline);
+    if (rc <= 0 || (rc & (POLLHUP | POLLERR))) {
+        close(fd);
+        return rc < 0 ? -2 : -1;
+    }
+    snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: openMenu\r\nConnection: close\r\n\r\n",
+             path, host);
+    while (sent < strlen(request)) {
+        ssize_t n = send(fd, request + sent, strlen(request) - sent, 0);
+
+        if (n > 0) {
+            sent += (size_t)n;
+            continue;
+        }
+        rc = (n < 0 && (errno == EWOULDBLOCK || errno == EAGAIN)) ? wait_socket(fd, POLLWRNORM, deadline) : 0;
+        if (rc <= 0) {
+            close(fd);
+            return rc < 0 ? -2 : -1;
+        }
+    }
+    for (;;) {
+        ssize_t got;
+
+        rc = wait_socket(fd, POLLRDNORM, deadline);
+        if (rc <= 0) {
+            close(fd);
+            return rc < 0 ? -2 : -1;
+        }
+        got = recv(fd, body + *used, DCNOW_BODY_MAX - *used, 0);
+        if (got > 0) {
+            *used += (size_t)got;
+            if (*used == DCNOW_BODY_MAX) {
+                break;
+            }
+            continue;
+        }
+        if (got < 0 && (errno == EWOULDBLOCK || errno == EAGAIN) && !(rc & POLLHUP)) {
+            continue;
+        }
+        break;
+    }
+    close(fd);
+    body[*used] = '\0';
+    if (sscanf(body, "HTTP/%*d.%*d %d", &code) != 1) {
+        return -1;
+    }
+    return code;
+}
+
+/* Tries the DreamPi add-on's merged list (DCNow!, DCNET and others). Returns 1 when it published a list, 2 when the
+ * fetch was aborted, 0 when there is no add-on or it had nothing, so the caller asks dreamcast.online. */
+static int
+fetch_from_pi(void) {
+    struct sockaddr_in addr;
+    char host[20];
+    const char* json;
+    size_t used;
+    int code;
+    int count;
+    int total = 0;
+
+    if (!dreampi_link_pi(&addr, host, sizeof(host), &abort_requested)) {
+        return abort_requested ? 2 : 0;
+    }
+    fetch_push("Fetching player list from DreamPi...", 0);
+    code = http_get(&addr, host, "/players", DCNOW_PI_TIMEOUT_MS, &used);
+    if (code == -2) {
+        fetch_reset(DCNOW_FETCH_IDLE);
+        return 2;
+    }
+    json = code == 200 ? strstr(body, "\r\n\r\n") : NULL;
+    count = json != NULL ? parse_pi_players(json + 4, used == DCNOW_BODY_MAX, &total) : -1;
+    if (count < 0) {
+        fetch_reset(DCNOW_FETCH_RUNNING); /* clears the line above; the web fetch starts its own */
+        return 0;
+    }
+    from_pi_list = 1;
+    publish(count, total);
+    return 1;
 }
 
 static void
@@ -362,6 +497,14 @@ run_fetch(void) {
     const char* json;
 
     fetch_reset(DCNOW_FETCH_RUNNING);
+    from_pi_list = 0;
+    rc = fetch_from_pi();
+    if (rc != 0) {
+        if (rc == 2 && abort_requested) {
+            fetch_reset(DCNOW_FETCH_IDLE);
+        }
+        return;
+    }
     fetch_push("Fetching player list from " DCNOW_HOST "...", 0);
 
     fetch_push("Resolving host...", 0);

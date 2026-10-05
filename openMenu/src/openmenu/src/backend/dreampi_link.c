@@ -40,6 +40,7 @@
 #define LINK_IO_TIMEOUT_MS 8000
 #define LINK_MAX_FAILS     5  /* in a row, once the Pi has answered */
 #define LINK_FIRST_FAILS   12 /* before the Pi has answered: the link has just come up and may not carry traffic yet */
+#define LINK_FIRST_WAIT_MS 5000
 #define LINK_REPLY_MAX     512
 #define LINK_PRODUCT_MAX   12
 
@@ -49,6 +50,7 @@ static volatile int worker_done = 0;
 static volatile int link_up = 0;       /* set by the main thread: a modem connection is online */
 static volatile int stop_requested = 0;
 static volatile int ui_is_idle = 0;
+static volatile int pi_state = 0;      /* 0 not known yet, 1 the add-on answered, 2 there is none on this link */
 static int tried_this_link = 0;        /* main thread only: one worker per connection */
 static char pending[LINK_PRODUCT_MAX]; /* guarded by link_mutex */
 
@@ -353,6 +355,7 @@ link_main(void* param) {
         status = http_exchange(&addr, head, NULL, NULL, reply, sizeof(reply));
         if (status == 200 && read_poll_reply(reply, &need_games)) {
             seen_pi = 1;
+            pi_state = 1;
             fails = 0;
             if (need_games && count > 0 && !stop_requested) {
                 upload_games(&addr, host, hash, count);
@@ -364,6 +367,7 @@ link_main(void* param) {
             thd_sleep(100);
         }
     }
+    pi_state = 2; /* nothing more will be answered on this connection */
     worker_done = 1;
     return NULL;
 }
@@ -382,11 +386,22 @@ dreampi_link_abort(void) {
     join_worker();
     stop_requested = 0;
     worker_done = 0;
+    pi_state = 0;
 }
 
 void
 dreampi_link_ui_idle(int idle) {
     ui_is_idle = idle;
+}
+
+int
+dreampi_link_pi(struct sockaddr_in* addr, char* host, size_t host_len, const volatile int* abort_flag) {
+    uint64_t deadline = timer_ms_gettime64() + LINK_FIRST_WAIT_MS;
+
+    while (link_up && pi_state == 0 && timer_ms_gettime64() < deadline && !(abort_flag != NULL && *abort_flag)) {
+        thd_sleep(100);
+    }
+    return link_up && pi_state == 1 && pi_address(addr, host, host_len);
 }
 
 void
@@ -407,6 +422,7 @@ dreampi_link_tick(void) {
     }
     if (!modem_online) {
         tried_this_link = 0;
+        pi_state = 0;
     } else if (worker == NULL && !tried_this_link) {
         tried_this_link = 1;
         worker = thd_create(false, link_main, NULL);

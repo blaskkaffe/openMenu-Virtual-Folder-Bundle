@@ -11,7 +11,7 @@
 
 #include "backend/dcnow_net.h"
 
-#define DCNOW_PLAYER_MAX 128
+#define DCNOW_PLAYER_MAX 256
 #define DCNOW_NAME_LEN   32
 #define DCNOW_TITLE_LEN  64
 
@@ -20,6 +20,7 @@ typedef struct dcnow_player {
     char country[3];
     char title[DCNOW_TITLE_LEN];
     char code[16];
+    char network[8]; /* "DCNow!", "DCNET", ... */
 } dcnow_player_t;
 
 typedef enum dcnow_fetch_state {
@@ -40,6 +41,7 @@ typedef struct dcnow_fetch_status {
     int online_total; /* online players in the feed, the list keeps at most DCNOW_PLAYER_MAX */
     time_t updated;   /* console clock when the newest list arrived */
     int list_valid;   /* a list is in the store, kept until the store is cleared */
+    int from_pi;      /* the newest list came from the DreamPi add-on, so it can hold more than one network */
 } dcnow_fetch_status_t;
 
 /* Starts a fetch on the worker. Does nothing while one is running. */
