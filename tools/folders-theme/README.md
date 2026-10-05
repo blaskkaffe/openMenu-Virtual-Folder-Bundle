@@ -46,6 +46,15 @@ Card Manager with the card in and click **Save Changes**. In openMenu's Settings
 of the script. The logo and the button legend are cut out of the default Folders background in the Card Manager's theme folder.
 `pvr.py` writes the Dreamcast texture files; it reproduces the default theme's `BG_L.PVR` and `BG_R.PVR` byte for byte from their PNGs.
 
+## Games being played online
+
+With the rebuilt openMenu, a game in the Folders list that somebody is playing online right now is drawn in the theme's `online_color` (these
+themes use the web page's bright green, `72,216,96`; without the key openMenu uses a built-in green) and has a small telephone after its title
+(when the title leaves room). The selected row keeps its highlight colour and gets the telephone. It works from the player list of the DC Now!
+window, matched to the card by title: the same name or one inside the other once case, punctuation and bracketed parts like "(USA)" are
+ignored. With **DC Now! Auto-Refresh** on, openMenu keeps that list fresh in the background while connected, so you do not need to open the
+window; with it Off, the list is only as fresh as your last manual refresh. The marks go away when the connection or DC Now! does.
+
 ## Notes
 
 - **Rounded popups need the rebuilt openMenu.** The boxes in the background are pictures, so they are rounded in any build. openMenu's

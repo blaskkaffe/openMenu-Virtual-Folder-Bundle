@@ -204,6 +204,7 @@ menu_highlight_color=%s
 menu_bkg_color=%s
 menu_bkg_border_color=%s
 menu_corner_radius=10
+online_color=72,216,96
 list_x=22
 list_y=76
 list_count=17

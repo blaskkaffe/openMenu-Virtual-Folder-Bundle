@@ -367,6 +367,21 @@ draw_draw_quad(int x, int y, float width, float height, uint32_t color) {
 #endif
 }
 
+/* A small telephone handset (10 x 5 px), drawn from quads: the mark for a game that somebody is playing online. */
+void
+draw_draw_phone_icon(int x, int y, uint32_t color) {
+    /* Row by row: where the filled runs start and end (end exclusive). Two runs per row at most. */
+    static const signed char runs[5][4] = {{2, 8, -1, -1}, {1, 9, -1, -1}, {0, 3, 7, 10}, {0, 3, 7, 10}, {0, 2, 8, 10}};
+
+    for (int row = 0; row < 5; row++) {
+        for (int r = 0; r < 4; r += 2) {
+            if (runs[row][r] >= 0) {
+                draw_draw_quad(x + runs[row][r], y + row, (float)(runs[row][r + 1] - runs[row][r]), 1.0f, color);
+            }
+        }
+    }
+}
+
 /* An animated backdrop for themes that ask for one (THEME.INI backdrop=1): slow silk-like waves that glow in the theme's colour.
  * A grid of Gouraud-shaded strips in the opaque list. The shading comes from the slope of two travelling sine waves, so it needs no
  * texture and no video memory, and the grid is small (16x12 cells, about 400 vertices a frame). The theme's background picture is

@@ -24,6 +24,7 @@
 #include <openmenu_savefile.h>
 #include <openmenu_settings.h>
 #include "backend/last_game.h"
+#include "backend/online_games.h"
 #include "dc/input.h"
 #include "dc/mouse.h"
 #include "texture/txr_manager.h"
@@ -270,6 +271,7 @@ draw_gamelist(void) {
     }
 
     char buffer[192];
+    const uint32_t online_color = cur_theme->online_color ? cur_theme->online_color : 0xFF5FD35F;
     int visible_items = (list_len - current_starting_index) < cur_theme->items_per_page
                             ? (list_len - current_starting_index)
                             : cur_theme->items_per_page;
@@ -298,6 +300,7 @@ draw_gamelist(void) {
         const gd_item* item = list_current[list_idx];
 
         bool is_selected = (list_idx == current_selected_item);
+        const int online_players = online_games_players(item);
 
         if (is_selected) {
             marquee_notice_selection(current_selected_item);
@@ -366,7 +369,8 @@ draw_gamelist(void) {
                 font_bmp_draw_main(list_x + X_ADJUST_TEXT, list_y + Y_ADJUST_TEXT + (i * ITEM_SPACING), buffer);
             }
         } else {
-            font_bmp_set_color(cur_theme->colors.text_color);
+            /* A game somebody is playing online right now gets the theme's online colour. */
+            font_bmp_set_color(online_players > 0 ? online_color : cur_theme->colors.text_color);
 
             int name_len = strlen(buffer);
             int tx = list_x + X_ADJUST_TEXT;
@@ -394,6 +398,16 @@ draw_gamelist(void) {
                     }
                 }
                 font_bmp_draw_main(tx, ty, buffer);
+            }
+        }
+
+        /* A small telephone after the title of a game that is being played online, when the title leaves room for it. */
+        if (online_players > 0) {
+            const int title_width = (int)strlen(item->name) * FONT_CHAR_WIDTH;
+
+            if (title_width + 18 <= text_width) {
+                draw_draw_phone_icon(list_x + X_ADJUST_TEXT + title_width + 6,
+                                     list_y + Y_ADJUST_TEXT + (i * ITEM_SPACING) + 5, online_color);
             }
         }
     }

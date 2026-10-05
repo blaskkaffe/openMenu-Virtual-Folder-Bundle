@@ -32,6 +32,7 @@
 #include <backend/dreampi_link.h>
 #include <ui/ui_dcnow.h>
 #include <backend/gd_list.h>
+#include <backend/online_games.h>
 #include <backend/online_time_sync.h>
 #include <openmenu_debug.h>
 #include <openmenu_savefile.h>
@@ -770,6 +771,7 @@ main(int argc, char* argv[]) {
         vmu_lcd_check_insertions();
         dcnow_conn_tick();
         dreampi_link_tick();
+        online_games_tick();
         dcnow_vmu_tick();
         online_time_sync_tick();
         bgm_poll();
