@@ -382,117 +382,267 @@ draw_draw_phone_icon(int x, int y, uint32_t color) {
     }
 }
 
-/* An animated backdrop for themes that ask for one (THEME.INI backdrop=1): a rolling, glowing surface in the theme's colour that
- * fills the screen behind the menu. A grid of Gouraud-shaded strips in the opaque list, with no texture and no video memory.
+/* The animated backdrop of themes that ask for it (THEME.INI backdrop=1): the Dreamcast-BIOS-style background of the DreamPi web page.
  *
- * Three travelling sine waves make a height field. Each grid point is lit by its slope (a soft diffuse light plus a narrow shine along the
- * ridges, which is what makes it read as a moving 3D surface) and is pushed away from or toward the screen centre by its height, the
- * way a camera over the surface would see it, so the grid really swells and sinks. 24 x 18 cells, about 900 vertices a frame. */
-#define BACKDROP_COLS 24
-#define BACKDROP_ROWS 18
+ * It is the same scene as the page's Three.js one (dc-background.js of DreamPiAutoToggle, adapted from the VMU Icon Maker by Robert Dale
+ * Smith, MIT): a camera at (0, -20, 7) with a 75 degree field of view looking along +y, a 50 x 30 plane at z = 0 whose height is four
+ * outgoing ripples, fading out with the distance from the middle, and a big cylinder (radius 40, rotating slowly) behind it that fades
+ * out downward, both covered with the same 64x64 cloud texture. Over a sky gradient. Lighting is the page's: an ambient 0x404040 and two
+ * directional lights, worked out per vertex.
+ *
+ * The page's mesh has 101 x 101 vertices; this one has 29 x 21 for the plane and about 18 x 11 for the cylinder, which keeps a frame at
+ * roughly 1700 vertices (about 55 KB of the 256 KB vertex buffer). The texture is 8 KB of video memory, allocated once. If that
+ * allocation fails the sky gradient still draws. Colours are exactly the page's unless the theme gives a backdrop_color to tint them.
+ *
+ * draw_backdrop() goes in the opaque pass (the sky gradient), draw_backdrop_scene() at the start of the translucent pass. */
+#include "ui/backdrop_texture.h"
 
-void
-draw_backdrop(uint32_t accent) {
-    static uint32_t frame = 0;
-    static float xs[BACKDROP_ROWS + 1][BACKDROP_COLS + 1];
-    static float ys[BACKDROP_ROWS + 1][BACKDROP_COLS + 1];
-    static uint32_t cs[BACKDROP_ROWS + 1][BACKDROP_COLS + 1];
-    const float t = (float)frame * (1.0f / 60.0f);
-    const float ar = (float)((accent >> 16) & 0xFF);
-    const float ag = (float)((accent >> 8) & 0xFF);
-    const float ab = (float)(accent & 0xFF);
+#define SCENE_FOCAL     469.15f /* 720 / 2 / tan(37.5 degrees): the page draws the scene on a canvas 240 px taller than a 480 px view, centred on it */
+#define SCENE_CAM_Y     (-20.0f)
+#define SCENE_CAM_Z     7.0f
+#define SCENE_FWD_Y     0.998305f /* the view direction towards (0, 100, 0) from the camera, and the camera's up vector */
+#define SCENE_FWD_Z     (-0.058232f)
+#define SCENE_UP_Y      0.058232f
+#define SCENE_UP_Z      0.998305f
+#define PLANE_COLS      28
+#define PLANE_ROWS      20
+#define CYL_SEGMENTS    32
+#define CYL_ROWS        10
+#define CYL_HEIGHT      70.0f
+#define CYL_RADIUS      40.0f
+#define CYL_ROW_LENGTH  60.0f /* the part of the cylinder that is drawn: its opacity is nearly zero beyond it */
 
-    frame++;
+typedef struct scene_vertex {
+    float x, y, w, u, v;
+    uint32_t argb;
+    int ok;
+} scene_vertex_t;
 
-    for (int j = 0; j <= BACKDROP_ROWS; j++) {
-        for (int i = 0; i <= BACKDROP_COLS; i++) {
-            /* The grid reaches past the screen so the swell never shows an edge. */
-            const float gx = -60.0f + (float)i * (760.0f / BACKDROP_COLS);
-            const float gy = -60.0f + (float)j * (600.0f / BACKDROP_ROWS);
-            const float u = gx * (1.0f / 100.0f);
-            const float v = gy * (1.0f / 100.0f);
-            /* Long waves (300 to 500 px): the grid has a point every 32 px, so anything shorter would alias into streaks. */
-            const float a1 = 1.25f * u + 1.05f * v + 3.0f * t;
-            const float a2 = 0.85f * u - 1.15f * v - 2.3f * t;
-            const float a3 = 1.9f * u + 0.45f * v + 1.7f * t;
-            const float c1 = fcos(a1);
-            const float c2 = fcos(a2);
-            const float c3 = fcos(a3);
-            const float h = 1.7f * fsin(a1) + 1.1f * fsin(a2) + 0.6f * fsin(a3);
-            const float hx = 1.7f * 1.25f * c1 + 1.1f * 0.85f * c2 + 0.6f * 1.9f * c3;
-            const float hy = 1.7f * 1.05f * c1 - 1.1f * 1.15f * c2 + 0.6f * 0.45f * c3;
-            /* Surface normal (-hx, -hy, 1) scaled to slopes of about one, against a light from the upper left in front, and the
-             * same normal against the half way vector for the narrow shine along the ridges. */
-            const float sx = hx * 0.2f;
-            const float sy = hy * 0.2f;
-            const float inv = 1.0f / sqrtf(sx * sx + sy * sy + 1.0f);
-            float diffuse = (0.45f * sx + 0.45f * sy + 0.77f) * inv;
-            float shine = (0.25f * sx + 0.25f * sy + 0.93f) * inv;
-            /* Dim toward the screen edges, a little like a vignette. */
-            const float ex = (gx - 320.0f) * (1.0f / 460.0f);
-            const float ey = (gy - 240.0f) * (1.0f / 360.0f);
-            float edge = 1.0f - 0.45f * (ex * ex + ey * ey);
+static pvr_ptr_t backdrop_txr = NULL;
+static int backdrop_txr_tried = 0;
+static uint32_t backdrop_tint = 0xFFFFFFFFu;
+static uint32_t backdrop_frame = 0;
 
-            if (diffuse < 0.0f) {
-                diffuse = 0.0f;
-            } else if (diffuse > 1.0f) {
-                diffuse = 1.0f;
-            }
-            if (shine < 0.0f) {
-                shine = 0.0f;
-            } else if (shine > 1.0f) {
-                shine = 1.0f;
-            }
-            if (edge < 0.2f) {
-                edge = 0.2f;
-            }
-            shine = shine * shine;
-            shine = shine * shine; /* to the 4th power: a sharper shine than this aliases against the coarse grid */
-            xs[j][i] = 320.0f + (gx - 320.0f) * (1.0f + 0.030f * h);
-            ys[j][i] = 240.0f + (gy - 240.0f) * (1.0f + 0.030f * h);
-
-            {
-                /* A dark floor, the theme colour in the lit parts, and a pale shine on the ridges. */
-                const float body = (0.12f + 0.88f * diffuse * diffuse) * edge;
-                const float spark = shine * 0.35f * edge;
-                float r = 10.0f + ar * 0.85f * body + (255.0f - ar) * spark * 0.5f;
-                float g = 10.0f + ag * 0.85f * body + (255.0f - ag) * spark * 0.5f;
-                float b = 10.0f + ab * 0.85f * body + (255.0f - ab) * spark * 0.5f;
-
-                r = r > 255.0f ? 255.0f : r;
-                g = g > 255.0f ? 255.0f : g;
-                b = b > 255.0f ? 255.0f : b;
-                cs[j][i] = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
-            }
+static int
+backdrop_texture(void) {
+    if (!backdrop_txr_tried) {
+        backdrop_txr_tried = 1;
+        backdrop_txr = pvr_mem_malloc(sizeof(backdrop_texture_data));
+        if (backdrop_txr != NULL) {
+            pvr_txr_load(backdrop_texture_data, backdrop_txr, sizeof(backdrop_texture_data));
         }
     }
+    return backdrop_txr != NULL;
+}
 
+static uint32_t
+tinted(uint32_t argb) {
+    if ((backdrop_tint & 0x00FFFFFFu) == 0x00FFFFFFu || (backdrop_tint & 0x00FFFFFFu) == 0) {
+        return argb;
+    }
+    return (argb & 0xFF000000u) | ((((argb >> 16) & 0xFF) * ((backdrop_tint >> 16) & 0xFF) / 255) << 16)
+           | ((((argb >> 8) & 0xFF) * ((backdrop_tint >> 8) & 0xFF) / 255) << 8)
+           | (((argb & 0xFF) * (backdrop_tint & 0xFF)) / 255);
+}
+
+/* World point to screen, as the page's camera sees it. */
+static int
+scene_project(float x, float y, float z, scene_vertex_t* out) {
+    const float dy = y - SCENE_CAM_Y;
+    const float dz = z - SCENE_CAM_Z;
+    const float depth = SCENE_FWD_Y * dy + SCENE_FWD_Z * dz;
+    float inv;
+
+    if (depth < 0.5f) {
+        out->ok = 0;
+        return 0;
+    }
+    inv = 1.0f / depth;
+    out->x = 320.0f + SCENE_FOCAL * x * inv;
+    out->y = 240.0f - SCENE_FOCAL * (SCENE_UP_Y * dy + SCENE_UP_Z * dz) * inv;
+    out->w = inv;
+    out->ok = 1;
+    return 1;
+}
+
+/* The sky: the page's gradient, as it shows on a 480 pixel screen. */
+void
+draw_backdrop(uint32_t tint) {
     pvr_poly_cxt_t context;
     pvr_poly_hdr_t header;
-    const float z = z_inc();
+    const uint32_t top = tinted(0xFF8EB3D1u);
+    const uint32_t bottom = tinted(0xFF5A73A7u);
 
+    backdrop_tint = tint;
     pvr_poly_cxt_col(&context, draw_get_list());
     pvr_poly_compile(&header, &context);
     pvr_prim(&header, sizeof(header));
 
-    pvr_vertex_t vert = {.argb = 0, .oargb = 0, .flags = PVR_CMD_VERTEX, .z = z, .u = 0, .v = 0};
+    pvr_vertex_t vert = {.argb = bottom, .oargb = 0, .flags = PVR_CMD_VERTEX, .z = 0.001f, .u = 0, .v = 0};
 
-    for (int j = 0; j < BACKDROP_ROWS; j++) {
-        for (int i = 0; i <= BACKDROP_COLS; i++) {
-            /* The same order the plain quads use: the lower point, then the upper one. */
-            vert.flags = PVR_CMD_VERTEX;
-            vert.x = xs[j + 1][i];
-            vert.y = ys[j + 1][i];
-            vert.argb = cs[j + 1][i];
-            pvr_prim(&vert, sizeof(vert));
+    vert.x = 0.0f;
+    vert.y = 480.0f;
+    pvr_prim(&vert, sizeof(vert));
+    vert.argb = top;
+    vert.y = 0.0f;
+    pvr_prim(&vert, sizeof(vert));
+    vert.argb = bottom;
+    vert.x = 640.0f;
+    vert.y = 480.0f;
+    pvr_prim(&vert, sizeof(vert));
+    vert.argb = top;
+    vert.flags = PVR_CMD_VERTEX_EOL;
+    vert.y = 0.0f;
+    pvr_prim(&vert, sizeof(vert));
+}
 
-            vert.flags = i == BACKDROP_COLS ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
-            vert.x = xs[j][i];
-            vert.y = ys[j][i];
-            vert.argb = cs[j][i];
-            pvr_prim(&vert, sizeof(vert));
+static void
+scene_header(int clamp) {
+    pvr_poly_cxt_t context;
+    pvr_poly_hdr_t header;
+
+    pvr_poly_cxt_txr(&context, PVR_LIST_TR_POLY, PVR_TXRFMT_RGB565 | PVR_TXRFMT_TWIDDLED, 64, 64, backdrop_txr, PVR_FILTER_BILINEAR);
+    context.gen.culling = PVR_CULLING_NONE;
+    if (clamp) {
+        context.txr.uv_clamp = PVR_UVCLAMP_UV;
+    }
+    pvr_poly_compile(&header, &context);
+    pvr_prim(&header, sizeof(header));
+}
+
+static void
+scene_strip_vertex(const scene_vertex_t* v, int last) {
+    pvr_vertex_t vert = {.flags = last ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX, .x = v->x, .y = v->y, .z = v->w, .u = v->u, .v = v->v,
+                         .argb = v->argb, .oargb = 0};
+
+    pvr_prim(&vert, sizeof(vert));
+}
+
+/* The page's ripples: four waves going out from the middle, softened at the very middle and by distance. Returns the height and the
+ * opacity. (The page never recomputes the plane's normals, so its lighting stays that of a flat plane; no slopes are needed.) */
+static float
+plane_height(float x, float y, float t, float* opacity) {
+    const float distance = sqrtf(x * x + y * y);
+    const float decay = expf(-distance * 0.15f);
+    const float centre = distance < 3.0f ? distance * (1.0f / 3.0f) : 1.0f;
+    float h = 0.0f;
+
+    for (int i = 0; i < 4; i++) {
+        const float amplitude = 0.6f * (0.9f - (float)i * 0.25f);
+
+        h += amplitude * fsin(distance * 0.6f - t + (float)i * 0.19634954f) * decay * centre;
+    }
+    *opacity = distance < 20.0f ? 1.0f - distance * 0.05f : 0.0f;
+    return h;
+}
+
+static void
+draw_scene_plane(float t) {
+    static scene_vertex_t grid[PLANE_ROWS + 1][PLANE_COLS + 1];
+
+    for (int j = 0; j <= PLANE_ROWS; j++) {
+        for (int i = 0; i <= PLANE_COLS; i++) {
+            /* The visible part: the page's plane is 50 x 30, but nothing of it shows beyond 20 units from the middle. The points crowd
+             * toward the middle, where the ripples are, and thin out toward the edges. */
+            const float sx = -1.0f + 2.0f * (float)i / PLANE_COLS;
+            const float sy = -1.0f + 2.0f * (float)j / PLANE_ROWS;
+            const float x = (sx < 0.0f ? -20.0f : 20.0f) * powf(fabsf(sx), 1.7f);
+            const float y = (sy < 0.0f ? -15.0f : 15.0f) * powf(fabsf(sy), 1.7f);
+            float opacity;
+            const float h = plane_height(x, y, t, &opacity);
+            scene_vertex_t* v = &grid[j][i];
+            int a;
+
+            if (scene_project(x, y, h, v)) {
+                v->u = (x + 25.0f) * (1.0f / 50.0f);
+                v->v = (15.0f - y) * (1.0f / 30.0f);
+                a = (int)(opacity * 255.0f);
+                /* Ambient 0.25 + the light from (1, 1, 1) and the one from (1, -15, 1) on the flat normal (0, 0, 1), and the little
+                 * specular the page's material adds: 0.25 + 0.577 + 0.066 + 0.05. */
+                v->argb = tinted(((uint32_t)a << 24) | 0x00F0F0F0u);
+            }
         }
     }
+
+    scene_header(1);
+    for (int j = 0; j < PLANE_ROWS; j++) {
+        for (int i = 0; i <= PLANE_COLS; i++) {
+            /* Rows run from the far side to the near side; a strip takes the lower point (nearer) and the upper one. */
+            if (!grid[j][i].ok || !grid[j + 1][i].ok) {
+                continue;
+            }
+            scene_strip_vertex(&grid[j + 1][i], 0);
+            scene_strip_vertex(&grid[j][i], i == PLANE_COLS);
+        }
+    }
+}
+
+static void
+draw_scene_cylinder(uint32_t frame) {
+    static scene_vertex_t ring[CYL_SEGMENTS + 1][CYL_ROWS + 1];
+    const float spin = -0.001f * (float)frame; /* rotation.y of the page's cylinder */
+    const float tilt_c = 0.0839f;              /* cos / sin of rotation.x = pi / 0.655 */
+    const float tilt_s = -0.9965f;
+
+    for (int k = 0; k <= CYL_SEGMENTS; k++) {
+        const float phi = (float)k * (6.2831853f / CYL_SEGMENTS);
+        const float xl = CYL_RADIUS * fsin(phi);
+        const float zl = CYL_RADIUS * fcos(phi);
+        /* The spin about the cylinder's own axis, then the tilt, then the position (0, 0, 65). */
+        const float xs = xl * fcos(spin) + zl * fsin(spin);
+        const float zs = -xl * fsin(spin) + zl * fcos(spin);
+
+        for (int j = 0; j <= CYL_ROWS; j++) {
+            const float yl = CYL_ROW_LENGTH * (float)j / CYL_ROWS;
+            const float wy = yl * tilt_c - zs * tilt_s;
+            const float wz = 65.0f + yl * tilt_s + zs * tilt_c;
+            const float n = yl * (1.0f / 60.0f);
+            const float t0 = (n + 0.7f) * (1.0f / 1.8f); /* smoothstep(-0.7, 1.1, n) */
+            const float tt = t0 < 0.0f ? 0.0f : (t0 > 1.0f ? 1.0f : t0);
+            const float opacity = 1.0f - tt * tt * (3.0f - 2.0f * tt);
+            scene_vertex_t* v = &ring[k][j];
+
+            if (scene_project(xs, wy, wz, v)) {
+                /* The page's shader uses the raw texture coordinates (its repeat and offset settings do not reach a shader), so the
+                 * picture goes once around the cylinder. */
+                v->u = (float)k * (1.0f / CYL_SEGMENTS);
+                v->v = 1.0f - (float)j * (CYL_ROW_LENGTH / CYL_HEIGHT) / CYL_ROWS;
+                v->argb = tinted(((uint32_t)(opacity * 255.0f) << 24) | 0x00FFFFFFu);
+            }
+        }
+    }
+
+    scene_header(0);
+    for (int k = 0; k < CYL_SEGMENTS; k++) {
+        /* Only the half of the wall in front of the camera. */
+        const float mid = ((float)k + 0.5f) * (6.2831853f / CYL_SEGMENTS);
+        const float cx = CYL_RADIUS * fsin(mid);
+        const float cz = CYL_RADIUS * fcos(mid);
+        const float wy = -cx * fsin(spin) + cz * fcos(spin);
+
+        if (wy < -8.0f) {
+            continue;
+        }
+        for (int j = 0; j <= CYL_ROWS; j++) {
+            if (!ring[k][j].ok || !ring[k + 1][j].ok) {
+                continue;
+            }
+            scene_strip_vertex(&ring[k][j], 0);
+            scene_strip_vertex(&ring[k + 1][j], j == CYL_ROWS);
+        }
+    }
+}
+
+void
+draw_backdrop_scene(void) {
+    const float t = (float)backdrop_frame * 0.016f; /* the page adds 0.016 a frame */
+
+    backdrop_frame++;
+    if (!backdrop_texture()) {
+        return;
+    }
+    draw_scene_cylinder(backdrop_frame);
+    draw_scene_plane(t);
 }
 
 /* Rounded rectangles as real polygons. A theme can ask for rounded popups (THEME.INI menu_corner_radius; zero keeps the square frame)
@@ -644,7 +794,7 @@ draw_draw_panel(int x, int y, int width, int height, int radius, int border_widt
 
     draw_convex(px, py, n, (float)(y + 5), (float)(y + 5 + height), 0x50000000u, 0x30000000u);                 /* the shadow */
     n = rr_outline((float)x, (float)y, (float)width, (float)height, r, r, r, r, px, py);
-    draw_convex(px, py, n, (float)y, (float)(y + height), ((uint32_t)alpha << 24) | light, ((uint32_t)(alpha * 2 / 3) << 24) | rgb);
+    draw_convex(px, py, n, (float)y, (float)(y + height), ((uint32_t)alpha << 24) | light, ((uint32_t)(alpha * 17 / 20) << 24) | rgb);
     draw_ring((float)x, (float)y, (float)width, (float)height, r, (float)border_width, 0xFF000000u | border_rgb);
 }
 

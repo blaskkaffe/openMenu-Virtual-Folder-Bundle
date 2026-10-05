@@ -58,7 +58,8 @@ void draw_draw_sub_image(int x, int y, float width, float height, uint32_t color
 
 /* Draws untextured quad at coords with size and color(rgba) */
 void draw_draw_quad(int x, int y, float width, float height, uint32_t color);
-void draw_backdrop(uint32_t accent);
+void draw_backdrop(uint32_t tint);
+void draw_backdrop_scene(void);
 void draw_draw_phone_icon(int x, int y, uint32_t color);
 void draw_draw_panel(int x, int y, int width, int height, int radius, int border_width, uint32_t border_rgb,
                      uint32_t fill_rgb, int alpha);

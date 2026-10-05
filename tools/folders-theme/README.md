@@ -16,33 +16,38 @@ animated backdrop: slow silk-like waves in the theme colour behind the boxes. Al
 
 ### The animated backdrop and glass panels
 
-- **Needs the rebuilt openMenu** (this branch). It adds the theme keys `backdrop`, `backdrop_color`, `panel_0` to `panel_5`, `panel_border_color`,
-  `panel_fill_color`, `panel_alpha`, `panel_radius`, `panel_border_width` and `menu_corner_radius`. An older build ignores them and would show the
-  see-through picture on black, so use the still set there.
-- **The backdrop.** `draw_backdrop()` in `draw_kos.c` draws a rolling, glowing surface in the theme colour behind the whole menu: three travelling
-  sine waves make a height field that is lit from the upper left (a soft light plus a narrow shine on the ridges), and each grid point is pushed
-  from or toward the screen centre by its height, so the surface swells and sinks like a 3D surface seen from above. It is a 24 x 18 grid of
-  Gouraud strips in the opaque list (about 900 vertices a frame), with no texture and no video memory. The waves are 300 to 500 px long and move
-  about two seconds a cycle: they have to be long, because the grid has a point every 32 px and shorter waves alias into streaks.
-- **The panels.** The rounded boxes of the animated themes are drawn by openMenu, not baked into the picture: `draw_draw_panel()` draws a soft
-  shadow, a fill that is a little lighter and more opaque at the top (alpha 170 at the top, a third less at the bottom), and a 3 px border, all
-  real polygons with arcs for the corners, so the backdrop shows through the glass and the corners are true curves. The panel rectangles are
-  `panel_0` to `panel_3` in `THEME.INI`, so you can move them. The same arc code draws the rounded popups (`menu_corner_radius`).
-- **The picture.** `BG_L.PVR` / `BG_R.PVR` are ARGB4444 with only the logo, the Controls text and an empty disc; the page is see-through.
-  Both are 16 bits per pixel, like the still set, so the two textures are the same size as before (640 KB).
-- **Memory and cost.** No video memory for the backdrop or the panels. About 4 KB of static arrays; about 700 sine and cosine calls and 900
-  vertices per frame for the backdrop, plus about 90 vertices per panel and per popup. The PVR vertex buffer is 256 KB; if a busy frame ever
-  overflows it, lower `BACKDROP_COLS` and `BACKDROP_ROWS` in `draw_kos.c` (16 x 12 is about 410 vertices).
-- **Why the first version showed no animation.** It drew the backdrop only in the margins: the boxes were baked into the picture at 80 % opacity
-  and covered most of the screen, and the waves were slow and faint. Now the panels are much more transparent and the backdrop is livelier. I
-  could not run it on a Dreamcast, so if you still see no movement tell me exactly where (margins only? nowhere? black?), because that points
-  to a different cause.
-- **Compared with the web page's version** (a Three.js wave plane with the Dreamcast BIOS texture and a cylinder): one colour and no texture, to
-  stay light on memory and frame time.
-- **Dither.** Over a moving gradient the console's dithering shows as fine noise, which is how a 16-bit picture shows a smooth gradient. The still
-  set has no such pattern.
-- **Previews.** `out_animated/*_preview.png` is one frame, drawn in Python with the same formulas (without the swell of the grid) and the panel
-  look; it is an approximation of what the console shows.
+The animated set draws the **same background as the DreamPi web page's Dreamcast background module**: the Dreamcast-BIOS-style sky and rippling
+water, ported from its Three.js scene (`dc-background.js`, adapted from Robert Dale Smith's VMU Icon Maker, MIT).
+
+- **Needs the rebuilt openMenu** (this branch). It adds the theme keys `backdrop`, `backdrop_color` (an optional tint; leave it out for the web
+  page's own colours), `panel_0` to `panel_5`, `panel_border_color`, `panel_fill_color`, `panel_alpha`, `panel_radius`, `panel_border_width`
+  and `menu_corner_radius`. An older build ignores them and would show the see-through picture on black, so use the still set there.
+- **The scene, as the web page has it.** The same camera (at 0, -20, 7, a 75 degree field of view, looking along +y, with the page's 720 px high
+  canvas centred on the 480 px screen), the same sky gradient, the same 64x64 cloud texture, a 50 x 30 plane whose height is four ripples
+  going out from the middle and which fades out with the distance, and the big cylinder behind it that spins slowly and fades out downward.
+  The lighting is the page's: ambient plus two directional lights on a flat plane (the page never recomputes the plane's normals, so the
+  ripples show through perspective and the texture, not shading). Time runs at the page's rate, 0.016 a frame.
+- **Compared with the page.** `render_backdrop_frame.py` builds the scene code from `draw_kos.c` on your computer, draws its triangles with a
+  small software rasteriser and writes `backdrop_frame.png` (the theme previews use it). Against a Chromium screenshot of the page's scene at
+  640x480 the mean difference was about 1.4 levels out of 255 (the rasteriser is not the PVR, so it is a check of the geometry, texture mapping,
+  colours and timing, not of the console's output).
+- **What is cut down from the page.** Its plane has 101 x 101 points; this one has 29 x 21 (crowded toward the middle, where the ripples are), and
+  the cylinder about 18 x 10. A frame is about 1560 vertices (roughly 50 KB of the 256 KB vertex buffer). The page's specular highlight is folded
+  into the plane's brightness. Nothing else is different.
+- **Memory.** The 64x64 texture is 8 KB of video memory, allocated once the first time the backdrop draws (`backdrop_texture.h` holds it, RGB565
+  and twiddled, made by `make_backdrop_texture.py`). If that allocation fails the sky gradient still draws. About 25 KB of static arrays. The
+  theme's background picture is ARGB4444 instead of RGB565, both 16 bits per pixel, so its two textures are the same size as before (640 KB).
+- **The panels.** The rounded boxes are drawn by openMenu (`draw_draw_panel()`): a soft shadow, a fill like the web page's boxes (rgba 20,20,20
+  at .78; a little lighter at the top) and a 3 px accent border, with real arcs for the corners. The rectangles are `panel_0` to `panel_3` in
+  `THEME.INI`. The same arc code draws the rounded popups (`menu_corner_radius`).
+- **The picture.** `BG_L.PVR` / `BG_R.PVR` hold only the logo (with a soft shadow, because the white lettering sits on bright sky), the Controls
+  text and an empty disc; the rest is see-through.
+- **Not run on a Dreamcast.** If it is slow, lower `PLANE_COLS` / `PLANE_ROWS` or `CYL_SEGMENTS` / `CYL_ROWS` in `draw_kos.c`. If the scene does
+  not show at all, tell me what you see (black, the plain gradient, no animation), because each points to a different cause: the gradient
+  without the scene means the texture allocation failed.
+- **Dither.** Over a gradient the console's dithering shows as fine noise, which is how a 16-bit picture shows smooth shading. The still set has
+  no such pattern.
+- **Previews.** `out_animated/*_preview.png` are one frame of that rendering with the panels and the picture over it.
 
 ## Games being played online
 

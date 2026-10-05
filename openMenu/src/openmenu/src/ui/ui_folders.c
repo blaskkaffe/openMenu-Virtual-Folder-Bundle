@@ -1373,7 +1373,7 @@ FUNCTION(UI_NAME, setup) {
 FUNCTION(UI_NAME, drawOP) {
     if (cur_theme->backdrop) {
         /* The background picture has see-through areas and is drawn in the translucent pass, over this. */
-        draw_backdrop(cur_theme->backdrop_color ? cur_theme->backdrop_color : cur_theme->colors.highlight_color);
+        draw_backdrop(cur_theme->backdrop_color);
     } else {
         draw_bg_layers();
     }
@@ -1381,7 +1381,8 @@ FUNCTION(UI_NAME, drawOP) {
 
 FUNCTION(UI_NAME, drawTR) {
     if (cur_theme->backdrop) {
-        /* Glass panels over the backdrop, then the background picture (logo, legend) over them. */
+        /* The background scene, glass panels over it, then the background picture (logo, legend) over them. */
+        draw_backdrop_scene();
         for (int i = 0; i < cur_theme->panel_count; i++) {
             const int* r = cur_theme->panel_rect[i];
 
