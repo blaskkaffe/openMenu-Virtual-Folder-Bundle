@@ -17,14 +17,18 @@ DEFAULT = os.path.join(HERE, "..", "..", "GD MENU Card Manager", "src", "GDMENUC
                        "menu_data", "theme", "FOLDERS")
 SS = 4                                  # supersampling for the rounded corners
 
-PAGE = (17, 17, 17)                     # the web page's background (#111)
-CARD = (27, 27, 27)                     # its card colour (#1b1b1b)
+# Large flat areas use colours that the Dreamcast shows without a dither pattern. Its 16-bit picture is RGB565 and the PVR dithers
+# whatever it cannot show exactly: a texture value v is widened to 8 bits as (v<<3)|(v>>2) (red, blue; green (v<<2)|(v>>4)), which
+# is exactly v<<3 only while v is below 4 (below 16 for green). So red and blue of a big fill are one of 0, 8, 16, 24 and its green a
+# multiple of 4 up to 60. The page's #111 / #1b1b1b become (16,16,16) / (24,24,24).
+PAGE = (16, 16, 16)                     # the web page's background (#111)
+CARD = (24, 24, 24)                     # its card colour (#1b1b1b)
 TEXT = (238, 238, 238)                  # its text colour (#eee)
 
 # the web page's palette (page kit): normal colour and the lighter one used for borders
 THEMES = [
-    {"folder": "FOLDERS_8", "name": "WebOrange", "base": (232, 118, 28), "light": (246, 178, 122)},   # DCNow!
-    {"folder": "FOLDERS_9", "name": "WebBlue", "base": (28, 111, 232), "light": (128, 177, 246)},     # DCNET
+    {"folder": "FOLDERS_8", "name": "WebOrange", "base": (232, 118, 28), "light": (246, 178, 122), "tint": (24, 16, 8)},   # DCNow!
+    {"folder": "FOLDERS_9", "name": "WebBlue", "base": (28, 111, 232), "light": (128, 177, 246), "tint": (8, 16, 24)},    # DCNET
 ]
 
 # where things sit (640x480). The list text and the artwork are drawn by openMenu on top of this picture at the THEME.INI positions.
@@ -72,48 +76,80 @@ def default_picture():
     return full
 
 
-def cut(full, box, accent=None):
-    """A piece of the default picture as RGBA: black becomes see-through. With accent, the orange swirl takes that colour."""
+def cut(full, box, accent=None, swirl_width=0):
+    """A piece of the default picture as RGBA: black becomes see-through. With accent, the swirl (the first swirl_width columns) is
+    redrawn in that colour, in proportion to how bright each pixel is, so its soft edge does not keep a rim of the old orange."""
     piece = full.crop(box).convert("RGBA")
     px = piece.load()
     for y in range(piece.height):
         for x in range(piece.width):
             r, g, b, _ = px[x, y]
             top = max(r, g, b)
-            if top < 40:
+            if top < 24:
                 px[x, y] = (0, 0, 0, 0)
-            elif accent is not None and r > 150 and r > g + 60 and r > b + 60:      # the orange of the swirl
-                f = top / 255.0
-                px[x, y] = tuple(int(round(accent[i] * f)) for i in range(3)) + (255,)
+            elif accent is not None and x < swirl_width:
+                px[x, y] = tuple(int(round(accent[i] * top / 255.0)) for i in range(3)) + (255,)
     return piece
+
+
+FONT = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+FONT_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+BUTTONS = [("A", (230, 57, 57), "Launch Disc"), ("B", (40, 120, 220), "Previous Folder"), ("X", (235, 220, 40), "Use Cheats"),
+           ("Y", (110, 200, 70), "Exit to Bios"), (None, (170, 170, 170), "Settings Menu")]
+
+
+def legend(img, theme):
+    """The controls box the way the web page draws an info box: a small label on top, then rows divided by thin lines."""
+    from PIL import ImageFont
+    x0, y0, x1, y1 = LEGEND_BOX
+    d = ImageDraw.Draw(img)
+    small, bold, tiny = ImageFont.truetype(FONT, 13), ImageFont.truetype(FONT_BOLD, 13), ImageFont.truetype(FONT_BOLD, 9)
+    label = "Controls"
+    d.text(((x0 + x1) // 2, y0 + 12), label, font=bold, fill=theme["light"], anchor="mm")
+    line = mix(CARD, theme["light"], 0.22)
+    row_h, top = 20, y0 + 22
+    for i, (letter, colour, text) in enumerate(BUTTONS):
+        y = top + i * row_h
+        d.line((x0 + 10, y, x1 - 11, y), fill=line)
+        cy, cx = y + row_h // 2 + 1, x0 + 22
+        if letter:
+            d.ellipse((cx - 7, cy - 7, cx + 7, cy + 7), fill=colour)
+            d.text((cx, cy), letter, font=tiny, fill=(20, 20, 20), anchor="mm")
+        else:
+            d.polygon([(cx, cy - 7), (cx - 8, cy + 6), (cx + 8, cy + 6)], fill=colour)
+        d.text((x0 + 40, cy), text, font=small, fill=TEXT, anchor="lm")
 
 
 def picture(theme, full):
     base, light = theme["base"], theme["light"]
     img = Image.new("RGBA", (640, 512), PAGE + (255,))
-    tint = mix(CARD, base, 0.07)                       # a card with a hint of the box's colour, like the web boxes
+    tint = theme["tint"]                               # a card with a hint of the box's colour, like the web boxes
     rounded(img, LIST_BOX, tint, light)
     rounded(img, LEGEND_BOX, tint, light)
     rounded(img, ART_BOX, tint, light)
-    rounded(img, DETAILS_BOX, mix(CARD, base, 0.30), light, radius=10, width=2)
-    # the logo (swirl in the theme's colour) and the button legend, from the default picture
-    logo = cut(full, (12, 16, 190, 58), accent=base)
+    rounded(img, DETAILS_BOX, tint, light, radius=10, width=2)
+    # the logo, from the default picture, with the swirl in the theme's colour
+    logo = cut(full, (12, 16, 190, 58), accent=base, swirl_width=42)
     img.alpha_composite(logo, (12, 16))
-    legend = cut(full, (446, 82, 604, 198))
-    img.alpha_composite(legend, (446, 82))
+    legend(img, theme)
     # an empty disc where there is no cover art (openMenu draws the art over it)
     cx, cy = (ART_BOX[0] + ART_BOX[2]) // 2, (ART_BOX[1] + ART_BOX[3]) // 2
-    dim = mix(CARD, light, 0.45)
+    dim = mix(tint, light, 0.40)
     ring(img, (cx, cy), 92, 3, dim)
     ring(img, (cx, cy), 30, 6, dim)
     ring(img, (cx, cy), 14, 3, dim)
     return img.convert("RGB")
 
 
+def snap(c):
+    """A colour openMenu draws exactly: the Dreamcast keeps 5 bits of red and blue and 6 of green, and dithers the rest."""
+    return (c[0] & ~7, c[1] & ~3, c[2] & ~7)
+
+
 def ini(theme):
     base, light = theme["base"], theme["light"]
     sel = mix(CARD, base, 0.38)                        # the cursor bar: the box colour, dimmed
-    rgb = lambda c: "%d,%d,%d" % c
+    rgb = lambda c: "%d,%d,%d" % snap(c)
     return """[THEME]
 name=%s
 text_color=%s
@@ -125,6 +161,7 @@ menu_text_color=%s
 menu_highlight_color=%s
 menu_bkg_color=%s
 menu_bkg_border_color=%s
+menu_corner_radius=10
 list_x=22
 list_y=76
 list_count=17

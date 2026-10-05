@@ -367,6 +367,68 @@ draw_draw_quad(int x, int y, float width, float height, uint32_t color) {
 #endif
 }
 
+/* Popup corners. A theme can ask for rounded popups (THEME.INI menu_corner_radius). Zero keeps the square frame. */
+static int popup_corner_radius = 0;
+
+void
+draw_set_corner_radius(int radius) {
+    popup_corner_radius = radius < 0 ? 0 : (radius > 16 ? 16 : radius);
+}
+
+/* A filled rectangle with rounded top and/or bottom corners, drawn as one-pixel-high strips at each rounded end and a
+ * plain quad between them. */
+static void
+draw_rounded_quad(int x, int y, int width, int height, int radius, int round_top, int round_bottom, uint32_t color) {
+    if (radius > height / 2) {
+        radius = height / 2;
+    }
+    if (radius > width / 2) {
+        radius = width / 2;
+    }
+    if (radius <= 0) {
+        draw_draw_quad(x, y, (float)width, (float)height, color);
+        return;
+    }
+    const int top = round_top ? radius : 0;
+    const int bottom = round_bottom ? radius : 0;
+
+    if (height - top - bottom > 0) {
+        draw_draw_quad(x, y + top, (float)width, (float)(height - top - bottom), color);
+    }
+    for (int i = 0; i < radius; i++) {
+        /* Row i from the outer edge: how far the circle of the corner is from the side. */
+        const float dy = (float)radius - (float)i - 0.5f;
+        const int inset = radius - (int)(sqrtf((float)(radius * radius) - dy * dy) + 0.5f);
+
+        if (round_top) {
+            draw_draw_quad(x + inset, y + i, (float)(width - 2 * inset), 1.0f, color);
+        }
+        if (round_bottom) {
+            draw_draw_quad(x + inset, y + height - 1 - i, (float)(width - 2 * inset), 1.0f, color);
+        }
+    }
+}
+
+/* A popup's frame: a 2 px border, the fill, and with header_height above zero a header bar in the border colour. */
+void
+draw_draw_popup_frame(int x, int y, int width, int height, int header_height, uint32_t border_color, uint32_t fill_color) {
+    const int r = popup_corner_radius;
+
+    if (r == 0) {
+        draw_draw_quad(x - 2, y - 2, (float)(width + 4), (float)(height + 4), border_color);
+        draw_draw_quad(x, y, (float)width, (float)height, fill_color);
+        if (header_height > 0) {
+            draw_draw_quad(x, y, (float)width, (float)header_height, border_color);
+        }
+        return;
+    }
+    draw_rounded_quad(x - 2, y - 2, width + 4, height + 4, r + 2, 1, 1, border_color);
+    draw_rounded_quad(x, y, width, height, r, 1, 1, fill_color);
+    if (header_height > 0) {
+        draw_rounded_quad(x, y, width, header_height, r, 1, 0, border_color);
+    }
+}
+
 /* draws an image at coords as a square */
 void
 draw_draw_square(int x, int y, float size, uint32_t color, void* user) {

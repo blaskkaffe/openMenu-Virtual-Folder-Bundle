@@ -1159,9 +1159,9 @@ draw_disc_options(void) {
     int width = disc_options.width;
     int height = disc_options.height;
     z_set_cond(205.0f);
-    draw_draw_quad(x - 2, y - 2, width + 4, height + 4, cur_theme->colors.menu_bkg_border_color);
-    draw_draw_quad(x, y, width, height, cur_theme->colors.menu_bkg_color);
-    draw_draw_quad(x, y, width, 20, cur_theme->colors.menu_bkg_border_color);
+    draw_set_corner_radius(cur_theme->colors.menu_corner_radius);
+    draw_draw_popup_frame(x, y, width, height, 20, cur_theme->colors.menu_bkg_border_color,
+                          cur_theme->colors.menu_bkg_color);
     font_bmp_begin_draw();
     font_bmp_set_color(cur_theme->menu_title_color);
     font_bmp_draw_main(x + width / 2 - 48, y + 2, "Disc Options");

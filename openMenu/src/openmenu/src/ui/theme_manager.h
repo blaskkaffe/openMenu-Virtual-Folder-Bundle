@@ -25,6 +25,7 @@ typedef struct theme_color {
     uint32_t menu_bkg_color;
     uint32_t menu_bkg_border_color;
     uint32_t icon_color;
+    int menu_corner_radius; /* popups: 0 = square corners */
 } theme_color;
 
 typedef struct theme_region {

@@ -168,6 +168,8 @@ read_scroll_theme_ini(void* user, const char* section, const char* name, const c
             new_color->menu_bkg_color = str2argb(value);
         } else if (strcasecmp(name, "MENU_BKG_BORDER_COLOR") == 0) {
             new_color->menu_bkg_border_color = str2argb(value);
+        } else if (strcasecmp(name, "MENU_CORNER_RADIUS") == 0) {
+            new_color->menu_corner_radius = atoi(value);
         } else if (strcasecmp(name, "CURSOR_COLOR") == 0) {
             new_theme->cursor_color = str2argb(value);
         } else if (strcasecmp(name, "MULTIDISC_COLOR") == 0) {

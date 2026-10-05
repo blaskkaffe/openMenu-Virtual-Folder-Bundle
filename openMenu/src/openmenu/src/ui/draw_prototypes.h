@@ -58,6 +58,9 @@ void draw_draw_sub_image(int x, int y, float width, float height, uint32_t color
 
 /* Draws untextured quad at coords with size and color(rgba) */
 void draw_draw_quad(int x, int y, float width, float height, uint32_t color);
+void draw_set_corner_radius(int radius);
+void draw_draw_popup_frame(int x, int y, int width, int height, int header_height, uint32_t border_color,
+                           uint32_t fill_color);
 
 /* exec proto */
 struct gd_item;
