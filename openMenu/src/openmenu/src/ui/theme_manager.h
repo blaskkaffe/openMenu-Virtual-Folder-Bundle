@@ -75,6 +75,8 @@ typedef struct theme_scroll {
     int clock_x;
     int clock_y;
     uint32_t clock_text_color;
+    int backdrop;            /* Folders: draw the animated backdrop under a see-through background */
+    uint32_t backdrop_color; /* its glow colour, zero = the highlight colour */
 } theme_scroll;
 
 int theme_manager_load(void);

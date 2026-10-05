@@ -21,18 +21,28 @@ def _twiddle_index(size):
     return (sp[None, :] << 1) | sp[:, None]
 
 
-def encode(rgb, index, twiddled=True):
-    """rgb: HxWx3 uint8. Returns the bytes of the .pvr file. BG_L is twiddled (data format 1); BG_R is a plain
-    rectangle (data format 9, rows in order)."""
-    h, w, _ = rgb.shape
-    r = (rgb[:, :, 0].astype(np.uint16) >> 3) << 11
-    g = (rgb[:, :, 1].astype(np.uint16) >> 2) << 5
-    b = rgb[:, :, 2].astype(np.uint16) >> 3
-    px = r | g | b
+def _pack_4444(rgba):
+    """ARGB4444: 4 bits each, rounded (v*15/255), alpha in the top nibble."""
+    q = lambda c: (c.astype(np.uint16) * 15 + 127) // 255
+    return (q(rgba[:, :, 3]) << 12) | (q(rgba[:, :, 0]) << 8) | (q(rgba[:, :, 1]) << 4) | q(rgba[:, :, 2])
+
+
+def encode(rgb, index, twiddled=True, argb4444=False):
+    """rgb: HxWx3 uint8 (HxWx4 with argb4444=True). Returns the bytes of the .pvr file. BG_L is twiddled (data format 1); BG_R is
+    a plain rectangle (data format 9, rows in order). argb4444 writes pixel format 2 (translucent) instead of RGB565."""
+    h, w = rgb.shape[:2]
+    pixfmt = 2 if argb4444 else 1
+    if argb4444:
+        px = _pack_4444(rgb)
+    else:
+        r = (rgb[:, :, 0].astype(np.uint16) >> 3) << 11
+        g = (rgb[:, :, 1].astype(np.uint16) >> 2) << 5
+        b = rgb[:, :, 2].astype(np.uint16) >> 3
+        px = r | g | b
     if not twiddled:
         data = px.astype("<u2").tobytes()
         return (b"GBIX" + struct.pack("<II", 8, index) + b"\0\0\0\0" +
-                b"PVRT" + struct.pack("<I", len(data) + 8) + bytes([1, 9, 0, 0]) + struct.pack("<HH", w, h) + data)
+                b"PVRT" + struct.pack("<I", len(data) + 8) + bytes([pixfmt, 9, 0, 0]) + struct.pack("<HH", w, h) + data)
     side = min(w, h)
     tw = _twiddle_index(side)
     out = np.zeros(w * h, dtype="<u2")
@@ -48,23 +58,29 @@ def encode(rgb, index, twiddled=True):
             out[k * side * side + tw.reshape(-1)] = tile.reshape(-1)
     data = out.tobytes()
     return (b"GBIX" + struct.pack("<II", 8, index) + b"\0\0\0\0" +
-            b"PVRT" + struct.pack("<I", len(data) + 8) + bytes([1, 1, 0, 0]) + struct.pack("<HH", w, h) + data)
+            b"PVRT" + struct.pack("<I", len(data) + 8) + bytes([pixfmt, 1, 0, 0]) + struct.pack("<HH", w, h) + data)
+
+
+def _unpack(px, pixfmt):
+    if pixfmt == 2:
+        a, r, g, b = ((px >> 12) & 15) * 17, ((px >> 8) & 15) * 17, ((px >> 4) & 15) * 17, (px & 15) * 17
+        return np.stack([r, g, b, a], axis=2).astype(np.uint8)
+    r = ((px >> 11) & 31) << 3
+    g = ((px >> 5) & 63) << 2
+    b = (px & 31) << 3
+    return np.stack([r, g, b], axis=2).astype(np.uint8)
 
 
 def decode(blob):
-    """(rgb HxWx3 uint8 with the 565 values widened, global index)."""
+    """(HxWx3 RGB with the 565 values widened, or HxWx4 RGBA for ARGB4444; the global index)."""
     assert blob[:4] == b"GBIX" and blob[16:20] == b"PVRT", "not a GBIX/PVRT file"
     index = struct.unpack("<I", blob[8:12])[0]
     pixfmt, datfmt = blob[24], blob[25]
     w, h = struct.unpack("<HH", blob[28:32])
-    assert pixfmt == 1 and datfmt in (1, 9), "only RGB565, twiddled or rectangle, is handled"
+    assert pixfmt in (1, 2) and datfmt in (1, 9), "only RGB565 / ARGB4444, twiddled or rectangle, is handled"
     raw = np.frombuffer(blob[32:32 + w * h * 2], dtype="<u2")
     if datfmt == 9:
-        px = raw.reshape(h, w)
-        r = ((px >> 11) & 31) << 3
-        g = ((px >> 5) & 63) << 2
-        b = (px & 31) << 3
-        return np.stack([r, g, b], axis=2).astype(np.uint8), index
+        return _unpack(raw.reshape(h, w), pixfmt), index
     side = min(w, h)
     tw = _twiddle_index(side)
     px = np.zeros((h, w), dtype=np.uint16)
@@ -77,7 +93,4 @@ def decode(blob):
                 px[k * side:(k + 1) * side, :] = tile
             else:
                 px[:, k * side:(k + 1) * side] = tile
-    r = ((px >> 11) & 31) << 3
-    g = ((px >> 5) & 63) << 2
-    b = (px & 31) << 3
-    return np.stack([r, g, b], axis=2).astype(np.uint8), index
+    return _unpack(px, pixfmt), index

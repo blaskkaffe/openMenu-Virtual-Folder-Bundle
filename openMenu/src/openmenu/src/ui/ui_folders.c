@@ -1356,9 +1356,20 @@ FUNCTION(UI_NAME, setup) {
     marquee_reset();
 }
 
-FUNCTION(UI_NAME, drawOP) { draw_bg_layers(); }
+FUNCTION(UI_NAME, drawOP) {
+    if (cur_theme->backdrop) {
+        /* The background picture has see-through areas and is drawn in the translucent pass, over this. */
+        draw_backdrop(cur_theme->backdrop_color ? cur_theme->backdrop_color : cur_theme->colors.highlight_color);
+    } else {
+        draw_bg_layers();
+    }
+}
 
 FUNCTION(UI_NAME, drawTR) {
+    if (cur_theme->backdrop) {
+        draw_bg_layers();
+    }
+
     /* List, artwork and details always draw, popups go on top of them. */
     draw_gamelist();
     draw_gameart();

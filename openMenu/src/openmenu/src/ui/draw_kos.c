@@ -367,6 +367,86 @@ draw_draw_quad(int x, int y, float width, float height, uint32_t color) {
 #endif
 }
 
+/* An animated backdrop for themes that ask for one (THEME.INI backdrop=1): slow silk-like waves that glow in the theme's colour.
+ * A grid of Gouraud-shaded strips in the opaque list. The shading comes from the slope of two travelling sine waves, so it needs no
+ * texture and no video memory, and the grid is small (16x12 cells, about 400 vertices a frame). The theme's background picture is
+ * then drawn over it with see-through areas. Call once per frame in the opaque pass. */
+#define BACKDROP_COLS 16
+#define BACKDROP_ROWS 12
+
+void
+draw_backdrop(uint32_t accent) {
+    static uint32_t frame = 0;
+    static float xs[BACKDROP_ROWS + 1][BACKDROP_COLS + 1];
+    static float ys[BACKDROP_ROWS + 1][BACKDROP_COLS + 1];
+    static uint32_t cs[BACKDROP_ROWS + 1][BACKDROP_COLS + 1];
+    const float t = (float)frame * (1.0f / 60.0f);
+    const float two_pi = 6.2831853f;
+    const float base = 16.0f;
+    const float glow_r = (float)((accent >> 16) & 0xFF) * 0.55f - base;
+    const float glow_g = (float)((accent >> 8) & 0xFF) * 0.55f - base;
+    const float glow_b = (float)(accent & 0xFF) * 0.55f - base;
+
+    frame++;
+
+    for (int j = 0; j <= BACKDROP_ROWS; j++) {
+        for (int i = 0; i <= BACKDROP_COLS; i++) {
+            /* The grid reaches past the screen so the waves never show an edge. */
+            const float x = -40.0f + (float)i * (720.0f / BACKDROP_COLS);
+            const float y = -40.0f + (float)j * (560.0f / BACKDROP_ROWS);
+            const float xn = x / 640.0f;
+            const float yn = y / 480.0f;
+            const float a = two_pi * (1.1f * xn + 0.4f * yn) + t * 0.9f;
+            const float b = two_pi * (0.5f * xn - 0.9f * yn) - t * 0.7f;
+            const float ca = fcos(a);
+            const float cb = fcos(b);
+            const float h = 0.6f * fsin(a) + 0.4f * fsin(b);
+            /* Slope of the surface, lit from the upper left. */
+            const float dx = 0.66f * ca + 0.2f * cb;
+            const float dy = 0.24f * ca - 0.36f * cb;
+            float light = 0.5f + 0.5f * (dx - dy) * 0.9f;
+
+            if (light < 0.0f) {
+                light = 0.0f;
+            } else if (light > 1.0f) {
+                light = 1.0f;
+            }
+            light *= light;
+            xs[j][i] = x;
+            ys[j][i] = y + h * 9.0f;
+            cs[j][i] = 0xFF000000u | ((uint32_t)(base + glow_r * light) << 16) | ((uint32_t)(base + glow_g * light) << 8)
+                       | (uint32_t)(base + glow_b * light);
+        }
+    }
+
+    pvr_poly_cxt_t context;
+    pvr_poly_hdr_t header;
+    const float z = z_inc();
+
+    pvr_poly_cxt_col(&context, draw_get_list());
+    pvr_poly_compile(&header, &context);
+    pvr_prim(&header, sizeof(header));
+
+    pvr_vertex_t vert = {.argb = 0, .oargb = 0, .flags = PVR_CMD_VERTEX, .z = z, .u = 0, .v = 0};
+
+    for (int j = 0; j < BACKDROP_ROWS; j++) {
+        for (int i = 0; i <= BACKDROP_COLS; i++) {
+            /* The same order the plain quads use: the lower point, then the upper one. */
+            vert.flags = PVR_CMD_VERTEX;
+            vert.x = xs[j + 1][i];
+            vert.y = ys[j + 1][i];
+            vert.argb = cs[j + 1][i];
+            pvr_prim(&vert, sizeof(vert));
+
+            vert.flags = i == BACKDROP_COLS ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
+            vert.x = xs[j][i];
+            vert.y = ys[j][i];
+            vert.argb = cs[j][i];
+            pvr_prim(&vert, sizeof(vert));
+        }
+    }
+}
+
 /* Popup corners. A theme can ask for rounded popups (THEME.INI menu_corner_radius). Zero keeps the square frame. */
 static int popup_corner_radius = 0;
 

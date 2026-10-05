@@ -246,6 +246,12 @@ read_folder_theme_ini(void* user, const char* section, const char* name, const c
         } else if (strcasecmp(name, "ITEM_DETAILS_TEXT_COLOR") == 0) {
             new_theme->item_details_text_color = str2argb(value);
             return 1;
+        } else if (strcasecmp(name, "BACKDROP") == 0) {
+            new_theme->backdrop = atoi(value);
+            return 1;
+        } else if (strcasecmp(name, "BACKDROP_COLOR") == 0) {
+            new_theme->backdrop_color = str2argb(value);
+            return 1;
         } else if (strcasecmp(name, "CLOCK_X") == 0) {
             new_theme->clock_x = atoi(value);
             return 1;

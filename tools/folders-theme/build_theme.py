@@ -27,8 +27,8 @@ TEXT = (238, 238, 238)                  # its text colour (#eee)
 
 # the web page's palette (page kit): normal colour and the lighter one used for borders
 THEMES = [
-    {"folder": "FOLDERS_8", "name": "WebOrange", "base": (232, 118, 28), "light": (246, 178, 122), "tint": (24, 16, 8)},   # DCNow!
-    {"folder": "FOLDERS_9", "name": "WebBlue", "base": (28, 111, 232), "light": (128, 177, 246), "tint": (8, 16, 24)},    # DCNET
+    {"folder": "FOLDERS_8", "name": "WebOrange", "base": (232, 118, 28), "light": (246, 178, 122), "tint": (24, 16, 8), "tint4": (34, 17, 0)},   # DCNow!
+    {"folder": "FOLDERS_9", "name": "WebBlue", "base": (28, 111, 232), "light": (128, 177, 246), "tint": (8, 16, 24), "tint4": (0, 17, 34)},    # DCNET
 ]
 
 # where things sit (640x480). The list text and the artwork are drawn by openMenu on top of this picture at the THEME.INI positions.
@@ -44,15 +44,15 @@ def mix(a, b, t):
     return tuple(int(round(a[i] * (1 - t) + b[i] * t)) for i in range(3))
 
 
-def rounded(canvas, box, fill, border, radius=RADIUS, width=BORDER):
-    """Anti-aliased rounded box with a border, drawn at SS times the size and shrunk."""
+def rounded(canvas, box, fill, border, radius=RADIUS, width=BORDER, alpha=255):
+    """Anti-aliased rounded box with a border, drawn at SS times the size and shrunk. alpha is the fill's opacity (the border is solid)."""
     x0, y0, x1, y1 = box
     w, h = x1 - x0, y1 - y0
     big = Image.new("RGBA", (w * SS, h * SS), (0, 0, 0, 0))
     d = ImageDraw.Draw(big)
     d.rounded_rectangle((0, 0, w * SS - 1, h * SS - 1), radius=radius * SS, fill=border + (255,))
     d.rounded_rectangle((width * SS, width * SS, w * SS - 1 - width * SS, h * SS - 1 - width * SS),
-                        radius=max(1, (radius - width)) * SS, fill=fill + (255,))
+                        radius=max(1, (radius - width)) * SS, fill=fill + (alpha,))
     small = big.resize((w, h), Image.LANCZOS)
     canvas.alpha_composite(small, (x0, y0))
 
@@ -92,6 +92,24 @@ def cut(full, box, accent=None, swirl_width=0):
     return piece
 
 
+def cut_alpha(full, box, accent=None, swirl_width=0):
+    """Like cut(), but a pixel's brightness becomes its opacity and its colour the full colour: white or the accent over whatever
+    is behind, with a soft edge that suits the moving backdrop instead of a dark rim."""
+    piece = full.crop(box).convert("RGBA")
+    px = piece.load()
+    for y in range(piece.height):
+        for x in range(piece.width):
+            r, g, b, _ = px[x, y]
+            top = max(r, g, b)
+            if top < 24:
+                px[x, y] = (0, 0, 0, 0)
+            elif accent is not None and x < swirl_width:
+                px[x, y] = accent + (top,)
+            else:
+                px[x, y] = (r * 255 // top, g * 255 // top, b * 255 // top, top)
+    return piece
+
+
 FONT = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
 BUTTONS = [("A", (230, 57, 57), "Launch Disc"), ("B", (40, 120, 220), "Previous Folder"), ("X", (235, 220, 40), "Use Cheats"),
@@ -120,16 +138,22 @@ def legend(img, theme):
         d.text((x0 + 40, cy), text, font=small, fill=TEXT, anchor="lm")
 
 
-def picture(theme, full):
+def picture(theme, full, animated=False):
+    """The 640x512 picture. Static: an opaque RGB page. Animated: RGBA, the page and the gaps are see-through (the backdrop is drawn
+    behind it by openMenu) and the boxes are 80 % opaque, the way the web page's boxes are over its animated background."""
     base, light = theme["base"], theme["light"]
-    img = Image.new("RGBA", (640, 512), PAGE + (255,))
-    tint = theme["tint"]                               # a card with a hint of the box's colour, like the web boxes
-    rounded(img, LIST_BOX, tint, light)
-    rounded(img, LEGEND_BOX, tint, light)
-    rounded(img, ART_BOX, tint, light)
-    rounded(img, DETAILS_BOX, tint, light, radius=10, width=2)
+    if animated:
+        img = Image.new("RGBA", (640, 512), (0, 0, 0, 0))
+        tint, a = theme["tint4"], 204
+    else:
+        img = Image.new("RGBA", (640, 512), PAGE + (255,))
+        tint, a = theme["tint"], 255
+    rounded(img, LIST_BOX, tint, light, alpha=a)
+    rounded(img, LEGEND_BOX, tint, light, alpha=a)
+    rounded(img, ART_BOX, tint, light, alpha=a)
+    rounded(img, DETAILS_BOX, tint, light, radius=10, width=2, alpha=a)
     # the logo, from the default picture, with the swirl in the theme's colour
-    logo = cut(full, (12, 16, 190, 58), accent=base, swirl_width=42)
+    logo = (cut_alpha if animated else cut)(full, (12, 16, 190, 58), accent=base, swirl_width=42)
     img.alpha_composite(logo, (12, 16))
     legend(img, theme)
     # an empty disc where there is no cover art (openMenu draws the art over it)
@@ -138,7 +162,25 @@ def picture(theme, full):
     ring(img, (cx, cy), 92, 3, dim)
     ring(img, (cx, cy), 30, 6, dim)
     ring(img, (cx, cy), 14, 3, dim)
-    return img.convert("RGB")
+    return img if animated else img.convert("RGB")
+
+
+def backdrop_frame(theme, t, size=(640, 480)):
+    """A frame of the backdrop as openMenu's draw_backdrop() shades it (same formulas, evaluated per pixel instead of per vertex),
+    for the preview image."""
+    import numpy as np
+    w, h = size
+    x, y = np.meshgrid(np.arange(w, dtype=np.float64), np.arange(h, dtype=np.float64))
+    xn, yn = x / 640.0, y / 480.0
+    a = 2 * np.pi * (1.1 * xn + 0.4 * yn) + t * 0.9
+    b = 2 * np.pi * (0.5 * xn - 0.9 * yn) - t * 0.7
+    dx, dy = 0.66 * np.cos(a) + 0.2 * np.cos(b), 0.24 * np.cos(a) - 0.36 * np.cos(b)
+    light = np.clip(0.5 + 0.5 * (dx - dy) * 0.9, 0, 1) ** 2
+    out = np.zeros((h, w, 3))
+    for i in range(3):
+        glow = theme["base"][i] * 0.55 - 16
+        out[:, :, i] = 16 + glow * light
+    return Image.fromarray(np.clip(out, 0, 255).astype("uint8"))
 
 
 def snap(c):
@@ -146,7 +188,7 @@ def snap(c):
     return (c[0] & ~7, c[1] & ~3, c[2] & ~7)
 
 
-def ini(theme):
+def ini(theme, animated=False):
     base, light = theme["base"], theme["light"]
     sel = mix(CARD, base, 0.38)                        # the cursor bar: the box colour, dimmed
     rgb = lambda c: "%d,%d,%d" % snap(c)
@@ -175,30 +217,38 @@ item_details_text_color=%s
 clock_x=623
 clock_y=36
 clock_text_color=%s
-""" % (theme["name"], rgb(TEXT), rgb(light), rgb(sel), rgb(light), rgb(PAGE), rgb(TEXT), rgb(light), rgb(CARD), rgb(light),
-       rgb(TEXT), rgb(light))
+%s""" % (theme["name"] + ("Anim" if animated else ""), rgb(TEXT), rgb(light), rgb(sel), rgb(light), rgb(PAGE), rgb(TEXT), rgb(light), rgb(CARD), rgb(light),
+       rgb(TEXT), rgb(light), ("backdrop=1\nbackdrop_color=%s\n" % ("%d,%d,%d" % base)) if animated else "")
 
 
-def write(theme, out_dir):
+def write(theme, out_dir, animated=False):
+    import numpy as np
     folder = os.path.join(out_dir, theme["folder"])
     os.makedirs(folder, exist_ok=True)
-    img = picture(theme, default_picture())
+    img = picture(theme, default_picture(), animated)
     left = img.crop((0, 0, 512, 512))
     right = img.crop((512, 0, 640, 512))
     left.save(os.path.join(folder, "BG_L.PNG"))
     right.save(os.path.join(folder, "BG_R.PNG"))
-    import numpy as np
     with open(os.path.join(folder, "BG_L.PVR"), "wb") as f:
-        f.write(pvr.encode(np.array(left), 1025, twiddled=True))
+        f.write(pvr.encode(np.array(left), 1025, twiddled=True, argb4444=animated))
     with open(os.path.join(folder, "BG_R.PVR"), "wb") as f:
-        f.write(pvr.encode(np.array(right), 1026, twiddled=False))
+        f.write(pvr.encode(np.array(right), 1026, twiddled=False, argb4444=animated))
     with open(os.path.join(folder, "THEME.INI"), "w") as f:
-        f.write(ini(theme))
-    img.crop((0, 0, 640, 480)).save(os.path.join(out_dir, theme["name"] + "_preview.png"))
+        f.write(ini(theme, animated))
+    name = theme["name"] + ("Anim" if animated else "")
+    if animated:      # what it looks like over one frame of the backdrop
+        frame = backdrop_frame(theme, 2.0).convert("RGBA")
+        frame.alpha_composite(img.crop((0, 0, 640, 480)))
+        frame.convert("RGB").save(os.path.join(out_dir, name + "_preview.png"))
+    else:
+        img.crop((0, 0, 640, 480)).save(os.path.join(out_dir, name + "_preview.png"))
     return folder
 
 
 if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "out")
+    # out/ holds the still themes, out_animated/ the same slots with the animated backdrop: install one set or the other.
+    base_out = sys.argv[1] if len(sys.argv) > 1 else HERE
     for t in THEMES:
-        print("wrote", write(t, out))
+        print("wrote", write(t, os.path.join(base_out, "out")))
+        print("wrote", write(t, os.path.join(base_out, "out_animated"), animated=True))
