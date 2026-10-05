@@ -14,6 +14,13 @@ What it does
   game by product ID and starts it. Nothing is pushed to the Dreamcast.
 - **Events are not in this module.** The events module on the branch owns them (and `GET /api/events/upcoming`).
 
+Player list on the Dreamcast
+- When the link to the Pi is up, openMenu's DC Now! window fetches the player list from the Pi's existing `GET /players` (the
+  Online players module must be on) instead of dreamcast.online. That list holds DCNow!, DCNET and any other network the
+  module's sources report. If the Pi is missing, has no list yet or fails, openMenu uses dreamcast.online as before (DCNow! only).
+- With the Pi's list, the window gets a **Show: All / DCNow! / DCNET** option (A cycles it). It is not saved between boots.
+  With All, players who are not on DCNow! are tagged, for example `[DCNET] Phantasy Star Online`.
+
 Install
 1. Copy `modules/openmenu/` into the add-on's `modules/` folder (next to `players/`, `events/`).
 2. `sudo ./install.sh`. The module is on by default and can be moved or switched in Settings > Modules.
