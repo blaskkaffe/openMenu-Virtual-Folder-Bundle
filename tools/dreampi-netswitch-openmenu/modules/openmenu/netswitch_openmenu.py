@@ -1,40 +1,31 @@
-# DreamPi Netswitch add-on - OPTIONAL "openMenu link" module.
-# openMenu (the Dreamcast menu) asks this page's service two things over the PPP link, and the page shows the result:
+# DreamPi Netswitch add-on - OPTIONAL "openMenu link" module (page kit 2: the box is declared in layout.json).
+# openMenu (the Dreamcast menu) asks this service two things over the PPP link, and the page shows the result:
 #   GET  /openmenu/poll?v=1&n=<games>&h=<hash>   openMenu's heartbeat. Answers "openmenu 1", then "NEED games" when the Pi
 #                                                 has no copy of the SD card's game list, and "LAUNCH <product>" once when
 #                                                 someone picked a game on the phone page.
 #   POST /openmenu/games                          the game list: "#openmenu-games 1 <hash> <count>" then one game per line,
 #                                                 tab separated: product, slot, disc, region, folder, name.
-# The phone page uses:
-#   GET  /openmenu/state                          games, players matched to games, events, and whether the Dreamcast is here.
+# The page uses:
+#   GET  /openmenu/view                           the box's data source: status, note, a hash of the game list (small).
+#   GET  /openmenu/games                          the game list for the games widget (read again when the hash changes).
 #   POST /openmenu/launch  {"product": "..."}     asks openMenu to start that game the next time it polls.
-# Nothing is pushed to the Dreamcast: a launch waits until openMenu asks. Works on Python 3 and 2.7.
+# Events are not handled here: the events module owns them (GET /api/events/upcoming). Nothing is pushed to the Dreamcast:
+# a launch waits until openMenu asks. Works on Python 3 and 2.7.
 import json
 import os
 import re
 import threading
 import time
 
-try:
-    from urllib.request import urlopen, Request
-except ImportError:   # Python 2.7
-    from urllib2 import urlopen, Request
-
 import netswitch_core as core
 
-GAMES_FILE = os.path.join(core.BASE_DIR, "openmenu_games.json")
 SEEN_WINDOW = 15          # seconds: openMenu polls every 3, so it is "connected" while it was heard this recently
 LAUNCH_TTL = 60           # a launch nobody collected within this time is dropped
-EVENTS_CACHE = 600
 MAX_BODY = 2000000
 MAX_GAMES = 5000
-MAX_EVENTS = 30
-TIMEOUT = 8
-MAX_PAGE_BYTES = 1000000
 
 _lock = threading.Lock()
-_state = {"seen": 0.0, "pending": None, "pending_time": 0.0, "launched": None, "launched_time": 0.0,
-          "games": None, "events": [], "events_time": 0.0, "events_refreshing": False, "events_error": ""}
+_state = {"seen": 0.0, "pending": None, "pending_time": 0.0, "launched": None, "launched_time": 0.0, "games": None}
 
 
 # ------------------------------------------------------------------ game list
@@ -74,9 +65,13 @@ def parse_games(text):
     return parts[2], games
 
 
+def games_file():
+    return os.path.join(core.BASE_DIR, "openmenu_games.json")       # looked up when used, so a test sandbox can move BASE_DIR
+
+
 def _load_games():
     try:
-        with open(GAMES_FILE) as f:
+        with open(games_file()) as f:
             data = json.load(f)
         if isinstance(data, dict) and isinstance(data.get("games"), list):
             return data
@@ -94,151 +89,12 @@ def games():
 
 def save_games(h, glist):
     data = {"hash": h, "time": int(time.time()), "games": glist}
-    tmp = GAMES_FILE + ".tmp"
+    tmp = games_file() + ".tmp"
     with open(tmp, "w") as f:
         json.dump(data, f)
-    os.rename(tmp, GAMES_FILE)
+    os.rename(tmp, games_file())
     with _lock:
         _state["games"] = data
-
-
-# ------------------------------------------------------------------ matching a game title to the card
-# (the page matches the online players to the card the same way, from the Online players module's /players)
-def _norm(text):
-    return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
-
-
-def match_game(title, glist):
-    """The game on the card that a player's game title means, or None. Exact normalised name first, then
-    one name containing the other (so "Sonic Adventure 2" finds "Sonic Adventure 2 (USA)"); the shortest
-    containing name wins so a plain title beats a longer one."""
-    want = _norm(title)
-    if len(want) < 3:
-        return None
-    exact = [g for g in glist if _norm(g["name"]) == want]
-    if exact:
-        return exact[0]
-    loose = [g for g in glist if len(_norm(g["name"])) >= 3 and (want in _norm(g["name"]) or _norm(g["name"]) in want)]
-    loose.sort(key=lambda g: len(_norm(g["name"])))
-    return loose[0] if loose else None
-
-
-# ------------------------------------------------------------------ events (from dc99.net/community)
-# DC99 has no events API. Its community page is plain HTML with a script holding the list the calendar draws from:
-#   const EVENTS = [ {...}, {...} ];
-# so the page is downloaded and that JSON list is cut out and decoded (nothing is scraped from the drawn calendar).
-EVENTS_URL = "https://dc99.net/community/"
-_START_KEYS = ("start", "starts", "start_time", "starts_at", "start_date", "date", "datetime", "when", "time")
-_END_KEYS = ("end", "ends", "end_time", "ends_at", "end_date", "end_date_time")
-_TITLE_KEYS = ("title", "name", "event", "event_name")
-_TEXT_KEYS = ("summary", "description", "details", "info", "text")
-_PLACE_KEYS = ("location", "place", "where", "venue")
-_URL_KEYS = ("url", "link", "href")
-_SRC_KEYS = ("source", "origin")
-
-try:
-    _TEXT = basestring  # noqa: F821
-except NameError:
-    _TEXT = str
-
-
-def _pick(item, keys):
-    for k in keys:
-        v = item.get(k)
-        if isinstance(v, (_TEXT, int, float)) and not isinstance(v, bool) and str(v).strip():
-            return str(v).strip()
-    return ""
-
-
-def extract_events(html):
-    """The decoded EVENTS list of the community page, or None when the page has no such list (DC99 changed it)."""
-    m = re.search(r"\bEVENTS\s*=\s*\[", html)
-    if not m:
-        return None
-    try:
-        data, _ = json.JSONDecoder().raw_decode(html[m.end() - 1:])
-    except ValueError:
-        return None
-    return data if isinstance(data, list) else None
-
-
-def _event(item):
-    if not isinstance(item, dict):
-        return None
-    title = _pick(item, _TITLE_KEYS)
-    if not title:
-        return None
-    url = _pick(item, _URL_KEYS)
-    if url.startswith("/"):
-        url = "https://dc99.net" + url
-    if not url.startswith(("http://", "https://")):
-        url = ""
-    return {"title": title[:100], "start": _pick(item, _START_KEYS)[:40], "end": _pick(item, _END_KEYS)[:40],
-            "location": _pick(item, _PLACE_KEYS)[:80], "text": _pick(item, _TEXT_KEYS)[:300],
-            "source": _pick(item, _SRC_KEYS)[:20], "url": url, "product": ""}
-
-
-def parse_events(html):
-    """(events, error): the events of the community page, soonest first."""
-    data = extract_events(html)
-    if data is None:
-        return [], "no EVENTS list in the page (DC99 may have changed it)"
-    events = [e for e in (_event(i) for i in data) if e]
-    events.sort(key=lambda e: e["start"])
-    return events[:MAX_EVENTS], ""
-
-
-def match_in_text(text, glist):
-    """The card game whose name appears inside an event's title or summary (the longest name wins), or None."""
-    hay = _norm(text)
-    best = None
-    for g in glist:
-        n = _norm(g["name"])
-        if len(n) >= 5 and n in hay and (best is None or len(n) > len(_norm(best["name"]))):
-            best = g
-    return best
-
-
-def fetch(url):
-    """Page text of a URL. Replaced by the tests."""
-    req = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; dreampi-netswitch)", "Accept": "text/html, */*"})
-    return urlopen(req, timeout=TIMEOUT).read(MAX_PAGE_BYTES).decode("utf-8", "replace")
-
-
-def refresh_events():
-    with _lock:
-        if _state["events_refreshing"]:
-            return
-        _state["events_refreshing"] = True
-    events, error = [], ""
-    try:
-        try:
-            events, error = parse_events(fetch(EVENTS_URL))
-        except Exception as e:
-            error = str(getattr(e, "reason", None) or e)[:80]
-        glist = games()["games"]
-        for e in events:
-            g = match_in_text(e["title"] + " " + e["text"], glist)
-            if g:
-                e["product"] = g["product"]
-    finally:
-        with _lock:
-            if events or not _state["events"]:      # a failed fetch keeps the events already known
-                _state["events"] = events[:MAX_EVENTS]
-            _state.update({"events_time": time.time(), "events_refreshing": False,
-                           "events_error": error if not _state["events"] else ""})
-
-
-def current_events():
-    with _lock:
-        stale = time.time() - _state["events_time"] > EVENTS_CACHE and not _state["events_refreshing"]
-        out = list(_state["events"])
-        error = _state["events_error"]
-    if stale:
-        t = threading.Thread(target=refresh_events)
-        t.daemon = True
-        t.start()
-    return out, error
 
 
 # ------------------------------------------------------------------ the launch handshake
@@ -273,17 +129,33 @@ def request_launch(product):
     return True, "Sent. The Dreamcast starts it within a few seconds."
 
 
-def state():
+def _name(product):
+    for g in games()["games"]:
+        if g["product"] == product:
+            return g["name"]
+    return product
+
+
+def view():
+    """GET /openmenu/view: what the box binds to (title, note, connected, count, hash)."""
     have = games()
     now = time.time()
-    events, error = current_events()
     with _lock:
         seen_ago = int(now - _state["seen"]) if _state["seen"] else None
         pending = _state["pending"] if _state["pending"] and now - _state["pending_time"] <= LAUNCH_TTL else None
         launched = _state["launched"] if now - _state["launched_time"] <= 30 else None
-    return {"connected": seen_ago is not None and seen_ago <= SEEN_WINDOW, "seen_ago": seen_ago,
-            "pending": pending, "launched": launched, "games": have["games"], "games_time": have.get("time", 0),
-            "events": events, "events_error": error}
+    connected = seen_ago is not None and seen_ago <= SEEN_WINDOW
+    count = len(have["games"])
+    if pending:
+        note = "Waiting for the Dreamcast to start %s..." % _name(pending)
+    elif launched:
+        note = "Starting %s on the Dreamcast." % _name(launched)
+    elif not count:
+        note = "No game list yet. It arrives when openMenu connects with DC Now! on."
+    else:
+        note = "%d games on the card" % count
+    return {"title": "Connected" if connected else ("Not connected" if seen_ago is not None else "Not seen yet"),
+            "connected": connected, "note": note, "count": count, "hash": have.get("hash", ""), "busy": bool(pending)}
 
 
 # ---------------------------------------------------------------- the web service's side
@@ -292,8 +164,12 @@ def _poll(h):
     h.send(poll_reply(query), "text/plain; charset=utf-8")
 
 
-def _state_get(h):
-    h.send(json.dumps(state()), "application/json")
+def _view_get(h):
+    h.send(json.dumps(view()), "application/json")
+
+
+def _games_get(h):
+    h.send(json.dumps({"hash": games().get("hash", ""), "games": games()["games"]}), "application/json")
 
 
 def _games_post(h):
@@ -318,5 +194,5 @@ def _launch_post(h):
     return True
 
 
-GET = {"/openmenu/poll": _poll, "/openmenu/state": _state_get}
+GET = {"/openmenu/poll": _poll, "/openmenu/view": _view_get, "/openmenu/games": _games_get}
 POST = {"/openmenu/games": _games_post, "/openmenu/launch": _launch_post}

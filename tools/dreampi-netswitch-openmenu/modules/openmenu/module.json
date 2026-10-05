@@ -1,2 +1,16 @@
-{"title": "openMenu link", "order": 35, "default": true, "web": "netswitch_openmenu",
- "description": "Shows the games on the Dreamcast's SD card, events, and lets you start a game on the Dreamcast from your phone."}
+{
+ "name": "openMenu link",
+ "description": "Shows the games on the Dreamcast's SD card and lets you start one on the Dreamcast from your phone, or join a player's game.",
+ "enabled": true,
+ "visible": true,
+ "order": 17,
+ "ui": 2,
+ "web": "netswitch_openmenu",
+ "colours": {
+  "openmenu": "green"
+ },
+ "primary": "openmenu",
+ "tints": {
+  "openmenu": false
+ }
+}

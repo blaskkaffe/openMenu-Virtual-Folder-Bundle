@@ -1,4 +1,4 @@
-"""The openMenu link module: openMenu's poll / game upload, the phone page's launch request, events and player matching."""
+"""The openMenu link module: openMenu's poll / game upload and the phone page's launch request and views."""
 import json
 import os
 import threading
@@ -20,10 +20,7 @@ UPLOAD = ("#openmenu-games 1 abc12345 3\n"
 class OpenMenu(unittest.TestCase):
     def setUp(self):
         self.tmp = sandbox()
-        self.saved = om.GAMES_FILE, dict(om._state)
-        om.GAMES_FILE = os.path.join(self.tmp, "openmenu_games.json")
-        om._state.update({"seen": 0.0, "pending": None, "launched": None, "launched_time": 0.0, "games": None,
-                          "events": [], "events_time": 1e18, "events_refreshing": False, "events_error": ""})
+        om._state.update({"seen": 0.0, "pending": None, "launched": None, "launched_time": 0.0, "games": None})
         self.srv = web.Server(("127.0.0.1", 0), web.Handler)
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.base = "http://127.0.0.1:%d" % self.srv.server_address[1]
@@ -32,7 +29,6 @@ class OpenMenu(unittest.TestCase):
     def tearDown(self):
         self.srv.shutdown()
         self.srv.server_close()
-        om.GAMES_FILE = self.saved[0]
         cleanup(self.tmp)
 
     def call(self, method, path, body=None, headers=None):
@@ -58,11 +54,12 @@ class OpenMenu(unittest.TestCase):
 
     def test_upload_parsed_and_kept(self):
         self.upload()
-        state = json.loads(self.call("GET", "/openmenu/state")[1])
+        state = json.loads(self.call("GET", "/openmenu/games")[1])
+        self.assertEqual(state["hash"], "abc12345")
         names = [g["name"] for g in state["games"]]
         self.assertEqual(names, ["Crazy Taxi", "Death", "Sonic Adventure 2 (USA)"])
         self.assertEqual(len(state["games"]), 3)
-        self.assertTrue(os.path.exists(om.GAMES_FILE))
+        self.assertTrue(os.path.exists(om.games_file()))
         om._state["games"] = None                       # a restart reads it back
         self.assertEqual(len(om.games()["games"]), 3)
 
@@ -99,53 +96,21 @@ class OpenMenu(unittest.TestCase):
     def test_launch_from_another_site_refused(self):
         self.assertEqual(self.call("POST", "/openmenu/launch", b'{"product":"MK51035"}', {"Origin": "http://evil.example"})[0], 403)
 
-    def test_matching_players_to_games(self):
-        glist = om.parse_games(UPLOAD)[1]
-        self.assertEqual(om.match_game("Crazy Taxi", glist)["product"], "MK51035")
-        self.assertEqual(om.match_game("sonic adventure 2", glist)["product"], "T1234N")
-        self.assertIsNone(om.match_game("Quake III", glist))
-        self.assertIsNone(om.match_game("", glist))
-
-    PAGE = ("<html><head><script>var x = 1;\nconst EVENTS = [\n"
-            '{"title": "Crazy Taxi night", "date": "2026-10-10T20:00", "end": "2026-10-10T22:00", "location": "Discord",'
-            ' "summary": "Come play {braces} here", "source": "discord", "url": "/events/taxi-night"},\n'
-            '{"name": "Open lobby", "start": "2026-10-09T19:00", "source": "manual", "url": "javascript:alert(1)"},\n'
-            '{"nothing": "here"}\n];\nconst OTHER = [1];</script></head><body>drawn calendar</body></html>')
-
-    def test_events_read_from_the_page(self):
-        events, error = om.parse_events(self.PAGE)
-        self.assertEqual(error, "")
-        self.assertEqual([e["title"] for e in events], ["Open lobby", "Crazy Taxi night"])     # soonest first
-        taxi = events[1]
-        self.assertEqual((taxi["start"], taxi["end"], taxi["location"], taxi["source"]), ("2026-10-10T20:00", "2026-10-10T22:00", "Discord", "discord"))
-        self.assertEqual(taxi["url"], "https://dc99.net/events/taxi-night")
-        self.assertIn("{braces}", taxi["text"])
-        self.assertEqual(events[0]["url"], "")                                                  # not a web address: dropped
-
-    def test_page_without_events_list_is_reported(self):
-        for html in ("<html>nothing</html>", "const EVENTS = [ not json ];", "const EVENTS = [1, 2"):
-            events, error = om.parse_events(html)
-            self.assertEqual(events, [])
-            self.assertIn("EVENTS", error)
-
-    def test_game_found_in_event_text(self):
-        glist = om.parse_games(UPLOAD)[1]
-        self.assertEqual(om.match_in_text("Crazy Taxi night", glist)["product"], "MK51035")
-        self.assertEqual(om.match_in_text("Sonic Adventure 2 (USA) battle", glist)["product"], "T1234N")
-        self.assertIsNone(om.match_in_text("Movie night", glist))
-
-    def test_events_get_game_ids_and_survive_a_failed_fetch(self):
+    def test_view_says_what_the_box_shows(self):
+        view = json.loads(self.call("GET", "/openmenu/view")[1])
+        self.assertEqual((view["title"], view["connected"], view["count"]), ("Not seen yet", False, 0))
+        self.assertIn("No game list yet", view["note"])
         self.upload()
-        om.fetch = lambda url: self.PAGE
-        om.refresh_events()
-        state = json.loads(self.call("GET", "/openmenu/state")[1])
-        self.assertEqual([e["product"] for e in state["events"]], ["", "MK51035"])
-        def broken(url):
-            raise IOError("offline")
-        om.fetch = broken
-        om.refresh_events()
-        state = json.loads(self.call("GET", "/openmenu/state")[1])
-        self.assertEqual(len(state["events"]), 2)
+        self.call("GET", "/openmenu/poll?v=1&n=3&h=abc12345")
+        view = json.loads(self.call("GET", "/openmenu/view")[1])
+        self.assertEqual((view["title"], view["connected"], view["count"], view["hash"]), ("Connected", True, 3, "abc12345"))
+        self.assertEqual(view["note"], "3 games on the card")
+        self.call("POST", "/openmenu/launch", json.dumps({"product": "MK51035"}).encode(), {"X-Requested-With": "netswitch"})
+        view = json.loads(self.call("GET", "/openmenu/view")[1])
+        self.assertTrue(view["busy"])
+        self.assertIn("Crazy Taxi", view["note"])
+        om._state["seen"] -= om.SEEN_WINDOW + 1
+        self.assertEqual(json.loads(self.call("GET", "/openmenu/view")[1])["title"], "Not connected")
 
 
 if __name__ == "__main__":
