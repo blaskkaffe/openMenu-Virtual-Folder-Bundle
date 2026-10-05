@@ -1,0 +1,10 @@
+/* openMenu link box: on top of the .now box styles it shares with the network box */
+#om-box .list{display:block;width:100%;max-height:40vh;overflow-y:auto;overscroll-behavior:contain}
+#om-box .p{display:flex;gap:8px;align-items:center;padding:4px 0;border-top:1px solid rgba(255,255,255,.12)}
+#om-box .p:first-child{border-top:0}
+#om-box .p .pn{flex:1;min-width:0;overflow-wrap:anywhere}
+#om-box .p .pg,#om-box .pg{display:block;color:rgba(255,255,255,.65)}
+#om-box .st{display:block;overflow-wrap:anywhere}
+#om-box #om-find{width:100%;box-sizing:border-box;margin-bottom:6px;padding:6px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.25);color:#fff;font:inherit}
+#om-box .om-go{flex:none;padding:6px 14px;border-radius:6px;border:0;font:inherit;font-weight:bold;color:#fff;background:rgba(255,255,255,.22);cursor:pointer}
+#om-box .om-go:disabled{opacity:.4;cursor:default}
