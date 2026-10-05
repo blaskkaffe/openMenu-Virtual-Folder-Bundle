@@ -29,6 +29,7 @@
 #include <backend/db_list.h>
 #include <backend/dcnow_net.h>
 #include <backend/dcnow_vmu.h>
+#include <ui/ui_dcnow.h>
 #include <backend/gd_list.h>
 #include <backend/online_time_sync.h>
 #include <openmenu_debug.h>
@@ -290,6 +291,10 @@ init() {
     int ret = 0;
 
     savefile_init();
+
+    /* Auto-Connect dials on its own thread, so start it as soon as the
+     * settings are loaded rather than waiting for the first UI frame. */
+    dcnow_boot_autostart();
 
     ret += txr_create_small_pool();
     ret += txr_create_large_pool();
