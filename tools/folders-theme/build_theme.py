@@ -27,11 +27,13 @@ TEXT = (238, 238, 238)                  # its text colour (#eee)
 
 # the web page's palette (page kit): normal colour and the lighter one used for borders
 THEMES = [
-    {"folder": "FOLDERS_8", "name": "WebOrange", "base": (232, 118, 28), "light": (246, 178, 122), "tint": (24, 16, 8), "tint4": (34, 17, 0)},   # DCNow!
-    {"folder": "FOLDERS_9", "name": "WebBlue", "base": (28, 111, 232), "light": (128, 177, 246), "tint": (8, 16, 24), "tint4": (0, 17, 34)},    # DCNET
+    {"folder": "FOLDERS_8", "name": "WebOrange", "base": (232, 118, 28), "light": (246, 178, 122), "tint": (24, 16, 8), "tint4": (34, 17, 0), "fill": (24, 12, 0)},   # DCNow!
+    {"folder": "FOLDERS_9", "name": "WebBlue", "base": (28, 111, 232), "light": (128, 177, 246), "tint": (8, 16, 24), "tint4": (0, 17, 34), "fill": (0, 12, 24)},    # DCNET
 ]
 
 # where things sit (640x480). The list text and the artwork are drawn by openMenu on top of this picture at the THEME.INI positions.
+PANELS = [(10, 66, 398, 382), (414, 66, 214, 138), (414, 210, 214, 214), (414, 428, 214, 20)]   # x, y, w, h of the glass panels
+PANEL_ALPHA = 170
 LIST_BOX = (10, 66, 408, 448)
 LEGEND_BOX = (414, 66, 628, 204)
 ART_BOX = (414, 210, 628, 424)
@@ -116,7 +118,7 @@ BUTTONS = [("A", (230, 57, 57), "Launch Disc"), ("B", (40, 120, 220), "Previous 
            ("Y", (110, 200, 70), "Exit to Bios"), (None, (170, 170, 170), "Settings Menu")]
 
 
-def legend(img, theme):
+def legend(img, theme, animated=False):
     """The controls box the way the web page draws an info box: a small label on top, then rows divided by thin lines."""
     from PIL import ImageFont
     x0, y0, x1, y1 = LEGEND_BOX
@@ -128,7 +130,7 @@ def legend(img, theme):
     row_h, top = 20, y0 + 22
     for i, (letter, colour, text) in enumerate(BUTTONS):
         y = top + i * row_h
-        d.line((x0 + 10, y, x1 - 11, y), fill=line)
+        d.line((x0 + 10, y, x1 - 11, y), fill=(theme["light"] + (70,)) if animated else line)
         cy, cx = y + row_h // 2 + 1, x0 + 22
         if letter:
             d.ellipse((cx - 7, cy - 7, cx + 7, cy + 7), fill=colour)
@@ -148,14 +150,15 @@ def picture(theme, full, animated=False):
     else:
         img = Image.new("RGBA", (640, 512), PAGE + (255,))
         tint, a = theme["tint"], 255
-    rounded(img, LIST_BOX, tint, light, alpha=a)
-    rounded(img, LEGEND_BOX, tint, light, alpha=a)
-    rounded(img, ART_BOX, tint, light, alpha=a)
-    rounded(img, DETAILS_BOX, tint, light, radius=10, width=2, alpha=a)
+    if not animated:
+        rounded(img, LIST_BOX, tint, light, alpha=a)
+        rounded(img, LEGEND_BOX, tint, light, alpha=a)
+        rounded(img, ART_BOX, tint, light, alpha=a)
+        rounded(img, DETAILS_BOX, tint, light, radius=10, width=2, alpha=a)
     # the logo, from the default picture, with the swirl in the theme's colour
     logo = (cut_alpha if animated else cut)(full, (12, 16, 190, 58), accent=base, swirl_width=42)
     img.alpha_composite(logo, (12, 16))
-    legend(img, theme)
+    legend(img, theme, animated)
     # an empty disc where there is no cover art (openMenu draws the art over it)
     cx, cy = (ART_BOX[0] + ART_BOX[2]) // 2, (ART_BOX[1] + ART_BOX[3]) // 2
     dim = mix(tint, light, 0.40)
@@ -166,21 +169,64 @@ def picture(theme, full, animated=False):
 
 
 def backdrop_frame(theme, t, size=(640, 480)):
-    """A frame of the backdrop as openMenu's draw_backdrop() shades it (same formulas, evaluated per pixel instead of per vertex),
-    for the preview image."""
+    """A frame of the backdrop as openMenu's draw_backdrop() shades it (the same formulas per pixel, without the swell of the grid), for the
+    preview image. t is in seconds."""
     import numpy as np
     w, h = size
     x, y = np.meshgrid(np.arange(w, dtype=np.float64), np.arange(h, dtype=np.float64))
-    xn, yn = x / 640.0, y / 480.0
-    a = 2 * np.pi * (1.1 * xn + 0.4 * yn) + t * 0.9
-    b = 2 * np.pi * (0.5 * xn - 0.9 * yn) - t * 0.7
-    dx, dy = 0.66 * np.cos(a) + 0.2 * np.cos(b), 0.24 * np.cos(a) - 0.36 * np.cos(b)
-    light = np.clip(0.5 + 0.5 * (dx - dy) * 0.9, 0, 1) ** 2
+    u, v = x / 100.0, y / 100.0
+    a1, a2, a3 = 1.25 * u + 1.05 * v + 3.0 * t, 0.85 * u - 1.15 * v - 2.3 * t, 1.9 * u + 0.45 * v + 1.7 * t
+    hx = 1.7 * 1.25 * np.cos(a1) + 1.1 * 0.85 * np.cos(a2) + 0.6 * 1.9 * np.cos(a3)
+    hy = 1.7 * 1.05 * np.cos(a1) - 1.1 * 1.15 * np.cos(a2) + 0.6 * 0.45 * np.cos(a3)
+    sx, sy = hx * 0.2, hy * 0.2
+    inv = 1.0 / np.sqrt(sx * sx + sy * sy + 1.0)
+    diffuse = np.clip((0.45 * sx + 0.45 * sy + 0.77) * inv, 0, 1)
+    shine = np.clip((0.25 * sx + 0.25 * sy + 0.93) * inv, 0, 1) ** 4
+    ex, ey = (x - 320.0) / 460.0, (y - 240.0) / 360.0
+    edge = np.maximum(1.0 - 0.45 * (ex * ex + ey * ey), 0.2)
+    body = (0.12 + 0.88 * diffuse * diffuse) * edge
+    spark = shine * 0.35 * edge
     out = np.zeros((h, w, 3))
     for i in range(3):
-        glow = theme["base"][i] * 0.55 - 16
-        out[:, :, i] = 16 + glow * light
+        a = theme["base"][i]
+        out[:, :, i] = 10 + a * 0.85 * body + (255 - a) * spark * 0.5
     return Image.fromarray(np.clip(out, 0, 255).astype("uint8"))
+
+
+def panels_preview(img, theme, alpha, radius=12, border=3):
+    """The glass panels as openMenu draws them (shadow, a fill a little lighter at the top and more transparent at the bottom, a border),
+    over a preview frame."""
+    import numpy as np
+    for (x, y, w, h) in PANELS:
+        for kind in ("shadow", "fill", "ring"):
+            ox, oy = (3, 5) if kind == "shadow" else (0, 0)
+            big = Image.new("L", (w * SS, h * SS), 0)
+            ImageDraw.Draw(big).rounded_rectangle((0, 0, w * SS - 1, h * SS - 1), radius=radius * SS, fill=255)
+            if kind == "ring":
+                inner = Image.new("L", (w * SS, h * SS), 0)
+                ImageDraw.Draw(inner).rounded_rectangle((border * SS, border * SS, w * SS - 1 - border * SS, h * SS - 1 - border * SS),
+                                                      radius=(radius - border) * SS, fill=255)
+                big = Image.fromarray(np.clip(np.array(big, dtype=int) - np.array(inner, dtype=int), 0, 255).astype("uint8"))
+            mask = np.array(big.resize((w, h), Image.LANCZOS), dtype=float) / 255.0
+            rgb = np.zeros((h, w, 3)); a = np.zeros((h, w))
+            grad = np.linspace(0, 1, h)[:, None] * np.ones((1, w))
+            if kind == "shadow":
+                a = (0x50 + (0x30 - 0x50) * grad) / 255.0
+            elif kind == "fill":
+                top = [min(255, c * 3 // 2) for c in theme["fill"]]
+                for k in range(3):
+                    rgb[:, :, k] = top[k] + (theme["fill"][k] - top[k]) * grad
+                a = (alpha + (alpha * 2 // 3 - alpha) * grad) / 255.0
+            else:
+                for k in range(3):
+                    rgb[:, :, k] = theme["light"][k]
+                a = np.ones((h, w))
+            region = np.array(img.crop((x + ox, y + oy, x + ox + w, y + oy + h)), dtype=float)
+            mix_a = (a * mask)[:, :, None]
+            col = rgb if kind != "shadow" else np.zeros((h, w, 3))
+            region = region * (1 - mix_a) + col * mix_a
+            img.paste(Image.fromarray(np.clip(region, 0, 255).astype("uint8")), (x + ox, y + oy))
+    return img
 
 
 def snap(c):
@@ -219,7 +265,15 @@ clock_x=623
 clock_y=36
 clock_text_color=%s
 %s""" % (theme["name"] + ("Anim" if animated else ""), rgb(TEXT), rgb(light), rgb(sel), rgb(light), rgb(PAGE), rgb(TEXT), rgb(light), rgb(CARD), rgb(light),
-       rgb(TEXT), rgb(light), ("backdrop=1\nbackdrop_color=%s\n" % ("%d,%d,%d" % base)) if animated else "")
+       rgb(TEXT), rgb(light), ("backdrop=1\nbackdrop_color=%s\n%s" % ("%d,%d,%d" % base, panel_keys(theme))) if animated else "")
+
+
+def panel_keys(theme):
+    """THEME.INI lines for the glass panels openMenu draws under the picture."""
+    rgb = lambda c: "%d,%d,%d" % c
+    lines = ["panel_%d=%d,%d,%d,%d" % ((i,) + p) for i, p in enumerate(PANELS)]
+    return "\n".join(lines) + "\npanel_border_color=%s\npanel_fill_color=%s\npanel_alpha=%d\npanel_radius=%d\npanel_border_width=%d\n" % (
+        rgb(theme["light"]), rgb(theme["fill"]), PANEL_ALPHA, RADIUS, BORDER)
 
 
 def write(theme, out_dir, animated=False):
@@ -239,7 +293,7 @@ def write(theme, out_dir, animated=False):
         f.write(ini(theme, animated))
     name = theme["name"] + ("Anim" if animated else "")
     if animated:      # what it looks like over one frame of the backdrop
-        frame = backdrop_frame(theme, 2.0).convert("RGBA")
+        frame = panels_preview(backdrop_frame(theme, 2.0).convert("RGB"), theme, PANEL_ALPHA).convert("RGBA")
         frame.alpha_composite(img.crop((0, 0, 640, 480)))
         frame.convert("RGB").save(os.path.join(out_dir, name + "_preview.png"))
     else:

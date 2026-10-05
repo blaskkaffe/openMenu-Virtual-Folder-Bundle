@@ -1381,6 +1381,16 @@ FUNCTION(UI_NAME, drawOP) {
 
 FUNCTION(UI_NAME, drawTR) {
     if (cur_theme->backdrop) {
+        /* Glass panels over the backdrop, then the background picture (logo, legend) over them. */
+        for (int i = 0; i < cur_theme->panel_count; i++) {
+            const int* r = cur_theme->panel_rect[i];
+
+            if (r[2] > 0 && r[3] > 0) {
+                draw_draw_panel(r[0], r[1], r[2], r[3], cur_theme->panel_radius, cur_theme->panel_border_width ? cur_theme->panel_border_width : 3,
+                                cur_theme->panel_border_color ? cur_theme->panel_border_color : 0xF6B27A,
+                                cur_theme->panel_fill_color, cur_theme->panel_alpha ? cur_theme->panel_alpha : 150);
+            }
+        }
         draw_bg_layers();
     }
 

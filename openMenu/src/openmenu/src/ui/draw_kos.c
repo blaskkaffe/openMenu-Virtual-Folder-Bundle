@@ -382,12 +382,14 @@ draw_draw_phone_icon(int x, int y, uint32_t color) {
     }
 }
 
-/* An animated backdrop for themes that ask for one (THEME.INI backdrop=1): slow silk-like waves that glow in the theme's colour.
- * A grid of Gouraud-shaded strips in the opaque list. The shading comes from the slope of two travelling sine waves, so it needs no
- * texture and no video memory, and the grid is small (16x12 cells, about 400 vertices a frame). The theme's background picture is
- * then drawn over it with see-through areas. Call once per frame in the opaque pass. */
-#define BACKDROP_COLS 16
-#define BACKDROP_ROWS 12
+/* An animated backdrop for themes that ask for one (THEME.INI backdrop=1): a rolling, glowing surface in the theme's colour that
+ * fills the screen behind the menu. A grid of Gouraud-shaded strips in the opaque list, with no texture and no video memory.
+ *
+ * Three travelling sine waves make a height field. Each grid point is lit by its slope (a soft diffuse light plus a narrow shine along the
+ * ridges, which is what makes it read as a moving 3D surface) and is pushed away from or toward the screen centre by its height, the
+ * way a camera over the surface would see it, so the grid really swells and sinks. 24 x 18 cells, about 900 vertices a frame. */
+#define BACKDROP_COLS 24
+#define BACKDROP_ROWS 18
 
 void
 draw_backdrop(uint32_t accent) {
@@ -396,41 +398,72 @@ draw_backdrop(uint32_t accent) {
     static float ys[BACKDROP_ROWS + 1][BACKDROP_COLS + 1];
     static uint32_t cs[BACKDROP_ROWS + 1][BACKDROP_COLS + 1];
     const float t = (float)frame * (1.0f / 60.0f);
-    const float two_pi = 6.2831853f;
-    const float base = 16.0f;
-    const float glow_r = (float)((accent >> 16) & 0xFF) * 0.55f - base;
-    const float glow_g = (float)((accent >> 8) & 0xFF) * 0.55f - base;
-    const float glow_b = (float)(accent & 0xFF) * 0.55f - base;
+    const float ar = (float)((accent >> 16) & 0xFF);
+    const float ag = (float)((accent >> 8) & 0xFF);
+    const float ab = (float)(accent & 0xFF);
 
     frame++;
 
     for (int j = 0; j <= BACKDROP_ROWS; j++) {
         for (int i = 0; i <= BACKDROP_COLS; i++) {
-            /* The grid reaches past the screen so the waves never show an edge. */
-            const float x = -40.0f + (float)i * (720.0f / BACKDROP_COLS);
-            const float y = -40.0f + (float)j * (560.0f / BACKDROP_ROWS);
-            const float xn = x / 640.0f;
-            const float yn = y / 480.0f;
-            const float a = two_pi * (1.1f * xn + 0.4f * yn) + t * 0.9f;
-            const float b = two_pi * (0.5f * xn - 0.9f * yn) - t * 0.7f;
-            const float ca = fcos(a);
-            const float cb = fcos(b);
-            const float h = 0.6f * fsin(a) + 0.4f * fsin(b);
-            /* Slope of the surface, lit from the upper left. */
-            const float dx = 0.66f * ca + 0.2f * cb;
-            const float dy = 0.24f * ca - 0.36f * cb;
-            float light = 0.5f + 0.5f * (dx - dy) * 0.9f;
+            /* The grid reaches past the screen so the swell never shows an edge. */
+            const float gx = -60.0f + (float)i * (760.0f / BACKDROP_COLS);
+            const float gy = -60.0f + (float)j * (600.0f / BACKDROP_ROWS);
+            const float u = gx * (1.0f / 100.0f);
+            const float v = gy * (1.0f / 100.0f);
+            /* Long waves (300 to 500 px): the grid has a point every 32 px, so anything shorter would alias into streaks. */
+            const float a1 = 1.25f * u + 1.05f * v + 3.0f * t;
+            const float a2 = 0.85f * u - 1.15f * v - 2.3f * t;
+            const float a3 = 1.9f * u + 0.45f * v + 1.7f * t;
+            const float c1 = fcos(a1);
+            const float c2 = fcos(a2);
+            const float c3 = fcos(a3);
+            const float h = 1.7f * fsin(a1) + 1.1f * fsin(a2) + 0.6f * fsin(a3);
+            const float hx = 1.7f * 1.25f * c1 + 1.1f * 0.85f * c2 + 0.6f * 1.9f * c3;
+            const float hy = 1.7f * 1.05f * c1 - 1.1f * 1.15f * c2 + 0.6f * 0.45f * c3;
+            /* Surface normal (-hx, -hy, 1) scaled to slopes of about one, against a light from the upper left in front, and the
+             * same normal against the half way vector for the narrow shine along the ridges. */
+            const float sx = hx * 0.2f;
+            const float sy = hy * 0.2f;
+            const float inv = 1.0f / sqrtf(sx * sx + sy * sy + 1.0f);
+            float diffuse = (0.45f * sx + 0.45f * sy + 0.77f) * inv;
+            float shine = (0.25f * sx + 0.25f * sy + 0.93f) * inv;
+            /* Dim toward the screen edges, a little like a vignette. */
+            const float ex = (gx - 320.0f) * (1.0f / 460.0f);
+            const float ey = (gy - 240.0f) * (1.0f / 360.0f);
+            float edge = 1.0f - 0.45f * (ex * ex + ey * ey);
 
-            if (light < 0.0f) {
-                light = 0.0f;
-            } else if (light > 1.0f) {
-                light = 1.0f;
+            if (diffuse < 0.0f) {
+                diffuse = 0.0f;
+            } else if (diffuse > 1.0f) {
+                diffuse = 1.0f;
             }
-            light *= light;
-            xs[j][i] = x;
-            ys[j][i] = y + h * 9.0f;
-            cs[j][i] = 0xFF000000u | ((uint32_t)(base + glow_r * light) << 16) | ((uint32_t)(base + glow_g * light) << 8)
-                       | (uint32_t)(base + glow_b * light);
+            if (shine < 0.0f) {
+                shine = 0.0f;
+            } else if (shine > 1.0f) {
+                shine = 1.0f;
+            }
+            if (edge < 0.2f) {
+                edge = 0.2f;
+            }
+            shine = shine * shine;
+            shine = shine * shine; /* to the 4th power: a sharper shine than this aliases against the coarse grid */
+            xs[j][i] = 320.0f + (gx - 320.0f) * (1.0f + 0.030f * h);
+            ys[j][i] = 240.0f + (gy - 240.0f) * (1.0f + 0.030f * h);
+
+            {
+                /* A dark floor, the theme colour in the lit parts, and a pale shine on the ridges. */
+                const float body = (0.12f + 0.88f * diffuse * diffuse) * edge;
+                const float spark = shine * 0.35f * edge;
+                float r = 10.0f + ar * 0.85f * body + (255.0f - ar) * spark * 0.5f;
+                float g = 10.0f + ag * 0.85f * body + (255.0f - ag) * spark * 0.5f;
+                float b = 10.0f + ab * 0.85f * body + (255.0f - ab) * spark * 0.5f;
+
+                r = r > 255.0f ? 255.0f : r;
+                g = g > 255.0f ? 255.0f : g;
+                b = b > 255.0f ? 255.0f : b;
+                cs[j][i] = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+            }
         }
     }
 
@@ -462,7 +495,12 @@ draw_backdrop(uint32_t accent) {
     }
 }
 
-/* Popup corners. A theme can ask for rounded popups (THEME.INI menu_corner_radius). Zero keeps the square frame. */
+/* Rounded rectangles as real polygons. A theme can ask for rounded popups (THEME.INI menu_corner_radius; zero keeps the square frame)
+ * and, with a backdrop, for glass panels (draw_draw_panel). Each corner is an arc of ARC_SEG segments; a convex outline is drawn as one
+ * triangle strip by zig-zagging across it (v0, v1, vn-1, v2, vn-2 ...). */
+#define ARC_SEG    6
+#define OUTLINE_MAX (4 * (ARC_SEG + 1))
+
 static int popup_corner_radius = 0;
 
 void
@@ -470,46 +508,106 @@ draw_set_corner_radius(int radius) {
     popup_corner_radius = radius < 0 ? 0 : (radius > 16 ? 16 : radius);
 }
 
-/* A filled rectangle with rounded top and/or bottom corners, drawn as one-pixel-high strips at each rounded end and a
- * plain quad between them. */
+/* The outline of a rectangle with its own radius at each corner (top left, top right, bottom right, bottom left), clockwise. A corner
+ * with radius 0 is one point. Returns the number of points. */
+static int
+rr_outline(float x, float y, float w, float h, float r0, float r1, float r2, float r3, float* px, float* py) {
+    const float radii[4] = {r0, r1, r2, r3};
+    const float cx[4] = {x + r0, x + w - r1, x + w - r2, x + r3};
+    const float cy[4] = {y + r0, y + r1, y + h - r2, y + h - r3};
+    const float corner_x[4] = {x, x + w, x + w, x};
+    const float corner_y[4] = {y, y, y + h, y + h};
+    int n = 0;
+
+    for (int c = 0; c < 4; c++) {
+        if (radii[c] <= 0.5f) {
+            px[n] = corner_x[c];
+            py[n++] = corner_y[c];
+            continue;
+        }
+        for (int k = 0; k <= ARC_SEG; k++) {
+            const float a = (float)(2 + c) * 1.5707963f + (float)k * (1.5707963f / ARC_SEG);
+
+            px[n] = cx[c] + radii[c] * fcos(a);
+            py[n++] = cy[c] + radii[c] * fsin(a);
+        }
+    }
+    return n;
+}
+
+/* A solid or vertically graded convex polygon (the top colour at the smallest y, the bottom colour at the largest). */
 static void
-draw_rounded_quad(int x, int y, int width, int height, int radius, int round_top, int round_bottom, uint32_t color) {
-    if (radius > height / 2) {
-        radius = height / 2;
+draw_convex(const float* px, const float* py, int n, float top, float bottom, uint32_t color_top, uint32_t color_bottom) {
+    pvr_poly_cxt_t context;
+    pvr_poly_hdr_t header;
+    const float z = z_inc();
+    const float span = bottom - top > 1.0f ? bottom - top : 1.0f;
+    const int ta = (color_top >> 24) & 0xFF, tr = (color_top >> 16) & 0xFF, tg = (color_top >> 8) & 0xFF, tb = color_top & 0xFF;
+    const int ba = (color_bottom >> 24) & 0xFF, br = (color_bottom >> 16) & 0xFF, bg = (color_bottom >> 8) & 0xFF,
+              bb = color_bottom & 0xFF;
+
+    pvr_poly_cxt_col(&context, draw_get_list());
+    pvr_poly_compile(&header, &context);
+    pvr_prim(&header, sizeof(header));
+
+    pvr_vertex_t vert = {.argb = 0, .oargb = 0, .flags = PVR_CMD_VERTEX, .z = z, .u = 0, .v = 0};
+
+    for (int k = 0; k < n; k++) {
+        const int idx = (k & 1) ? n - 1 - (k >> 1) : (k >> 1) + 0;
+        const float f = (py[idx] - top) / span;
+        const int a = ta + (int)((float)(ba - ta) * f);
+        const int r = tr + (int)((float)(br - tr) * f);
+        const int g = tg + (int)((float)(bg - tg) * f);
+        const int b = tb + (int)((float)(bb - tb) * f);
+
+        vert.flags = k == n - 1 ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
+        vert.x = px[idx];
+        vert.y = py[idx];
+        vert.argb = ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+        pvr_prim(&vert, sizeof(vert));
     }
-    if (radius > width / 2) {
-        radius = width / 2;
-    }
-    if (radius <= 0) {
-        draw_draw_quad(x, y, (float)width, (float)height, color);
+}
+
+/* The band between an outline and the same outline inset by bw, as one strip. */
+static void
+draw_ring(float x, float y, float w, float h, float r, float bw, uint32_t color) {
+    float ox[OUTLINE_MAX], oy[OUTLINE_MAX], ix[OUTLINE_MAX], iy[OUTLINE_MAX];
+    const float ri = r > bw ? r - bw : 0.0f;
+    const int n = rr_outline(x, y, w, h, r, r, r, r, ox, oy);
+    const int m = rr_outline(x + bw, y + bw, w - 2.0f * bw, h - 2.0f * bw, ri, ri, ri, ri, ix, iy);
+    pvr_poly_cxt_t context;
+    pvr_poly_hdr_t header;
+    const float z = z_inc();
+
+    if (n != m) {
         return;
     }
-    const int top = round_top ? radius : 0;
-    const int bottom = round_bottom ? radius : 0;
+    pvr_poly_cxt_col(&context, draw_get_list());
+    pvr_poly_compile(&header, &context);
+    pvr_prim(&header, sizeof(header));
 
-    if (height - top - bottom > 0) {
-        draw_draw_quad(x, y + top, (float)width, (float)(height - top - bottom), color);
-    }
-    for (int i = 0; i < radius; i++) {
-        /* Row i from the outer edge: how far the circle of the corner is from the side. */
-        const float dy = (float)radius - (float)i - 0.5f;
-        const int inset = radius - (int)(sqrtf((float)(radius * radius) - dy * dy) + 0.5f);
+    pvr_vertex_t vert = {.argb = color, .oargb = 0, .flags = PVR_CMD_VERTEX, .z = z, .u = 0, .v = 0};
 
-        if (round_top) {
-            draw_draw_quad(x + inset, y + i, (float)(width - 2 * inset), 1.0f, color);
-        }
-        if (round_bottom) {
-            draw_draw_quad(x + inset, y + height - 1 - i, (float)(width - 2 * inset), 1.0f, color);
-        }
+    for (int k = 0; k <= n; k++) {
+        const int idx = k % n;
+
+        vert.flags = PVR_CMD_VERTEX;
+        vert.x = ox[idx];
+        vert.y = oy[idx];
+        pvr_prim(&vert, sizeof(vert));
+        vert.flags = k == n ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
+        vert.x = ix[idx];
+        vert.y = iy[idx];
+        pvr_prim(&vert, sizeof(vert));
     }
 }
 
 /* A popup's frame: a 2 px border, the fill, and with header_height above zero a header bar in the border colour. */
 void
 draw_draw_popup_frame(int x, int y, int width, int height, int header_height, uint32_t border_color, uint32_t fill_color) {
-    const int r = popup_corner_radius;
+    const float r = (float)popup_corner_radius;
 
-    if (r == 0) {
+    if (popup_corner_radius == 0) {
         draw_draw_quad(x - 2, y - 2, (float)(width + 4), (float)(height + 4), border_color);
         draw_draw_quad(x, y, (float)width, (float)height, fill_color);
         if (header_height > 0) {
@@ -517,11 +615,37 @@ draw_draw_popup_frame(int x, int y, int width, int height, int header_height, ui
         }
         return;
     }
-    draw_rounded_quad(x - 2, y - 2, width + 4, height + 4, r + 2, 1, 1, border_color);
-    draw_rounded_quad(x, y, width, height, r, 1, 1, fill_color);
-    if (header_height > 0) {
-        draw_rounded_quad(x, y, width, header_height, r, 1, 0, border_color);
+    {
+        float px[OUTLINE_MAX], py[OUTLINE_MAX];
+        int n = rr_outline((float)(x - 2), (float)(y - 2), (float)(width + 4), (float)(height + 4), r + 2.0f, r + 2.0f, r + 2.0f,
+                           r + 2.0f, px, py);
+
+        draw_convex(px, py, n, (float)(y - 2), (float)(y + height + 2), border_color, border_color);
+        n = rr_outline((float)x, (float)y, (float)width, (float)height, r, r, r, r, px, py);
+        draw_convex(px, py, n, (float)y, (float)(y + height), fill_color, fill_color);
+        if (header_height > 0) {
+            n = rr_outline((float)x, (float)y, (float)width, (float)header_height, r, r, 0.0f, 0.0f, px, py);
+            draw_convex(px, py, n, (float)y, (float)(y + header_height), border_color, border_color);
+        }
     }
+}
+
+/* A glass panel for backdrop themes: a soft shadow, a translucent fill that is a little lighter at the top, and a border. Colours are
+ * 0xRRGGBB; alpha (0..255) is the fill's opacity at the top, the bottom is a third more transparent. */
+void
+draw_draw_panel(int x, int y, int width, int height, int radius, int border_width, uint32_t border_rgb, uint32_t fill_rgb, int alpha) {
+    float px[OUTLINE_MAX], py[OUTLINE_MAX];
+    const float r = (float)radius;
+    int n = rr_outline((float)(x + 3), (float)(y + 5), (float)width, (float)height, r, r, r, r, px, py);
+    const uint32_t rgb = fill_rgb & 0x00FFFFFFu;
+    const uint32_t light = (((rgb >> 16) & 0xFF) * 3 / 2 > 255 ? 255 : ((rgb >> 16) & 0xFF) * 3 / 2) << 16
+                           | (((rgb >> 8) & 0xFF) * 3 / 2 > 255 ? 255 : ((rgb >> 8) & 0xFF) * 3 / 2) << 8
+                           | (((rgb & 0xFF) * 3 / 2 > 255 ? 255 : (rgb & 0xFF) * 3 / 2));
+
+    draw_convex(px, py, n, (float)(y + 5), (float)(y + 5 + height), 0x50000000u, 0x30000000u);                 /* the shadow */
+    n = rr_outline((float)x, (float)y, (float)width, (float)height, r, r, r, r, px, py);
+    draw_convex(px, py, n, (float)y, (float)(y + height), ((uint32_t)alpha << 24) | light, ((uint32_t)(alpha * 2 / 3) << 24) | rgb);
+    draw_ring((float)x, (float)y, (float)width, (float)height, r, (float)border_width, 0xFF000000u | border_rgb);
 }
 
 /* draws an image at coords as a square */

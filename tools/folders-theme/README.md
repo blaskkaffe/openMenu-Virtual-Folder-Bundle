@@ -14,37 +14,35 @@ Each folder has `THEME.INI`, `BG_L.PNG` / `BG_R.PNG` and `BG_L.PVR` / `BG_R.PVR`
 animated backdrop: slow silk-like waves in the theme colour behind the boxes. All ten Folders slots are taken (`FOLDERS`, `FOLDERS_0` to
 `FOLDERS_7` ship, 8 and 9 are these), so install one set or the other. `out_animated/*_preview.png` is one frame of the animation.
 
-### The animated backdrop
+### The animated backdrop and glass panels
 
-- **Needs the rebuilt openMenu** (this branch): it adds the `backdrop=1` and `backdrop_color=r,g,b` theme keys. A build without it ignores them and
-  would show the see-through picture on black, so use the still set there.
-- **How it is drawn.** `draw_backdrop()` in `draw_kos.c` draws a 16 x 12 grid of Gouraud-shaded strips in the opaque pass (about 410 vertices a
-  frame), shaded from the slope of two travelling sine waves, lit from the upper left. The theme picture is then drawn over it in the
-  translucent pass: the page and the gaps are see-through, the boxes 80 % opaque, like the web page's boxes over its background.
-- **Memory.** No texture and no video memory for the backdrop: it is vertex colours only. The picture is ARGB4444 instead of RGB565, both 16 bits per
-  pixel, so the two background textures are the same size as before (512x512 and 128x512, 640 KB together). The CPU side is about 3 KB of
-  static arrays and roughly 220 sine/cosine pairs a frame; the PVR has about 400 more vertices to bin (the vertex buffer is 256 KB).
-- **Compared with the web page's version** (a Three.js wave plane with the Dreamcast BIOS texture and a cylinder): this is the wave look
-  only, procedural and in one colour, since a textured 3D scene would cost video memory and frame time.
-- **Dither.** Over a moving gradient the console's dithering shows as fine noise, which is how a 16-bit picture shows a smooth gradient. The
-  see-through boxes are blended over it, so they carry that noise too; the still set has no such pattern. If it bothers you, make the box
-  alpha 255 in `build_theme.py` (`a = 204`) and rebuild.
-- **Not run on a Dreamcast.** I tested the arithmetic natively (about 410 vertices a frame) and the texture files by decoding them back, but I
-  have not built openMenu with this, so the frame rate and the look in motion are unknown. If it is slow, lower `BACKDROP_COLS` / `BACKDROP_ROWS`
-  in `draw_kos.c`.
-
-
-## Install
-
-Copy `FOLDERS_8` and `FOLDERS_9` into `tools\\openMenu\\menu_data\\theme` (the folder GD MENU Card Manager copies to the card), open
-Card Manager with the card in and click **Save Changes**. In openMenu's Settings, set **Style** to `Folders`, then pick
-**WebOrange** or **WebBlue** under **Theme**. (Slots 8 and 9 were free; the default ones use `FOLDERS` and `FOLDERS_0` to `FOLDERS_7`.)
-
-## Rebuild
-
-`python3 build_theme.py` (needs Pillow and numpy) rewrites `out/` and `out_animated/`. The colours, box positions and the `THEME.INI` values are at the top
-of the script. The logo and the button legend are cut out of the default Folders background in the Card Manager's theme folder.
-`pvr.py` writes the Dreamcast texture files; it reproduces the default theme's `BG_L.PVR` and `BG_R.PVR` byte for byte from their PNGs.
+- **Needs the rebuilt openMenu** (this branch). It adds the theme keys `backdrop`, `backdrop_color`, `panel_0` to `panel_5`, `panel_border_color`,
+  `panel_fill_color`, `panel_alpha`, `panel_radius`, `panel_border_width` and `menu_corner_radius`. An older build ignores them and would show the
+  see-through picture on black, so use the still set there.
+- **The backdrop.** `draw_backdrop()` in `draw_kos.c` draws a rolling, glowing surface in the theme colour behind the whole menu: three travelling
+  sine waves make a height field that is lit from the upper left (a soft light plus a narrow shine on the ridges), and each grid point is pushed
+  from or toward the screen centre by its height, so the surface swells and sinks like a 3D surface seen from above. It is a 24 x 18 grid of
+  Gouraud strips in the opaque list (about 900 vertices a frame), with no texture and no video memory. The waves are 300 to 500 px long and move
+  about two seconds a cycle: they have to be long, because the grid has a point every 32 px and shorter waves alias into streaks.
+- **The panels.** The rounded boxes of the animated themes are drawn by openMenu, not baked into the picture: `draw_draw_panel()` draws a soft
+  shadow, a fill that is a little lighter and more opaque at the top (alpha 170 at the top, a third less at the bottom), and a 3 px border, all
+  real polygons with arcs for the corners, so the backdrop shows through the glass and the corners are true curves. The panel rectangles are
+  `panel_0` to `panel_3` in `THEME.INI`, so you can move them. The same arc code draws the rounded popups (`menu_corner_radius`).
+- **The picture.** `BG_L.PVR` / `BG_R.PVR` are ARGB4444 with only the logo, the Controls text and an empty disc; the page is see-through.
+  Both are 16 bits per pixel, like the still set, so the two textures are the same size as before (640 KB).
+- **Memory and cost.** No video memory for the backdrop or the panels. About 4 KB of static arrays; about 700 sine and cosine calls and 900
+  vertices per frame for the backdrop, plus about 90 vertices per panel and per popup. The PVR vertex buffer is 256 KB; if a busy frame ever
+  overflows it, lower `BACKDROP_COLS` and `BACKDROP_ROWS` in `draw_kos.c` (16 x 12 is about 410 vertices).
+- **Why the first version showed no animation.** It drew the backdrop only in the margins: the boxes were baked into the picture at 80 % opacity
+  and covered most of the screen, and the waves were slow and faint. Now the panels are much more transparent and the backdrop is livelier. I
+  could not run it on a Dreamcast, so if you still see no movement tell me exactly where (margins only? nowhere? black?), because that points
+  to a different cause.
+- **Compared with the web page's version** (a Three.js wave plane with the Dreamcast BIOS texture and a cylinder): one colour and no texture, to
+  stay light on memory and frame time.
+- **Dither.** Over a moving gradient the console's dithering shows as fine noise, which is how a 16-bit picture shows a smooth gradient. The still
+  set has no such pattern.
+- **Previews.** `out_animated/*_preview.png` is one frame, drawn in Python with the same formulas (without the swell of the grid) and the panel
+  look; it is an approximation of what the console shows.
 
 ## Games being played online
 
@@ -57,10 +55,9 @@ window; with it Off, the list is only as fresh as your last manual refresh. The 
 
 ## Notes
 
-- **Rounded popups need the rebuilt openMenu.** The boxes in the background are pictures, so they are rounded in any build. openMenu's
-  popups (Settings, Credits, Disc Options ...) are drawn in code: this branch adds a `menu_corner_radius` theme setting (default 0 =
-  square, so every other theme looks as before). These themes set it to 10. An openMenu without the change ignores the key and shows
-  square popups.
+- **Rounded popups need the rebuilt openMenu.** The boxes of the still set are pictures, so they are rounded in any build. openMenu's popups
+  (Settings, Credits, Disc Options ...) are drawn in code: this branch adds a `menu_corner_radius` theme setting (default 0 = square, so every
+  other theme looks as before). These themes set it to 10, drawn with arcs. An openMenu without the change ignores the key and shows square popups.
 - **No dither pattern.** The Dreamcast's 16-bit picture (RGB565) dithers any colour it cannot show exactly, which shows as a pattern on a
   flat area. A texture value is widened to 8 bits exactly only for dark colours (red and blue of 0, 8, 16 or 24, green a multiple of 4 up
   to 60), so the page and the box fills use those (`PAGE`, `CARD`, `tint` in `build_theme.py`) and every colour in `THEME.INI` is

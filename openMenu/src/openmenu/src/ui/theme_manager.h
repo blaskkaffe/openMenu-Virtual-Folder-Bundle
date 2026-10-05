@@ -78,6 +78,14 @@ typedef struct theme_scroll {
     int backdrop;            /* Folders: draw the animated backdrop under a see-through background */
     uint32_t backdrop_color; /* its glow colour, zero = the highlight colour */
     uint32_t online_color;   /* Folders: text colour of a game somebody is playing online, zero = the built-in green */
+    /* Folders with a backdrop: glass panels drawn in code under the background picture (THEME.INI panel_0 .. panel_5 = x,y,w,h) */
+    int panel_count;
+    int panel_rect[6][4];
+    uint32_t panel_border_color; /* 0xRRGGBB */
+    uint32_t panel_fill_color;   /* 0xRRGGBB */
+    int panel_alpha;             /* opacity of the fill at the top, 0..255 */
+    int panel_radius;
+    int panel_border_width;
 } theme_scroll;
 
 int theme_manager_load(void);
