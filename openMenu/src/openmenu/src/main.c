@@ -290,12 +290,6 @@ static int
 init() {
     int ret = 0;
 
-    savefile_init();
-
-    /* Auto-Connect dials on its own thread, so start it as soon as the
-     * settings are loaded rather than waiting for the first UI frame. */
-    dcnow_boot_autostart();
-
     ret += txr_create_small_pool();
     ret += txr_create_large_pool();
     ret += txr_load_DATs();
@@ -709,6 +703,11 @@ main(int argc, char* argv[]) {
 
     init_gfx_pvr();
     show_loading_screen();
+
+    /* Settings load here so Auto-Connect can start dialing on its own thread
+     * while the loading screen is up, instead of waiting for the first UI frame. */
+    savefile_init();
+    dcnow_boot_autostart();
 
     /* Maple detection continues while the loading screen is displayed. */
     thd_sleep(1000);
