@@ -38,7 +38,8 @@
 #define LINK_PORT          80
 #define LINK_POLL_MS       3000
 #define LINK_IO_TIMEOUT_MS 8000
-#define LINK_MAX_FAILS     5
+#define LINK_MAX_FAILS     5  /* in a row, once the Pi has answered */
+#define LINK_FIRST_FAILS   12 /* before the Pi has answered: the link has just come up and may not carry traffic yet */
 #define LINK_REPLY_MAX     512
 #define LINK_PRODUCT_MAX   12
 
@@ -356,7 +357,7 @@ link_main(void* param) {
             if (need_games && count > 0 && !stop_requested) {
                 upload_games(&addr, host, hash, count);
             }
-        } else if (!seen_pi || ++fails >= LINK_MAX_FAILS) {
+        } else if (++fails >= (seen_pi ? LINK_MAX_FAILS : LINK_FIRST_FAILS)) {
             break; /* not a DreamPi with the add-on, or it went away */
         }
         for (int waited = 0; waited < LINK_POLL_MS && link_up && !stop_requested; waited += 100) {

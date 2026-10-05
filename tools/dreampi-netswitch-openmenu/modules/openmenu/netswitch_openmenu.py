@@ -104,6 +104,7 @@ def poll_reply(headers_query):
     now = time.time()
     lines = ["openmenu 1"]
     with _lock:
+        came_back = now - _state["seen"] > SEEN_WINDOW
         _state["seen"] = now
         if _state["pending"] and now - _state["pending_time"] > LAUNCH_TTL:
             _state["pending"] = None
@@ -111,6 +112,8 @@ def poll_reply(headers_query):
             lines.append("LAUNCH " + _state["pending"])
             _state["launched"], _state["launched_time"] = _state["pending"], now
             _state["pending"] = None
+    if came_back:
+        core.debug_log("openMenu link: openMenu connected")
     have = games()
     if q.get("h", "") != have.get("hash", "") or not have["games"]:
         lines.append("NEED games")
