@@ -625,6 +625,19 @@ list_count_multidisc_in_folder(const char* product_id) {
 }
 
 int
+list_all_count(void) {
+    return gd_slots_BASE ? num_items_BASE : 0;
+}
+
+const gd_item*
+list_all_item(int idx) {
+    if (!gd_slots_BASE || idx < 0 || idx >= num_items_BASE) {
+        return NULL;
+    }
+    return &gd_slots_BASE[idx];
+}
+
+int
 list_length(void) {
     return num_items_current;
 }

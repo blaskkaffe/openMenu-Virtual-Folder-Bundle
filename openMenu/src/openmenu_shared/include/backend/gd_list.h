@@ -59,6 +59,10 @@ int list_count_multidisc_filtered(const char* product_id, const char* folder_pat
 void list_set_multidisc_in_folder(const char* product_id);
 int list_count_multidisc_in_folder(const char* product_id);
 
+/* The whole game list, unfiltered. Index 0 is openMenu itself, so walk from 1. */
+int list_all_count(void);
+const struct gd_item* list_all_item(int idx);
+
 int list_length(void);
 int list_multidisc_length(void);
 const struct gd_item* list_item_get(int idx);

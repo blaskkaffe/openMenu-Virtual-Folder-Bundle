@@ -27,6 +27,7 @@
 #include "backend/dcnow_fetch.h"
 #include "backend/dcnow_net.h"
 #include "backend/dcnow_vmu.h"
+#include "backend/dreampi_link.h"
 #include "backend/online_time_sync.h"
 
 static int device_probed = 0;
@@ -992,6 +993,7 @@ void
 dcnow_net_shutdown(void) {
     dcnow_status_t snap;
 
+    dreampi_link_abort();
     dcnow_conn_poll(&snap);
     if (active_device == DCNOW_DEV_MODEM && (snap.state == DCNOW_CONN_ONLINE || snap.state == DCNOW_CONN_CONNECTING)) {
         dcnow_vmu_hanging_up();

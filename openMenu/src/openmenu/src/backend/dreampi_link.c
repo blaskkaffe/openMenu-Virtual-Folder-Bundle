@@ -1,0 +1,430 @@
+/*
+ * File: dreampi_link.c
+ * Project: openmenu
+ * Talks to the DreamPi Netswitch add-on over the PPP link. The Pi is the
+ * Dreamcast's DNS server, so its address is already known. Everything here is
+ * the Dreamcast asking: the Pi never pushes anything.
+ *
+ *   GET  /openmenu/poll?v=1&n=<games>&h=<hash>   answers "openmenu 1", then
+ *        "NEED games" when the Pi lacks this list, and "LAUNCH <product>"
+ *        when someone picked a game on the phone page.
+ *   POST /openmenu/games                         the game list, one game per line.
+ */
+
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <arch/timer.h>
+#include <kos/mutex.h>
+#include <kos/net.h>
+#include <kos/thread.h>
+#include <netinet/in.h>
+#include <openmenu_settings.h>
+#include <sys/socket.h>
+
+#include <backend/gd_item.h>
+#include <backend/gd_list.h>
+
+#include "backend/dcnow_net.h"
+#include "backend/dreampi_link.h"
+#include "ui/draw_prototypes.h"
+
+#define LINK_PORT          80
+#define LINK_POLL_MS       3000
+#define LINK_IO_TIMEOUT_MS 8000
+#define LINK_MAX_FAILS     5
+#define LINK_REPLY_MAX     512
+#define LINK_PRODUCT_MAX   12
+
+static mutex_t link_mutex = MUTEX_INITIALIZER;
+static kthread_t* worker = NULL;
+static volatile int worker_done = 0;
+static volatile int link_up = 0;       /* set by the main thread: a modem connection is online */
+static volatile int stop_requested = 0;
+static volatile int ui_is_idle = 0;
+static int tried_this_link = 0;        /* main thread only: one worker per connection */
+static char pending[LINK_PRODUCT_MAX]; /* guarded by link_mutex */
+
+/* Waits for a socket event in 100 ms slices. Returns the events, 0 on timeout, -1 when asked to stop. */
+static int
+wait_socket(int fd, short events, uint64_t deadline) {
+    struct pollfd pfd;
+
+    while (timer_ms_gettime64() < deadline) {
+        if (stop_requested) {
+            return -1;
+        }
+        pfd.fd = fd;
+        pfd.events = events;
+        pfd.revents = 0;
+        if (poll(&pfd, 1, 100) > 0) {
+            return pfd.revents;
+        }
+    }
+    return 0;
+}
+
+static int
+send_all(int fd, const char* data, size_t len, uint64_t deadline) {
+    size_t sent = 0;
+
+    while (sent < len) {
+        ssize_t n = send(fd, data + sent, len - sent, 0);
+
+        if (n > 0) {
+            sent += (size_t)n;
+            continue;
+        }
+        if (n < 0 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+            int rc = wait_socket(fd, POLLWRNORM, deadline);
+
+            if (rc > 0 && !(rc & (POLLHUP | POLLERR))) {
+                continue;
+            }
+        }
+        return 0;
+    }
+    return 1;
+}
+
+/* The Pi's end of the PPP link is the DNS server it handed out. */
+static int
+pi_address(struct sockaddr_in* out, char* text, size_t text_len) {
+    const uint8_t* d;
+
+    if (net_default_dev == NULL) {
+        return 0;
+    }
+    d = net_default_dev->dns;
+    if (d[0] == 0 && d[1] == 0 && d[2] == 0 && d[3] == 0) {
+        return 0;
+    }
+    memset(out, 0, sizeof(*out));
+    out->sin_family = AF_INET;
+    out->sin_port = htons(LINK_PORT);
+    memcpy(&out->sin_addr, d, 4);
+    snprintf(text, text_len, "%u.%u.%u.%u", d[0], d[1], d[2], d[3]);
+    return 1;
+}
+
+typedef int (*body_fn)(int fd, uint64_t deadline, void* ctx);
+
+/* One request. Returns the HTTP status, or -1 when it failed. The answer's body
+ * is copied to reply (terminated, cut to reply_max). */
+static int
+http_exchange(const struct sockaddr_in* addr, const char* head, body_fn body, void* ctx, char* reply,
+              size_t reply_max) {
+    char buf[LINK_REPLY_MAX];
+    size_t used = 0;
+    uint64_t deadline = timer_ms_gettime64() + LINK_IO_TIMEOUT_MS;
+    int status = -1;
+    char* split;
+    int fd;
+    int rc;
+
+    reply[0] = '\0';
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    fcntl(fd, F_SETFL, O_NONBLOCK);
+    rc = connect(fd, (const struct sockaddr*)addr, sizeof(*addr));
+    if (rc < 0 && errno != EWOULDBLOCK && errno != EINPROGRESS && errno != EAGAIN) {
+        close(fd);
+        return -1;
+    }
+    rc = wait_socket(fd, POLLWRNORM, deadline);
+    if (rc <= 0 || (rc & (POLLHUP | POLLERR))) {
+        close(fd);
+        return -1;
+    }
+    if (!send_all(fd, head, strlen(head), deadline) || (body != NULL && !body(fd, deadline, ctx))) {
+        close(fd);
+        return -1;
+    }
+    for (;;) {
+        ssize_t got;
+
+        rc = wait_socket(fd, POLLRDNORM, deadline);
+        if (rc <= 0) {
+            close(fd);
+            return -1;
+        }
+        got = recv(fd, buf + used, sizeof(buf) - 1 - used, 0);
+        if (got > 0) {
+            used += (size_t)got;
+            if (used >= sizeof(buf) - 1) {
+                break;
+            }
+            continue;
+        }
+        if (got < 0 && (errno == EWOULDBLOCK || errno == EAGAIN) && !(rc & POLLHUP)) {
+            continue;
+        }
+        break;
+    }
+    close(fd);
+    buf[used] = '\0';
+    if (sscanf(buf, "HTTP/%*d.%*d %d", &status) != 1) {
+        return -1;
+    }
+    split = strstr(buf, "\r\n\r\n");
+    if (split != NULL) {
+        snprintf(reply, reply_max, "%s", split + 4);
+    }
+    return status;
+}
+
+/* One line per game. Control characters are blanked so a name cannot break the format. */
+static int
+format_game(const gd_item* item, char* out, size_t out_len) {
+    char name[sizeof(item->name)];
+    char folder[sizeof(item->folder)];
+    int n;
+
+    for (size_t i = 0; i < sizeof(name); i++) {
+        name[i] = (unsigned char)item->name[i] < 0x20 ? ' ' : item->name[i];
+    }
+    name[sizeof(name) - 1] = '\0';
+    for (size_t i = 0; i < sizeof(folder); i++) {
+        folder[i] = (unsigned char)item->folder[i] < 0x20 ? ' ' : item->folder[i];
+    }
+    folder[sizeof(folder) - 1] = '\0';
+    n = snprintf(out, out_len, "%s\t%u\t%s\t%s\t%s\t%s\n", item->product, item->slot_num, item->disc, item->region,
+                 folder, name);
+    return n < (int)out_len ? n : (int)out_len - 1;
+}
+
+static int
+game_listed(const gd_item* item) {
+    return item != NULL && item->product[0] != '\0' && strcmp(item->disc, "DIR") != 0;
+}
+
+/* Counts the games and folds them into one number, so the Pi can tell whether it already has this list. */
+static unsigned int
+games_hash(int* count) {
+    unsigned int h = 2166136261u;
+    int n = 0;
+
+    for (int i = 1; i < list_all_count(); i++) {
+        const gd_item* item = list_all_item(i);
+
+        if (!game_listed(item)) {
+            continue;
+        }
+        h = (h ^ gd_item_recent_hash(item)) * 16777619u;
+        n++;
+    }
+    *count = n;
+    return h;
+}
+
+typedef struct upload_ctx {
+    char header[64];
+} upload_ctx_t;
+
+static int
+send_games(int fd, uint64_t deadline, void* ctx) {
+    upload_ctx_t* up = ctx;
+    char line[1024];
+    char chunk[1400];
+    size_t used = 0;
+
+    if (!send_all(fd, up->header, strlen(up->header), deadline)) {
+        return 0;
+    }
+    for (int i = 1; i < list_all_count(); i++) {
+        const gd_item* item = list_all_item(i);
+        int n;
+
+        if (!game_listed(item)) {
+            continue;
+        }
+        n = format_game(item, line, sizeof(line));
+        if (used + (size_t)n > sizeof(chunk)) {
+            if (!send_all(fd, chunk, used, deadline)) {
+                return 0;
+            }
+            used = 0;
+        }
+        memcpy(chunk + used, line, (size_t)n);
+        used += (size_t)n;
+    }
+    return used == 0 || send_all(fd, chunk, used, deadline);
+}
+
+static int
+upload_games(const struct sockaddr_in* addr, const char* host, unsigned int hash, int count) {
+    upload_ctx_t up;
+    char head[256];
+    char reply[LINK_REPLY_MAX];
+    char line[1024];
+    size_t body_len;
+
+    snprintf(up.header, sizeof(up.header), "#openmenu-games 1 %08x %d\n", hash, count);
+    body_len = strlen(up.header);
+    for (int i = 1; i < list_all_count(); i++) {
+        const gd_item* item = list_all_item(i);
+
+        if (game_listed(item)) {
+            body_len += (size_t)format_game(item, line, sizeof(line));
+        }
+    }
+    snprintf(head, sizeof(head),
+                 "POST /openmenu/games HTTP/1.0\r\nHost: %s\r\nUser-Agent: openMenu\r\nX-Requested-With: openMenu\r\n"
+                 "Content-Type: text/plain; charset=utf-8\r\nContent-Length: %u\r\nConnection: close\r\n\r\n",
+                 host, (unsigned int)body_len);
+    return http_exchange(addr, head, send_games, &up, reply, sizeof(reply)) == 200;
+}
+
+static int
+product_valid(const char* text) {
+    size_t len = strlen(text);
+
+    if (len == 0 || len >= LINK_PRODUCT_MAX) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (!isalnum((unsigned char)text[i]) && text[i] != '-' && text[i] != '_') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* Reads the Pi's answer to a poll. Returns 1 when it is an openMenu answer. */
+static int
+read_poll_reply(const char* reply, int* need_games) {
+    const char* p = reply;
+    int seen = 0;
+
+    *need_games = 0;
+    while (*p) {
+        char line[48];
+        size_t len = strcspn(p, "\r\n");
+
+        snprintf(line, sizeof(line), "%.*s", (int)len, p);
+        if (!strncmp(line, "openmenu ", 9)) {
+            seen = 1;
+        } else if (!strcmp(line, "NEED games")) {
+            *need_games = 1;
+        } else if (!strncmp(line, "LAUNCH ", 7) && product_valid(line + 7)) {
+            mutex_lock(&link_mutex);
+            snprintf(pending, sizeof(pending), "%s", line + 7);
+            mutex_unlock(&link_mutex);
+        }
+        p += len;
+        p += strspn(p, "\r\n");
+    }
+    return seen;
+}
+
+static void*
+link_main(void* param) {
+    struct sockaddr_in addr;
+    char host[20];
+    char head[200];
+    char reply[LINK_REPLY_MAX];
+    int fails = 0;
+    int seen_pi = 0;
+
+    (void)param;
+    while (link_up && !stop_requested) {
+        unsigned int hash;
+        int count;
+        int need_games = 0;
+        int status;
+
+        if (!pi_address(&addr, host, sizeof(host))) {
+            break;
+        }
+        hash = games_hash(&count);
+        snprintf(head, sizeof(head),
+                 "GET /openmenu/poll?v=1&n=%d&h=%08x HTTP/1.0\r\nHost: %s\r\nUser-Agent: openMenu\r\n"
+                 "Connection: close\r\n\r\n",
+                 count, hash, host);
+        status = http_exchange(&addr, head, NULL, NULL, reply, sizeof(reply));
+        if (status == 200 && read_poll_reply(reply, &need_games)) {
+            seen_pi = 1;
+            fails = 0;
+            if (need_games && count > 0 && !stop_requested) {
+                upload_games(&addr, host, hash, count);
+            }
+        } else if (!seen_pi || ++fails >= LINK_MAX_FAILS) {
+            break; /* not a DreamPi with the add-on, or it went away */
+        }
+        for (int waited = 0; waited < LINK_POLL_MS && link_up && !stop_requested; waited += 100) {
+            thd_sleep(100);
+        }
+    }
+    worker_done = 1;
+    return NULL;
+}
+
+static void
+join_worker(void) {
+    if (worker != NULL) {
+        thd_join(worker, NULL);
+        worker = NULL;
+    }
+}
+
+void
+dreampi_link_abort(void) {
+    stop_requested = 1;
+    join_worker();
+    stop_requested = 0;
+    worker_done = 0;
+}
+
+void
+dreampi_link_ui_idle(int idle) {
+    ui_is_idle = idle;
+}
+
+void
+dreampi_link_tick(void) {
+    dcnow_status_t snap;
+    char product[LINK_PRODUCT_MAX] = "";
+    int modem_online = 0;
+
+    if (sf_dcnow[0] != DCNOW_OFF) {
+        dcnow_conn_poll(&snap);
+        modem_online = snap.state == DCNOW_CONN_ONLINE && dcnow_device_hint() == DCNOW_DEV_MODEM;
+    }
+    link_up = modem_online;
+
+    if (worker != NULL && worker_done) {
+        join_worker();
+        worker_done = 0;
+    }
+    if (!modem_online) {
+        tried_this_link = 0;
+    } else if (worker == NULL && !tried_this_link) {
+        tried_this_link = 1;
+        worker = thd_create(false, link_main, NULL);
+    }
+
+    if (!ui_is_idle) {
+        return;
+    }
+    mutex_lock(&link_mutex);
+    if (pending[0]) {
+        snprintf(product, sizeof(product), "%s", pending);
+        pending[0] = '\0';
+    }
+    mutex_unlock(&link_mutex);
+    if (product[0]) {
+        const gd_item* item = list_find_by_product(product);
+
+        if (item != NULL) {
+            dreamcast_launch_disc(item);
+        }
+    }
+}

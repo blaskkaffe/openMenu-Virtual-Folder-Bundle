@@ -23,6 +23,7 @@
 #include "ui/draw_prototypes.h"
 #include "ui/font_prototypes.h"
 #include "ui/ui_common.h"
+#include "backend/dreampi_link.h"
 #include "ui/ui_dcnow.h"
 #include "ui/ui_menu_credits.h"
 
@@ -836,6 +837,7 @@ FUNCTION(UI_NAME, drawTR) {
         dcnow_boot_started = true;
         dcnow_boot_autostart();
     }
+    dreampi_link_ui_idle(draw_current == DRAW_UI);
 
     switch (draw_current) {
         case DRAW_MENU: {

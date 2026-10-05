@@ -29,6 +29,7 @@
 #include <backend/db_list.h>
 #include <backend/dcnow_net.h>
 #include <backend/dcnow_vmu.h>
+#include <backend/dreampi_link.h>
 #include <ui/ui_dcnow.h>
 #include <backend/gd_list.h>
 #include <backend/online_time_sync.h>
@@ -768,6 +769,7 @@ main(int argc, char* argv[]) {
         hangup_overlay_set(0);
         vmu_lcd_check_insertions();
         dcnow_conn_tick();
+        dreampi_link_tick();
         dcnow_vmu_tick();
         online_time_sync_tick();
         bgm_poll();
