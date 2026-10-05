@@ -29,12 +29,16 @@ Dreamcast was given)
   line, tab separated: product, slot, disc, region, folder, name.
 
 Limits and open points
-- **Not run on a Dreamcast or a Pi.** The Pi side passes the add-on's test suite (303 tests, including 11 new ones). The openMenu
+- **Not run on a Dreamcast or a Pi.** The Pi side passes the add-on's test suite (305 tests, including 13 new ones). The openMenu
   side was only syntax-checked, not built or run.
-- **Events:** the default source is `https://dc99.net/online/dcnet_status.php`. The parser reads an `events` list at the top
-  level or inside a network section (title/name, start/date, end, description, game, network). I could not reach dc99.net
-  from the build sandbox, so the real field names are unconfirmed. To use another feed, put a JSON list of URLs in
-  `/opt/dreampi-netswitch/openmenu_events_sources.json`, for example `["https://dc99.net/..."]`.
+- **Events:** DC99 has no events API. The module downloads `https://dc99.net/community/` (plain HTML, at most once every
+  10 minutes while the page is open) and cuts out the `const EVENTS = [ ... ];` list the calendar draws from, then decodes it
+  as JSON. It reads title (or name), date/start, end, location, summary, source and url from each entry. The field
+  names are my best guess from your description: I could not open the page (the sandbox blocks dc99.net), so please check
+  one real entry against `_event()` in `netswitch_openmenu.py`. If the page has no `EVENTS` list, the box says "no EVENTS list
+  in the page (DC99 may have changed it)" and keeps the events it already had. Times are shown as DC99 gives them, without
+  converting to a time zone. DC99 gives no game field, so an event gets a Start button only when a card game's name appears in
+  its title or summary.
 - **Anyone who can open the page can start a game.** Like the rest of the page, there are no accounts. A launch is
   refused from other sites and when the Dreamcast was not heard from in the last 15 seconds, and it expires after 60
   seconds, but it has no PIN. Keep the Pi on a trusted network.

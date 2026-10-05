@@ -23,8 +23,6 @@ except ImportError:   # Python 2.7
 import netswitch_core as core
 
 GAMES_FILE = os.path.join(core.BASE_DIR, "openmenu_games.json")
-EVENTS_SOURCES_FILE = os.path.join(core.BASE_DIR, "openmenu_events_sources.json")   # optional: ["https://...", ...]
-DEFAULT_EVENT_SOURCES = ["https://dc99.net/online/dcnet_status.php"]
 SEEN_WINDOW = 15          # seconds: openMenu polls every 3, so it is "connected" while it was heard this recently
 LAUNCH_TTL = 60           # a launch nobody collected within this time is dropped
 EVENTS_CACHE = 600
@@ -32,7 +30,7 @@ MAX_BODY = 2000000
 MAX_GAMES = 5000
 MAX_EVENTS = 30
 TIMEOUT = 8
-MAX_BYTES = 1000000
+MAX_PAGE_BYTES = 1000000
 
 _lock = threading.Lock()
 _state = {"seen": 0.0, "pending": None, "pending_time": 0.0, "launched": None, "launched_time": 0.0,
@@ -125,14 +123,18 @@ def match_game(title, glist):
     return loose[0] if loose else None
 
 
-# ------------------------------------------------------------------ events (from dc99.net)
-_EVENT_LIST_KEYS = ("events", "upcoming_events", "event_list", "upcoming", "schedule")
-_START_KEYS = ("start", "starts", "start_time", "starts_at", "start_date", "date", "when", "time")
-_END_KEYS = ("end", "ends", "end_time", "ends_at", "end_date")
+# ------------------------------------------------------------------ events (from dc99.net/community)
+# DC99 has no events API. Its community page is plain HTML with a script holding the list the calendar draws from:
+#   const EVENTS = [ {...}, {...} ];
+# so the page is downloaded and that JSON list is cut out and decoded (nothing is scraped from the drawn calendar).
+EVENTS_URL = "https://dc99.net/community/"
+_START_KEYS = ("start", "starts", "start_time", "starts_at", "start_date", "date", "datetime", "when", "time")
+_END_KEYS = ("end", "ends", "end_time", "ends_at", "end_date", "end_date_time")
 _TITLE_KEYS = ("title", "name", "event", "event_name")
-_TEXT_KEYS = ("description", "details", "info", "text", "summary")
-_GAME_KEYS = ("game", "game_name", "current_game", "game_title")
-_NET_KEYS = ("network", "net", "platform", "server")
+_TEXT_KEYS = ("summary", "description", "details", "info", "text")
+_PLACE_KEYS = ("location", "place", "where", "venue")
+_URL_KEYS = ("url", "link", "href")
+_SRC_KEYS = ("source", "origin")
 
 try:
     _TEXT = basestring  # noqa: F821
@@ -145,65 +147,62 @@ def _pick(item, keys):
         v = item.get(k)
         if isinstance(v, (_TEXT, int, float)) and not isinstance(v, bool) and str(v).strip():
             return str(v).strip()
-        if isinstance(v, dict):
-            inner = _pick(v, ("name", "title"))
-            if inner:
-                return inner
     return ""
 
 
+def extract_events(html):
+    """The decoded EVENTS list of the community page, or None when the page has no such list (DC99 changed it)."""
+    m = re.search(r"\bEVENTS\s*=\s*\[", html)
+    if not m:
+        return None
+    try:
+        data, _ = json.JSONDecoder().raw_decode(html[m.end() - 1:])
+    except ValueError:
+        return None
+    return data if isinstance(data, list) else None
+
+
 def _event(item):
-    if isinstance(item, _TEXT):
-        return {"title": item.strip()[:100], "start": "", "end": "", "text": "", "game": "", "network": "", "product": ""} if item.strip() else None
     if not isinstance(item, dict):
         return None
     title = _pick(item, _TITLE_KEYS)
     if not title:
         return None
+    url = _pick(item, _URL_KEYS)
+    if url.startswith("/"):
+        url = "https://dc99.net" + url
+    if not url.startswith(("http://", "https://")):
+        url = ""
     return {"title": title[:100], "start": _pick(item, _START_KEYS)[:40], "end": _pick(item, _END_KEYS)[:40],
-            "text": _pick(item, _TEXT_KEYS)[:300], "game": _pick(item, _GAME_KEYS)[:80], "network": _pick(item, _NET_KEYS)[:20],
-            "product": ""}
+            "location": _pick(item, _PLACE_KEYS)[:80], "text": _pick(item, _TEXT_KEYS)[:300],
+            "source": _pick(item, _SRC_KEYS)[:20], "url": url, "product": ""}
 
 
-def parse_events(data):
-    """Events from a JSON feed: a top-level or per-section "events" list (of objects or plain strings) is read,
-    wherever it sits. Unknown shapes give an empty list."""
-    found = []
-    if isinstance(data, list):
-        found = [e for e in (_event(i) for i in data) if e]
-    elif isinstance(data, dict):
-        for k in _EVENT_LIST_KEYS:
-            if isinstance(data.get(k), list):
-                found += [e for e in (_event(i) for i in data[k]) if e]
-        for key, section in data.items():
-            if key in _EVENT_LIST_KEYS or not isinstance(section, dict):
-                continue
-            for k in _EVENT_LIST_KEYS:
-                if isinstance(section.get(k), list):
-                    for e in (_event(i) for i in section[k]):
-                        if e:
-                            if not e["network"]:
-                                e["network"] = str(key)[:20]
-                            found.append(e)
-    return found[:MAX_EVENTS]
+def parse_events(html):
+    """(events, error): the events of the community page, soonest first."""
+    data = extract_events(html)
+    if data is None:
+        return [], "no EVENTS list in the page (DC99 may have changed it)"
+    events = [e for e in (_event(i) for i in data) if e]
+    events.sort(key=lambda e: e["start"])
+    return events[:MAX_EVENTS], ""
 
 
-def event_sources():
-    try:
-        with open(EVENTS_SOURCES_FILE) as f:
-            data = json.load(f)
-        found = [s for s in data if isinstance(s, _TEXT) and s.startswith(("http://", "https://"))]
-        if found:
-            return found
-    except (IOError, OSError, ValueError, TypeError):
-        pass
-    return list(DEFAULT_EVENT_SOURCES)
+def match_in_text(text, glist):
+    """The card game whose name appears inside an event's title or summary (the longest name wins), or None."""
+    hay = _norm(text)
+    best = None
+    for g in glist:
+        n = _norm(g["name"])
+        if len(n) >= 5 and n in hay and (best is None or len(n) > len(_norm(best["name"]))):
+            best = g
+    return best
 
 
 def fetch(url):
-    """JSON text of a URL. Replaced by the tests."""
-    req = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; dreampi-netswitch)", "Accept": "application/json, */*"})
-    return urlopen(req, timeout=TIMEOUT).read(MAX_BYTES).decode("utf-8", "replace")
+    """Page text of a URL. Replaced by the tests."""
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; dreampi-netswitch)", "Accept": "text/html, */*"})
+    return urlopen(req, timeout=TIMEOUT).read(MAX_PAGE_BYTES).decode("utf-8", "replace")
 
 
 def refresh_events():
@@ -213,21 +212,21 @@ def refresh_events():
         _state["events_refreshing"] = True
     events, error = [], ""
     try:
-        for url in event_sources():
-            try:
-                events += parse_events(json.loads(fetch(url)))
-            except Exception as e:
-                error = str(getattr(e, "reason", None) or e)[:80]
+        try:
+            events, error = parse_events(fetch(EVENTS_URL))
+        except Exception as e:
+            error = str(getattr(e, "reason", None) or e)[:80]
         glist = games()["games"]
         for e in events:
-            g = match_game(e["game"], glist) if e["game"] else None
+            g = match_in_text(e["title"] + " " + e["text"], glist)
             if g:
                 e["product"] = g["product"]
-        events.sort(key=lambda e: e["start"])
     finally:
         with _lock:
-            _state.update({"events": events[:MAX_EVENTS], "events_time": time.time(), "events_refreshing": False,
-                           "events_error": error if not events else ""})
+            if events or not _state["events"]:      # a failed fetch keeps the events already known
+                _state["events"] = events[:MAX_EVENTS]
+            _state.update({"events_time": time.time(), "events_refreshing": False,
+                           "events_error": error if not _state["events"] else ""})
 
 
 def current_events():

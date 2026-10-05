@@ -106,20 +106,46 @@ class OpenMenu(unittest.TestCase):
         self.assertIsNone(om.match_game("Quake III", glist))
         self.assertIsNone(om.match_game("", glist))
 
-    def test_events_parsed(self):
-        data = {"dcnet": {"online": True, "players": [], "events": [{"title": "Taxi night", "start": "2026-10-10 20:00", "game": "Crazy Taxi"}]},
-                "events": [{"name": "Open lobby", "date": "2026-10-12"}, "just text"]}
-        events = om.parse_events(data)
-        self.assertEqual(sorted(e["title"] for e in events), ["Open lobby", "Taxi night", "just text"])
-        self.assertEqual([e for e in events if e["title"] == "Taxi night"][0]["network"], "dcnet")
-        self.assertEqual(om.parse_events({"unrelated": 1}), [])
+    PAGE = ("<html><head><script>var x = 1;\nconst EVENTS = [\n"
+            '{"title": "Crazy Taxi night", "date": "2026-10-10T20:00", "end": "2026-10-10T22:00", "location": "Discord",'
+            ' "summary": "Come play {braces} here", "source": "discord", "url": "/events/taxi-night"},\n'
+            '{"name": "Open lobby", "start": "2026-10-09T19:00", "source": "manual", "url": "javascript:alert(1)"},\n'
+            '{"nothing": "here"}\n];\nconst OTHER = [1];</script></head><body>drawn calendar</body></html>')
 
-    def test_events_get_game_ids(self):
+    def test_events_read_from_the_page(self):
+        events, error = om.parse_events(self.PAGE)
+        self.assertEqual(error, "")
+        self.assertEqual([e["title"] for e in events], ["Open lobby", "Crazy Taxi night"])     # soonest first
+        taxi = events[1]
+        self.assertEqual((taxi["start"], taxi["end"], taxi["location"], taxi["source"]), ("2026-10-10T20:00", "2026-10-10T22:00", "Discord", "discord"))
+        self.assertEqual(taxi["url"], "https://dc99.net/events/taxi-night")
+        self.assertIn("{braces}", taxi["text"])
+        self.assertEqual(events[0]["url"], "")                                                  # not a web address: dropped
+
+    def test_page_without_events_list_is_reported(self):
+        for html in ("<html>nothing</html>", "const EVENTS = [ not json ];", "const EVENTS = [1, 2"):
+            events, error = om.parse_events(html)
+            self.assertEqual(events, [])
+            self.assertIn("EVENTS", error)
+
+    def test_game_found_in_event_text(self):
+        glist = om.parse_games(UPLOAD)[1]
+        self.assertEqual(om.match_in_text("Crazy Taxi night", glist)["product"], "MK51035")
+        self.assertEqual(om.match_in_text("Sonic Adventure 2 (USA) battle", glist)["product"], "T1234N")
+        self.assertIsNone(om.match_in_text("Movie night", glist))
+
+    def test_events_get_game_ids_and_survive_a_failed_fetch(self):
         self.upload()
-        om.fetch = lambda url: json.dumps({"events": [{"title": "Taxi night", "start": "x", "game": "Crazy Taxi"}]})
+        om.fetch = lambda url: self.PAGE
         om.refresh_events()
         state = json.loads(self.call("GET", "/openmenu/state")[1])
-        self.assertEqual(state["events"][0]["product"], "MK51035")
+        self.assertEqual([e["product"] for e in state["events"]], ["", "MK51035"])
+        def broken(url):
+            raise IOError("offline")
+        om.fetch = broken
+        om.refresh_events()
+        state = json.loads(self.call("GET", "/openmenu/state")[1])
+        self.assertEqual(len(state["events"]), 2)
 
 
 if __name__ == "__main__":

@@ -43,7 +43,8 @@
    return '<div class="p"><span class="pn">'+esc(p.player)+(p.network?" \u2022 "+esc(p.network):"")+'<span class="pg">'+esc(p.game)+(matchGame(p.game)?"":" (not on your card)")+'</span></span>'+
     (matchGame(p.game)?btn(matchGame(p.game).product,"Join",can):"")+'</div>'}).join(""):"No players online";
   document.getElementById("om-events").innerHTML=last.events.length?last.events.map(function(e){
-   return '<div class="p"><span class="pn">'+esc(e.title)+'<span class="pg">'+esc([e.start,e.network,e.game].filter(Boolean).join(" • "))+
+   var head=e.url?'<a href="'+esc(e.url)+'" target="_blank" rel="noopener noreferrer">'+esc(e.title)+'</a>':esc(e.title);
+   return '<div class="p"><span class="pn">'+head+'<span class="pg">'+esc([e.start+(e.end?" \u2013 "+e.end:""),e.location,e.source].filter(Boolean).join(" \u2022 "))+
     (e.text?'<br>'+esc(e.text):"")+'</span></span>'+(e.product?btn(e.product,"Start",can):"")+'</div>'}).join(""):
    (last.events_error?"Events unavailable ("+esc(last.events_error)+")":"No events listed");
   var q=document.getElementById("om-find").value.toLowerCase();
