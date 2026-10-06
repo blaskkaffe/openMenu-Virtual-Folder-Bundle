@@ -303,8 +303,11 @@ draw_bg_overlay(void) {
     const dimen_RECT right_right = {.x = 0, .y = 66, .w = 116, .h = 358};
 
     draw_draw_sub_image(8, 12, 200, 52, COLOR_WHITE, &txr_bg_left, &logo);
-    draw_draw_sub_image(414, 66, 98, 358, COLOR_WHITE, &txr_bg_left, &right_left);
-    draw_draw_sub_image(512, 66, 116, 358, COLOR_WHITE, &txr_bg_right, &right_right);
+    /* With a popup open the legend and disc picture are hidden behind it anyway; drawn there they showed as a blank box through it. */
+    if (draw_current == DRAW_UI) {
+        draw_draw_sub_image(414, 66, 98, 358, COLOR_WHITE, &txr_bg_left, &right_left);
+        draw_draw_sub_image(512, 66, 116, 358, COLOR_WHITE, &txr_bg_right, &right_right);
+    }
 }
 
 static void

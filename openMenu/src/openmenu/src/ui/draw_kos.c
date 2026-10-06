@@ -705,6 +705,12 @@ draw_set_corner_radius(int radius) {
  * with radius 0 is one point. Returns the number of points. */
 static int
 rr_outline(float x, float y, float w, float h, float r0, float r1, float r2, float r3, float* px, float* py) {
+    /* A radius larger than half the shorter side makes the arcs cross; that was the buggy corner of the 20 px high details bar. */
+    const float rmax = (w < h ? w : h) * 0.5f;
+    r0 = r0 > rmax ? rmax : r0;
+    r1 = r1 > rmax ? rmax : r1;
+    r2 = r2 > rmax ? rmax : r2;
+    r3 = r3 > rmax ? rmax : r3;
     const float radii[4] = {r0, r1, r2, r3};
     const float cx[4] = {x + r0, x + w - r1, x + w - r2, x + r3};
     const float cy[4] = {y + r0, y + r1, y + h - r2, y + h - r3};

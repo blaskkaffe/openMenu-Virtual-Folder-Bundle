@@ -114,11 +114,11 @@ def cut_alpha(full, box, accent=None, swirl_width=0):
 
 FONT = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
-BUTTONS = [("A", (230, 57, 57), "Launch Disc"), ("B", (40, 120, 220), "Previous Folder"), ("X", (235, 220, 40), "Use Cheats"),
-           ("Y", (110, 200, 70), "Exit to Bios"), (None, (170, 170, 170), "Settings Menu")]
+# the button icons are the default Folders theme's own: 16x16 pieces of its picture at x=451 (A, B, X, Y and the Start triangle)
+BUTTONS = [(88, "Launch Disc"), (110, "Previous Folder"), (132, "Extras"), (154, "Exit to Bios"), (176, "Settings Menu")]
 
 
-def legend(img, theme, animated=False):
+def legend(img, theme, animated=False, full=None):
     """The controls box the way the web page draws an info box: a small label on top, then rows divided by thin lines."""
     from PIL import ImageFont
     x0, y0, x1, y1 = LEGEND_BOX
@@ -128,15 +128,12 @@ def legend(img, theme, animated=False):
     d.text(((x0 + x1) // 2, y0 + 12), label, font=bold, fill=theme["light"], anchor="mm")
     line = mix(CARD, theme["light"], 0.22)
     row_h, top = 20, y0 + 22
-    for i, (letter, colour, text) in enumerate(BUTTONS):
+    for i, (src_y, text) in enumerate(BUTTONS):
         y = top + i * row_h
         d.line((x0 + 10, y, x1 - 11, y), fill=(theme["light"] + (70,)) if animated else line)
         cy, cx = y + row_h // 2 + 1, x0 + 22
-        if letter:
-            d.ellipse((cx - 7, cy - 7, cx + 7, cy + 7), fill=colour)
-            d.text((cx, cy), letter, font=tiny, fill=(20, 20, 20), anchor="mm")
-        else:
-            d.polygon([(cx, cy - 7), (cx - 8, cy + 6), (cx + 8, cy + 6)], fill=colour)
+        icon = cut_alpha(full, (451, src_y, 467, src_y + 16))      # brightness is opacity, so it sits on the box's fill
+        img.alpha_composite(icon, (cx - 8, cy - 8))
         d.text((x0 + 40, cy), text, font=small, fill=TEXT, anchor="lm")
 
 
@@ -148,8 +145,11 @@ def picture(theme, full, animated=False):
         img = Image.new("RGBA", (640, 512), (0, 0, 0, 0))
         tint, a = theme["tint4"], 204
     else:
+        # a still picture of the wave scene (one frame of the animated backdrop) behind boxes that are baked 78 % opaque
         img = Image.new("RGBA", (640, 512), PAGE + (255,))
-        tint, a = theme["tint"], 255
+        scene = os.path.join(HERE, "backdrop_frame.png")
+        img.paste(Image.open(scene).convert("RGB") if os.path.exists(scene) else backdrop_frame(theme, 2.0), (0, 0))
+        tint, a = theme["fill"], PANEL_ALPHA
     if not animated:
         rounded(img, LIST_BOX, tint, light, alpha=a)
         rounded(img, LEGEND_BOX, tint, light, alpha=a)
@@ -163,7 +163,7 @@ def picture(theme, full, animated=False):
         shadow.putalpha(alpha)
         img.alpha_composite(shadow, (13, 18))
     img.alpha_composite(logo, (12, 16))
-    legend(img, theme, animated)
+    legend(img, theme, animated, full)
     # an empty disc where there is no cover art (openMenu draws the art over it)
     cx, cy = (ART_BOX[0] + ART_BOX[2]) // 2, (ART_BOX[1] + ART_BOX[3]) // 2
     dim = mix(tint, light, 0.40)
