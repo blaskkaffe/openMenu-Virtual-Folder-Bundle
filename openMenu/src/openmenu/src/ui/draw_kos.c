@@ -688,12 +688,10 @@ draw_backdrop_scene(void) {
     draw_scene_plane(t);
 }
 
-/* Rounded rectangles as real polygons. A theme can ask for rounded popups (THEME.INI menu_corner_radius; zero keeps the square frame)
- * and, with a backdrop, for glass panels (draw_draw_panel). Each corner is an arc of ARC_SEG segments; a convex outline is drawn as one
- * triangle strip by zig-zagging across it (v0, v1, vn-1, v2, vn-2 ...). */
-#define ARC_SEG    6
-#define OUTLINE_MAX (4 * (ARC_SEG + 1))
-
+/* Rounded rectangles for popups (THEME.INI menu_corner_radius; zero keeps the square frame) and, with a backdrop, glass panels
+ * (draw_draw_panel). They are built from plain axis-aligned quads, one per run of pixel rows that share the same left and right end,
+ * so a corner is a small staircase. (Triangle strips along an arc showed notches and holes on the console.) All quads of one shape
+ * share one depth value: they never overlap. */
 static int popup_corner_radius = 0;
 
 void
@@ -701,115 +699,122 @@ draw_set_corner_radius(int radius) {
     popup_corner_radius = radius < 0 ? 0 : (radius > 16 ? 16 : radius);
 }
 
-/* The outline of a rectangle with its own radius at each corner (top left, top right, bottom right, bottom left), clockwise. A corner
- * with radius 0 is one point. Returns the number of points. */
-/* cos and sin of k * 15 degrees, k = 0..6 (ARC_SEG is 6) */
-static const float ARC_COS[7] = {1.0f, 0.9659258f, 0.8660254f, 0.7071068f, 0.5f, 0.2588190f, 0.0f};
-static const float ARC_SIN[7] = {0.0f, 0.2588190f, 0.5f, 0.7071068f, 0.8660254f, 0.9659258f, 1.0f};
+typedef struct {
+    float top, bottom;
+    uint32_t color_top, color_bottom;
+} rr_fill_t;
 
-static int
-rr_outline(float x, float y, float w, float h, float r0, float r1, float r2, float r3, float* px, float* py) {
-    /* A radius larger than half the shorter side makes the arcs cross; that was the buggy corner of the 20 px high details bar. */
+static uint32_t
+rr_color_at(const rr_fill_t* g, float y) {
+    const float span = g->bottom - g->top > 1.0f ? g->bottom - g->top : 1.0f;
+    float f = (y - g->top) / span;
+    uint32_t out = 0;
+
+    f = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
+    for (int shift = 24; shift >= 0; shift -= 8) {
+        const int c0 = (int)((g->color_top >> shift) & 0xFF), c1 = (int)((g->color_bottom >> shift) & 0xFF);
+
+        out |= (uint32_t)(c0 + (int)((float)(c1 - c0) * f)) << shift;
+    }
+    return out;
+}
+
+static void
+rr_quad(float x0, float x1, float y0, float y1, float z, const rr_fill_t* g) {
+    pvr_vertex_t vert = {.argb = 0, .oargb = 0, .flags = PVR_CMD_VERTEX, .z = z, .u = 0, .v = 0};
+    const float xs[4] = {x0, x1, x0, x1};
+    const float ys[4] = {y0, y0, y1, y1};
+
+    for (int k = 0; k < 4; k++) {
+        vert.flags = k == 3 ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
+        vert.x = xs[k];
+        vert.y = ys[k];
+        vert.argb = rr_color_at(g, ys[k]);
+        pvr_prim(&vert, sizeof(vert));
+    }
+}
+
+/* How far the shape's left end is moved in at the middle of a pixel row, for a rectangle (y .. y+h) with corner radii rt (top) and rb. */
+static float
+rr_inset(float yc, float y, float h, float rt, float rb) {
+    float r = 0.0f, dy = 0.0f;
+
+    if (yc < y + rt) {
+        r = rt;
+        dy = y + rt - yc;
+    } else if (yc > y + h - rb) {
+        r = rb;
+        dy = yc - (y + h - rb);
+    }
+    if (r <= 0.5f || dy >= r) {
+        return r > 0.5f ? r : 0.0f;
+    }
+    return (float)(int)(r - sqrtf(r * r - dy * dy) + 0.5f);
+}
+
+/* A rounded rectangle filled with the gradient g; with bw above zero only the border band of that width. rt and rb are the radii of
+ * the top and the bottom corners. */
+static void
+rr_shape(float x, float y, float w, float h, float rt, float rb, float bw, const rr_fill_t* g) {
+    pvr_poly_cxt_t context;
+    pvr_poly_hdr_t header;
+    const float z = z_inc();
     const float rmax = (w < h ? w : h) * 0.5f;
-    r0 = r0 > rmax ? rmax : r0;
-    r1 = r1 > rmax ? rmax : r1;
-    r2 = r2 > rmax ? rmax : r2;
-    r3 = r3 > rmax ? rmax : r3;
-    const float radii[4] = {r0, r1, r2, r3};
-    const float cx[4] = {x + r0, x + w - r1, x + w - r2, x + r3};
-    const float cy[4] = {y + r0, y + r1, y + h - r2, y + h - r3};
-    const float corner_x[4] = {x, x + w, x + w, x};
-    const float corner_y[4] = {y, y, y + h, y + h};
-    int n = 0;
+    float run_y = 0.0f, a0 = 0.0f, a1 = 0.0f, b0 = 0.0f, b1 = 0.0f;
+    int run_pieces = 0;
 
-    for (int c = 0; c < 4; c++) {
-        if (radii[c] <= 0.5f) {
-            px[n] = corner_x[c];
-            py[n++] = corner_y[c];
-            continue;
-        }
-        for (int k = 0; k <= ARC_SEG; k++) {
-            /* A quarter circle from a table (no trig on the console), turned for each corner: the corners start at the left, the top,
-             * the right and the bottom. */
-            const float co = ARC_COS[k], si = ARC_SIN[k];
+    rt = rt > rmax ? rmax : rt;
+    rb = rb > rmax ? rmax : rb;
+    pvr_poly_cxt_col(&context, draw_get_list());
+    context.gen.culling = PVR_CULLING_NONE;
+    pvr_poly_compile(&header, &context);
+    pvr_prim(&header, sizeof(header));
 
-            switch (c) {
-                case 0: px[n] = cx[c] - radii[c] * co; py[n++] = cy[c] - radii[c] * si; break;
-                case 1: px[n] = cx[c] + radii[c] * si; py[n++] = cy[c] - radii[c] * co; break;
-                case 2: px[n] = cx[c] + radii[c] * co; py[n++] = cy[c] + radii[c] * si; break;
-                default: px[n] = cx[c] - radii[c] * si; py[n++] = cy[c] + radii[c] * co; break;
+    for (int row = 0; row <= (int)h; row++) {
+        const float yc = y + (float)row + 0.5f;
+        float n0 = 0.0f, n1 = 0.0f, m0 = 0.0f, m1 = 0.0f;
+        int pieces = 0;
+
+        if (row < (int)h) {
+            const float o = rr_inset(yc, y, h, rt, rb);
+            const float ox0 = x + o, ox1 = x + w - o;
+
+            if (bw <= 0.0f) {
+                n0 = ox0;
+                n1 = ox1;
+                pieces = 1;
+            } else if (yc < y + bw || yc > y + h - bw) {
+                n0 = ox0;
+                n1 = ox1;
+                pieces = 1;
+            } else {
+                const float irt = rt > bw ? rt - bw : 0.0f, irb = rb > bw ? rb - bw : 0.0f;
+                const float i = rr_inset(yc, y + bw, h - 2.0f * bw, irt, irb);
+
+                n0 = ox0;
+                n1 = x + bw + i;
+                m0 = x + w - bw - i;
+                m1 = ox1;
+                pieces = 2;
             }
         }
-    }
-    return n;
-}
+        if (pieces == run_pieces && (pieces == 0 || (n0 == a0 && n1 == a1 && (pieces == 1 || (m0 == b0 && m1 == b1))))) {
+            continue;
+        }
+        if (run_pieces > 0) {
+            const float y1 = y + (float)row;
 
-/* A solid or vertically graded convex polygon (the top colour at the smallest y, the bottom colour at the largest). */
-static void
-draw_convex(const float* px, const float* py, int n, float top, float bottom, uint32_t color_top, uint32_t color_bottom) {
-    pvr_poly_cxt_t context;
-    pvr_poly_hdr_t header;
-    const float z = z_inc();
-    const float span = bottom - top > 1.0f ? bottom - top : 1.0f;
-    const int ta = (color_top >> 24) & 0xFF, tr = (color_top >> 16) & 0xFF, tg = (color_top >> 8) & 0xFF, tb = color_top & 0xFF;
-    const int ba = (color_bottom >> 24) & 0xFF, br = (color_bottom >> 16) & 0xFF, bg = (color_bottom >> 8) & 0xFF,
-              bb = color_bottom & 0xFF;
-
-    pvr_poly_cxt_col(&context, draw_get_list());
-    context.gen.culling = PVR_CULLING_NONE; /* the winding of these outlines is not the quads' one, and the PVR would cull them */
-    pvr_poly_compile(&header, &context);
-    pvr_prim(&header, sizeof(header));
-
-    pvr_vertex_t vert = {.argb = 0, .oargb = 0, .flags = PVR_CMD_VERTEX, .z = z, .u = 0, .v = 0};
-
-    for (int k = 0; k < n; k++) {
-        const int idx = (k & 1) ? n - 1 - (k >> 1) : (k >> 1) + 0;
-        const float f = (py[idx] - top) / span;
-        const int a = ta + (int)((float)(ba - ta) * f);
-        const int r = tr + (int)((float)(br - tr) * f);
-        const int g = tg + (int)((float)(bg - tg) * f);
-        const int b = tb + (int)((float)(bb - tb) * f);
-
-        vert.flags = k == n - 1 ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
-        vert.x = px[idx];
-        vert.y = py[idx];
-        vert.argb = ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
-        pvr_prim(&vert, sizeof(vert));
-    }
-}
-
-/* The band between an outline and the same outline inset by bw, as one strip. */
-static void
-draw_ring(float x, float y, float w, float h, float r, float bw, uint32_t color) {
-    float ox[OUTLINE_MAX], oy[OUTLINE_MAX], ix[OUTLINE_MAX], iy[OUTLINE_MAX];
-    const float ri = r > bw ? r - bw : 0.0f;
-    const int n = rr_outline(x, y, w, h, r, r, r, r, ox, oy);
-    const int m = rr_outline(x + bw, y + bw, w - 2.0f * bw, h - 2.0f * bw, ri, ri, ri, ri, ix, iy);
-    pvr_poly_cxt_t context;
-    pvr_poly_hdr_t header;
-    const float z = z_inc();
-
-    if (n != m) {
-        return;
-    }
-    pvr_poly_cxt_col(&context, draw_get_list());
-    context.gen.culling = PVR_CULLING_NONE; /* the winding of these outlines is not the quads' one, and the PVR would cull them */
-    pvr_poly_compile(&header, &context);
-    pvr_prim(&header, sizeof(header));
-
-    pvr_vertex_t vert = {.argb = color, .oargb = 0, .flags = PVR_CMD_VERTEX, .z = z, .u = 0, .v = 0};
-
-    for (int k = 0; k <= n; k++) {
-        const int idx = k % n;
-
-        vert.flags = PVR_CMD_VERTEX;
-        vert.x = ox[idx];
-        vert.y = oy[idx];
-        pvr_prim(&vert, sizeof(vert));
-        vert.flags = k == n ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
-        vert.x = ix[idx];
-        vert.y = iy[idx];
-        pvr_prim(&vert, sizeof(vert));
+            rr_quad(a0, a1, run_y, y1, z, g);
+            if (run_pieces == 2) {
+                rr_quad(b0, b1, run_y, y1, z, g);
+            }
+        }
+        run_y = y + (float)row;
+        run_pieces = pieces;
+        a0 = n0;
+        a1 = n1;
+        b0 = m0;
+        b1 = m1;
     }
 }
 
@@ -819,7 +824,7 @@ draw_draw_popup_frame(int x, int y, int width, int height, int header_height, ui
     float r = (float)popup_corner_radius;
 
     if (header_height > 0 && r > (float)header_height * 0.5f) {
-        r = (float)header_height * 0.5f; /* the header's arcs must match the fill's */
+        r = (float)header_height * 0.5f; /* the header's corners must match the fill's */
     }
 
     if (popup_corner_radius == 0) {
@@ -831,36 +836,35 @@ draw_draw_popup_frame(int x, int y, int width, int height, int header_height, ui
         return;
     }
     {
-        float px[OUTLINE_MAX], py[OUTLINE_MAX];
-        int n = rr_outline((float)(x - 2), (float)(y - 2), (float)(width + 4), (float)(height + 4), r + 2.0f, r + 2.0f, r + 2.0f,
-                           r + 2.0f, px, py);
+        const rr_fill_t border = {(float)y, (float)(y + height), border_color, border_color};
+        const rr_fill_t fill = {(float)y, (float)(y + height), fill_color, fill_color};
 
-        draw_convex(px, py, n, (float)(y - 2), (float)(y + height + 2), border_color, border_color);
-        n = rr_outline((float)x, (float)y, (float)width, (float)height, r, r, r, r, px, py);
-        draw_convex(px, py, n, (float)y, (float)(y + height), fill_color, fill_color);
+        rr_shape((float)(x - 2), (float)(y - 2), (float)(width + 4), (float)(height + 4), r + 2.0f, r + 2.0f, 0.0f, &border);
+        rr_shape((float)x, (float)y, (float)width, (float)height, r, r, 0.0f, &fill);
         if (header_height > 0) {
-            n = rr_outline((float)x, (float)y, (float)width, (float)header_height, r, r, 0.0f, 0.0f, px, py);
-            draw_convex(px, py, n, (float)y, (float)(y + header_height), border_color, border_color);
+            rr_shape((float)x, (float)y, (float)width, (float)header_height, r, 0.0f, 0.0f, &border);
         }
     }
 }
 
-/* A glass panel for backdrop themes: a translucent fill that is a little lighter at the top, and a border. (No shadow: every polygon is
- * another entry in the tile lists of the translucent pass, which the text already fills.) Colours are
- * 0xRRGGBB; alpha (0..255) is the fill's opacity at the top, the bottom is a third more transparent. */
+/* A glass panel for backdrop themes: a translucent fill that is a little lighter at the top, and a border. Colours are 0xRRGGBB;
+ * alpha (0..255) is the fill's opacity at the top, the bottom is a third more transparent. */
 void
 draw_draw_panel(int x, int y, int width, int height, int radius, int border_width, uint32_t border_rgb, uint32_t fill_rgb, int alpha) {
-    float px[OUTLINE_MAX], py[OUTLINE_MAX];
     const float r = (float)radius;
-    int n;
     const uint32_t rgb = fill_rgb & 0x00FFFFFFu;
     const uint32_t light = (((rgb >> 16) & 0xFF) * 3 / 2 > 255 ? 255 : ((rgb >> 16) & 0xFF) * 3 / 2) << 16
                            | (((rgb >> 8) & 0xFF) * 3 / 2 > 255 ? 255 : ((rgb >> 8) & 0xFF) * 3 / 2) << 8
                            | (((rgb & 0xFF) * 3 / 2 > 255 ? 255 : (rgb & 0xFF) * 3 / 2));
+    const float bw = (float)border_width;
+    /* The fill only inside the border: the translucent fill is not drawn twice where the border is. */
+    const rr_fill_t fill = {(float)y, (float)(y + height), ((uint32_t)alpha << 24) | light,
+                            ((uint32_t)(alpha * 17 / 20) << 24) | rgb};
+    const rr_fill_t border = {(float)y, (float)(y + height), 0xFF000000u | border_rgb, 0xFF000000u | border_rgb};
+    const float ri = r > bw ? r - bw : 0.0f;
 
-    n = rr_outline((float)x, (float)y, (float)width, (float)height, r, r, r, r, px, py);
-    draw_convex(px, py, n, (float)y, (float)(y + height), ((uint32_t)alpha << 24) | light, ((uint32_t)(alpha * 17 / 20) << 24) | rgb);
-    draw_ring((float)x, (float)y, (float)width, (float)height, r, (float)border_width, 0xFF000000u | border_rgb);
+    rr_shape((float)x + bw, (float)y + bw, (float)width - 2.0f * bw, (float)height - 2.0f * bw, ri, ri, 0.0f, &fill);
+    rr_shape((float)x, (float)y, (float)width, (float)height, r, r, bw, &border);
 }
 
 /* draws an image at coords as a square */
