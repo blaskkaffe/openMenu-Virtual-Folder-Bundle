@@ -8,7 +8,12 @@ Needs Pillow and numpy:  python3 build_theme.py [out_dir]
 The logo and the button legend are cut out of the default Folders theme's background (so that file must be reachable: DEFAULT below)."""
 import os
 import sys
-from PIL import Image, ImageDraw, ImageFilter
+
+try:
+    import numpy
+    from PIL import Image, ImageDraw, ImageFilter
+except ImportError as e:
+    sys.exit("build_theme.py needs Pillow and numpy: pip install -r requirements.txt  (%s)" % e)
 
 import pvr
 
@@ -113,8 +118,28 @@ def cut_alpha(full, box, accent=None, swirl_width=0):
     return piece
 
 
-FONT = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
-FONT_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+FONT_CANDIDATES = {
+    False: ["LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", "DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "Arial.ttf", "arial.ttf", "/Library/Fonts/Arial.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf", "C:/Windows/Fonts/arial.ttf", "Helvetica.ttc"],
+    True: ["LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", "DejaVuSans-Bold.ttf",
+           "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "Arial Bold.ttf", "arialbd.ttf", "/Library/Fonts/Arial Bold.ttf",
+           "/System/Library/Fonts/Supplemental/Arial Bold.ttf", "C:/Windows/Fonts/arialbd.ttf", "Helvetica.ttc"],
+}
+
+
+def load_font(bold, size):
+    """A sans font for the legend text, from wherever this machine has one (Linux, macOS, Windows), else Pillow's built-in one."""
+    from PIL import ImageFont
+    for name in FONT_CANDIDATES[bold]:
+        try:
+            return ImageFont.truetype(name, size)
+        except (OSError, IOError):
+            continue
+    try:
+        return ImageFont.load_default(size)        # Pillow 10.1 and newer: a scalable font
+    except TypeError:
+        return ImageFont.load_default()
 # the button icons are the default Folders theme's own: 16x16 pieces of its picture at x=451 (A, B, X, Y and the Start triangle)
 BUTTONS = [(88, "Launch Disc"), (110, "Previous Folder"), (132, "Use Cheats"), (154, "Exit to Bios"), (176, "Settings Menu")]
 
@@ -124,7 +149,7 @@ def legend(img, theme, animated=False, full=None):
     from PIL import ImageFont
     x0, y0, x1, y1 = LEGEND_BOX
     d = ImageDraw.Draw(img)
-    small, bold, tiny = ImageFont.truetype(FONT, 13), ImageFont.truetype(FONT_BOLD, 13), ImageFont.truetype(FONT_BOLD, 9)
+    small, bold = load_font(False, 13), load_font(True, 13)
     label = "Controls"
     d.text(((x0 + x1) // 2, y0 + 12), label, font=bold, fill=theme["light"], anchor="mm")
     line = mix(CARD, theme["light"], 0.22)
