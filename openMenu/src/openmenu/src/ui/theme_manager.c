@@ -10,6 +10,7 @@
  */
 
 #include <dirent.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -168,6 +169,8 @@ read_scroll_theme_ini(void* user, const char* section, const char* name, const c
             new_color->menu_bkg_color = str2argb(value);
         } else if (strcasecmp(name, "MENU_BKG_BORDER_COLOR") == 0) {
             new_color->menu_bkg_border_color = str2argb(value);
+        } else if (strcasecmp(name, "MENU_CORNER_RADIUS") == 0) {
+            new_color->menu_corner_radius = atoi(value);
         } else if (strcasecmp(name, "CURSOR_COLOR") == 0) {
             new_theme->cursor_color = str2argb(value);
         } else if (strcasecmp(name, "MULTIDISC_COLOR") == 0) {
@@ -243,6 +246,41 @@ read_folder_theme_ini(void* user, const char* section, const char* name, const c
             return 1;
         } else if (strcasecmp(name, "ITEM_DETAILS_TEXT_COLOR") == 0) {
             new_theme->item_details_text_color = str2argb(value);
+            return 1;
+        } else if (strncasecmp(name, "PANEL_", 6) == 0 && name[6] >= '0' && name[6] <= '5' && name[7] == '\0') {
+            const int slot = name[6] - '0';
+            int x, y, w, h;
+
+            if (sscanf(value, "%d,%d,%d,%d", &x, &y, &w, &h) == 4) {
+                new_theme->panel_rect[slot][0] = x;
+                new_theme->panel_rect[slot][1] = y;
+                new_theme->panel_rect[slot][2] = w;
+                new_theme->panel_rect[slot][3] = h;
+                if (slot + 1 > new_theme->panel_count) {
+                    new_theme->panel_count = slot + 1;
+                }
+            }
+            return 1;
+        } else if (strcasecmp(name, "PANEL_BORDER_COLOR") == 0) {
+            new_theme->panel_border_color = str2argb(value) & 0x00FFFFFF;
+            return 1;
+        } else if (strcasecmp(name, "PANEL_FILL_COLOR") == 0) {
+            new_theme->panel_fill_color = str2argb(value) & 0x00FFFFFF;
+            return 1;
+        } else if (strcasecmp(name, "PANEL_ALPHA") == 0) {
+            new_theme->panel_alpha = atoi(value);
+            return 1;
+        } else if (strcasecmp(name, "PANEL_RADIUS") == 0) {
+            new_theme->panel_radius = atoi(value);
+            return 1;
+        } else if (strcasecmp(name, "PANEL_BORDER_WIDTH") == 0) {
+            new_theme->panel_border_width = atoi(value);
+            return 1;
+        } else if (strcasecmp(name, "BACKDROP") == 0) {
+            new_theme->backdrop = atoi(value);
+            return 1;
+        } else if (strcasecmp(name, "BACKDROP_COLOR") == 0) {
+            new_theme->backdrop_color = str2argb(value);
             return 1;
         } else if (strcasecmp(name, "CLOCK_X") == 0) {
             new_theme->clock_x = atoi(value);

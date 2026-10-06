@@ -675,7 +675,8 @@ init_gfx_pvr(void) {
         0,                                                                             /* No DMA, but maybe? */
         0,                                                                             /* No FSAA */
         0,                                                                             /* Disable TR autosort */
-        0};
+        1}; /* One extra set of object-pointer blocks (about 77 KB of video memory per frame buffer set). A 32x32 tile whose list
+             * is full drops every polygon after it: missing text, holes and bars where text, popups and glass panels pile up. */
 
     pvr_init(&params);
     draw_set_list(PVR_LIST_OP_POLY);

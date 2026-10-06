@@ -262,6 +262,22 @@ draw_bg_layers(void) {
     }
 }
 
+/* The picture of a backdrop theme has only a logo, the Controls text and an empty disc on it, the rest is see-through. Drawn whole it would
+ * add an entry to every tile's polygon list in the translucent pass (the text fills those lists), so only the three pieces are drawn. */
+static void
+draw_bg_overlay(void) {
+    const dimen_RECT logo = {.x = 8, .y = 12, .w = 200, .h = 52};
+    const dimen_RECT right_left = {.x = 414, .y = 66, .w = 98, .h = 358};
+    const dimen_RECT right_right = {.x = 0, .y = 66, .w = 116, .h = 358};
+
+    draw_draw_sub_image(8, 12, 200, 52, COLOR_WHITE, &txr_bg_left, &logo);
+    /* With a popup open the legend and disc picture are hidden behind it anyway; drawn there they showed as a blank box through it. */
+    if (draw_current == DRAW_UI) {
+        draw_draw_sub_image(414, 66, 98, 358, COLOR_WHITE, &txr_bg_left, &right_left);
+        draw_draw_sub_image(512, 66, 116, 358, COLOR_WHITE, &txr_bg_right, &right_right);
+    }
+}
+
 static void
 draw_gamelist(void) {
     if (list_len <= 0) {
@@ -394,6 +410,7 @@ draw_gamelist(void) {
                 }
                 font_bmp_draw_main(tx, ty, buffer);
             }
+        }
         }
     }
 
@@ -1158,9 +1175,9 @@ draw_disc_options(void) {
     int width = disc_options.width;
     int height = disc_options.height;
     z_set_cond(205.0f);
-    draw_draw_quad(x - 2, y - 2, width + 4, height + 4, cur_theme->colors.menu_bkg_border_color);
-    draw_draw_quad(x, y, width, height, cur_theme->colors.menu_bkg_color);
-    draw_draw_quad(x, y, width, 20, cur_theme->colors.menu_bkg_border_color);
+    draw_set_corner_radius(cur_theme->colors.menu_corner_radius);
+    draw_draw_popup_frame(x, y, width, height, 20, cur_theme->colors.menu_bkg_border_color,
+                          cur_theme->colors.menu_bkg_color);
     font_bmp_begin_draw();
     font_bmp_set_color(cur_theme->menu_title_color);
     font_bmp_draw_main(x + width / 2 - 48, y + 2, "Disc Options");
@@ -1355,9 +1372,32 @@ FUNCTION(UI_NAME, setup) {
     marquee_reset();
 }
 
-FUNCTION(UI_NAME, drawOP) { draw_bg_layers(); }
+FUNCTION(UI_NAME, drawOP) {
+    if (cur_theme->backdrop) {
+        /* The background picture has see-through areas and is drawn in the translucent pass, over this. */
+        draw_backdrop(cur_theme->backdrop_color);
+        draw_backdrop_scene(cur_theme->backdrop >= 2);
+    } else {
+        draw_bg_layers();
+    }
+}
 
 FUNCTION(UI_NAME, drawTR) {
+    if (cur_theme->backdrop) {
+        /* Glass panels over the background scene (drawn in the opaque pass), then the background picture (logo, legend) over them. */
+        uint32_t panel_border = cur_theme->panel_border_color ? cur_theme->panel_border_color : 0xF6B27A;
+
+        for (int i = 0; i < cur_theme->panel_count; i++) {
+            const int* r = cur_theme->panel_rect[i];
+
+            if (r[2] > 0 && r[3] > 0) {
+                draw_draw_panel(r[0], r[1], r[2], r[3], cur_theme->panel_radius, cur_theme->panel_border_width ? cur_theme->panel_border_width : 3,
+                                panel_border, cur_theme->panel_fill_color, cur_theme->panel_alpha ? cur_theme->panel_alpha : 150);
+            }
+        }
+        draw_bg_overlay();
+    }
+
     /* List, artwork and details always draw, popups go on top of them. */
     draw_gamelist();
     draw_gameart();
