@@ -19,7 +19,7 @@ animated backdrop: slow silk-like waves in the theme colour behind the boxes. Al
 The animated set draws the **same background as the DreamPi web page's Dreamcast background module**: the Dreamcast-BIOS-style sky and rippling
 water, ported from its Three.js scene (`dc-background.js`, adapted from Robert Dale Smith's VMU Icon Maker, MIT).
 
-- **Needs the rebuilt openMenu** (this branch). It adds the theme keys `backdrop`, `backdrop_color` (an optional tint; leave it out for the web
+- **Needs the rebuilt openMenu** (this branch). It adds the theme keys `backdrop`, `backdrop_clouds` (the cloud cylinder's opacity in percent of the web page's own, which is very faint: 100 = the page, 250 = what these themes use), `backdrop_color` (an optional tint; leave it out for the web
   page's own colours), `panel_0` to `panel_5`, `panel_border_color`, `panel_fill_color`, `panel_alpha`, `panel_radius`, `panel_border_width`
   and `menu_corner_radius`. An older build ignores them and would show the see-through picture on black, so use the still set there.
 - **The scene, as the web page has it.** The same camera (at 0, -20, 7, a 75 degree field of view, looking along +y, with the page's 720 px high

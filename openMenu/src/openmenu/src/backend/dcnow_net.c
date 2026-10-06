@@ -993,6 +993,7 @@ void
 dcnow_net_shutdown(void) {
     dcnow_status_t snap;
 
+    dcnow_fetch_abort(); /* first: it may be waiting for the Pi or the web, and the rest of the shutdown waits for it */
     dreampi_link_abort();
     dcnow_conn_poll(&snap);
     if (active_device == DCNOW_DEV_MODEM && (snap.state == DCNOW_CONN_ONLINE || snap.state == DCNOW_CONN_CONNECTING)) {

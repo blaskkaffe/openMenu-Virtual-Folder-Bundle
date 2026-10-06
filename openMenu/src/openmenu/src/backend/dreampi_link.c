@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #include <arch/timer.h>
+#include <dc/video.h>
 #include <kos/mutex.h>
 #include <kos/net.h>
 #include <kos/thread.h>
@@ -53,6 +54,7 @@ static kthread_t* worker = NULL;
 static volatile int worker_done = 0;
 static volatile int link_up = 0;       /* set by the main thread: a modem connection is online */
 static volatile int stop_requested = 0;
+static volatile int worker_stage = 0; /* where the worker is, for the screen border colour if it will not stop (see dreampi_link_abort) */
 static volatile int ui_is_idle = 0;
 static volatile int pi_state = 0;      /* 0 not known yet, 1 the add-on answered, 2 there is none on this link */
 static int tried_this_link = 0;        /* main thread only: one worker per connection */
@@ -166,25 +168,30 @@ http_exchange(const struct sockaddr_in* addr, const char* head, body_fn body, vo
     int rc;
 
     reply[0] = '\0';
+    worker_stage = 1;
     fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
         return -1;
     }
     fcntl(fd, F_SETFL, O_NONBLOCK);
+    worker_stage = 2;
     rc = connect(fd, (const struct sockaddr*)addr, sizeof(*addr));
     if (rc < 0 && errno != EWOULDBLOCK && errno != EINPROGRESS && errno != EAGAIN) {
         close(fd);
         return -1;
     }
+    worker_stage = 3;
     rc = wait_socket(fd, POLLWRNORM, deadline);
     if (rc <= 0 || (rc & (POLLHUP | POLLERR))) {
         close(fd);
         return -1;
     }
+    worker_stage = 4;
     if (!send_all(fd, head, strlen(head), deadline) || (body != NULL && !body(fd, deadline, ctx))) {
         close(fd);
         return -1;
     }
+    worker_stage = 5;
     for (;;) {
         ssize_t got;
 
@@ -206,6 +213,7 @@ http_exchange(const struct sockaddr_in* addr, const char* head, body_fn body, vo
         }
         break;
     }
+    worker_stage = 6;
     close(fd);
     buf[used] = '\0';
     if (sscanf(buf, "HTTP/%*d.%*d %d", &status) != 1) {
@@ -469,6 +477,7 @@ link_main(void* param) {
         int need_games = 0;
         int status;
 
+        worker_stage = 7;
         if (!pi_address(&addr, host, sizeof(host))) {
             break;
         }
@@ -494,6 +503,7 @@ link_main(void* param) {
         } else if (++fails >= (seen_pi ? LINK_MAX_FAILS : LINK_FIRST_FAILS)) {
             break; /* not a DreamPi with the add-on, or it went away */
         }
+        worker_stage = 8;
         for (int waited = 0; waited < LINK_POLL_MS && link_up && !stop_requested && net_request == 0; waited += 100) {
             thd_sleep(100);
         }
@@ -668,21 +678,31 @@ void
 dreampi_link_abort(void) {
     stop_requested = 1;
     if (worker != NULL) {
-        /* The worker checks stop_requested every 100 ms. Wait for it for a few seconds, but never for ever: this runs on the way to the
-         * BIOS, and a thread stuck in the network stack must not keep the Dreamcast from leaving. */
-        for (int waited = 0; waited < 3000 && !worker_done; waited += 100) {
+        /* The worker checks stop_requested every 100 ms, so it should be gone in a moment. If it is not, the border colour of the screen
+         * says where it is stuck (1 red socket, 2 green connect, 3 blue waiting for connect, 4 yellow send, 5 magenta receive, 6 cyan close,
+         * 7 white address, 8 orange waiting between polls, 0 or other: grey) and after 15 seconds it is left behind, so that leaving the
+         * menu is never blocked for ever. */
+        for (int waited = 0; waited < 15000 && !worker_done; waited += 100) {
+            if (waited == 3000) {
+                static const uint8_t colours[9][3] = {{128, 128, 128}, {255, 0, 0},   {0, 255, 0},   {0, 0, 255},  {255, 255, 0},
+                                                      {255, 0, 255},   {0, 255, 255}, {255, 255, 255}, {255, 128, 0}};
+                const int stage = worker_stage >= 0 && worker_stage <= 8 ? worker_stage : 0;
+
+                vid_border_color(colours[stage][0], colours[stage][1], colours[stage][2]);
+            }
             thd_sleep(100);
         }
         if (!worker_done) {
             worker = NULL; /* left behind; stop_requested stays set so it ends as soon as it can */
-            pi_state = 0;
+            pi_state = 2;
             return;
         }
         join_worker();
+        vid_border_color(0, 0, 0);
     }
     stop_requested = 0;
     worker_done = 0;
-    pi_state = 0;
+    pi_state = 2; /* nothing more will be answered: a player list fetch must not wait for the first poll */
     dreampi_link_forget();
 }
 

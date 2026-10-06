@@ -4,7 +4,7 @@ previews. It cuts the scene code (between the "The animated backdrop of themes" 
 openMenu/src/openmenu/src/ui/draw_kos.c, compiles it with stand-ins for the PVR calls (gcc needed), runs it for N frames and draws the
 strips it submitted with a small software rasteriser: perspective-correct texture, Gouraud colour and the offset colour (the scene is opaque).
 
-  python3 render_backdrop_frame.py [frame] [out.png]      default: frame 82, backdrop_frame.png (the theme previews use it)
+  python3 render_backdrop_frame.py [frame] [out.png] [clouds percent]      default: frame 82, backdrop_frame.png (the theme previews use it)
 
 Compared with a screenshot of the web page's scene (Chromium, 640x480) the mean difference was about 1.4 levels out of 255."""
 import os
@@ -45,8 +45,11 @@ static void pvr_prim(void* p,int n){ if(n==(int)sizeof(pvr_vertex_t)){pvr_vertex
 """
 TAIL = r"""int main(int argc,char**argv){
  out=fopen(argv[1],"w"); int frames=atoi(argv[2]);
- for(int f=0;f<frames;f++){ fprintf(out,"F\n"); draw_backdrop(0); draw_backdrop_scene(0); }
+ for(int f=0;f<frames;f++){ fprintf(out,"F\n"); draw_backdrop(0); draw_backdrop_scene(0, atoi(argv[3])); }
  fclose(out); return 0;}"""
+
+
+CLOUDS = 100
 
 
 def build_and_run(frame, work):
@@ -58,7 +61,7 @@ def build_and_run(frame, work):
         f.write(HEAD + code + "\n" + TAIL)
     subprocess.check_call(["gcc", "-w", "-I", UI, "-o", os.path.join(work, "scene"), os.path.join(work, "scene.c"), "-lm"])
     dump = os.path.join(work, "frame.txt")
-    subprocess.check_call([os.path.join(work, "scene"), dump, str(frame)])
+    subprocess.check_call([os.path.join(work, "scene"), dump, str(frame), str(CLOUDS)])
     return dump
 
 
@@ -124,6 +127,7 @@ def render(path, W=640, H=480):
 if __name__ == "__main__":
     frame = int(sys.argv[1]) if len(sys.argv) > 1 else 82
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "backdrop_frame.png")
+    CLOUDS = int(sys.argv[3]) if len(sys.argv) > 3 else 100     # the theme's backdrop_clouds, in percent
     with tempfile.TemporaryDirectory() as work:
         render(build_and_run(frame, work)).save(out)
     print("wrote", out)
