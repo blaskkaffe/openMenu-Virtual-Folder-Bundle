@@ -66,6 +66,11 @@ static int playing_n[PLAYING_MAX]; /* players in that game */
 static int playing_count = 0;
 static volatile int playing_valid = 0;
 
+/* A network the user asked the DreamPi to select (Extras menu): 1 DCNow!, 2 DCNET. The worker sends it, and the result is 0 nothing asked,
+ * 1 sending, 2 done, 3 the Pi did not take it, 4 no DreamPi with the add-on on this connection. */
+static volatile int net_request = 0;
+static volatile int net_result = 0;
+
 /* The next DC99 event, from the Pi's "EVN <minutes> <flag> <source> <title>" line: minutes until it starts (negative once it has), flag 1 while
  * a reminder is due, the source as one word (discord, dreamcastlive, manual ...). The banner shows for 20 seconds when a reminder first
  * comes due and again at 5 minutes, at 1 minute and at the start. */
@@ -431,6 +436,21 @@ read_poll_reply(const char* reply, int* need_games) {
     return seen;
 }
 
+/* Tells the add-on to select a network: POST /dcnow or /dcnet, the same request the web page's two buttons send. */
+static void
+send_network(const struct sockaddr_in* addr, const char* host, int kind) {
+    char head[220];
+    char reply[LINK_REPLY_MAX];
+    int status;
+
+    snprintf(head, sizeof(head),
+             "POST %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: openMenu\r\nX-Requested-With: openMenu\r\nContent-Length: 0\r\n"
+             "Connection: close\r\n\r\n",
+             kind == 2 ? "/dcnet" : "/dcnow", host);
+    status = http_exchange(addr, head, NULL, NULL, reply, sizeof(reply));
+    net_result = (status == 200 || status == 204 || status == 303) ? 2 : 3;
+}
+
 static void*
 link_main(void* param) {
     struct sockaddr_in addr;
@@ -450,6 +470,12 @@ link_main(void* param) {
         if (!pi_address(&addr, host, sizeof(host))) {
             break;
         }
+        if (net_request != 0) {
+            const int kind = net_request;
+
+            net_request = 0;
+            send_network(&addr, host, kind);
+        }
         hash = games_hash(&count);
         snprintf(head, sizeof(head),
                  "GET /openmenu/poll?v=1&n=%d&h=%08x HTTP/1.0\r\nHost: %s\r\nUser-Agent: openMenu\r\n"
@@ -466,7 +492,7 @@ link_main(void* param) {
         } else if (++fails >= (seen_pi ? LINK_MAX_FAILS : LINK_FIRST_FAILS)) {
             break; /* not a DreamPi with the add-on, or it went away */
         }
-        for (int waited = 0; waited < LINK_POLL_MS && link_up && !stop_requested; waited += 100) {
+        for (int waited = 0; waited < LINK_POLL_MS && link_up && !stop_requested && net_request == 0; waited += 100) {
             thd_sleep(100);
         }
     }
@@ -485,6 +511,22 @@ join_worker(void) {
     }
 }
 
+int
+dreampi_link_select_network(int kind) {
+    if (!link_up || pi_state != 1 || (kind != 1 && kind != 2)) {
+        net_result = 4;
+        return -1;
+    }
+    net_result = 1;
+    net_request = kind;
+    return 0;
+}
+
+int
+dreampi_link_select_result(void) {
+    return net_result;
+}
+
 /* The live info is only as good as the connection that brought it. */
 static void
 dreampi_link_forget(void) {
@@ -496,6 +538,7 @@ dreampi_link_forget(void) {
     playing_count = 0;
     playing_valid = 0;
     event_valid = 0;
+    net_request = 0;
     mutex_unlock(&link_mutex);
 }
 

@@ -14,3 +14,6 @@ void online_games_tick(void);
 
 /* How many online players are in this game, 0 when none or when the item is not a game on the card. Cheap enough to call per row. */
 int online_games_players(const struct gd_item* item);
+
+/* The game on the card that an online title means (the same name as the DC Now! window shows, matched as the marks are), or NULL. */
+const struct gd_item* online_games_find(const char* title);

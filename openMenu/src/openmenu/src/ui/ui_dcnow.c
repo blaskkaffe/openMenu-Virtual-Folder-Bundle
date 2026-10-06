@@ -12,9 +12,11 @@
 
 #include <arch/timer.h>
 
+#include <backend/gd_item.h>
 #include <openmenu_settings.h>
 #include "backend/dcnow_fetch.h"
 #include "backend/dcnow_net.h"
+#include "backend/online_games.h"
 #include "ui/draw_prototypes.h"
 #include "ui/font_prototypes.h"
 #include "ui/menu_mouse.h"
@@ -100,8 +102,12 @@ build_info(void) {
 #define OPT_CLOSE      4
 #define OPT_REFRESH    5
 #define OPT_NETWORK    6
+#define OPT_VIEW       7
 
-static const char* option_text[] = {"Connect", "Cancel", "Retry", "Disconnect", "Close", "Refresh", "Show: All"};
+static const char* option_text[] = {"Connect", "Cancel", "Retry", "Disconnect", "Close", "Refresh", "Show: All", "View: Players"};
+
+/* Players (one row each) or games (one row each, with how many play it). */
+static int games_view = 0;
 
 /* Which network's players the list shows when the DreamPi add-on supplies several. Kept until openMenu restarts. */
 #define NET_ALL   0
@@ -112,11 +118,14 @@ static const char* net_filter_text[] = {"Show: All", "Show: DCNow!", "Show: DCNE
 
 static const char*
 option_label(int option) {
+    if (option == OPT_VIEW) {
+        return games_view ? "View: Games" : "View: Players";
+    }
     return option == OPT_NETWORK ? net_filter_text[net_filter] : option_text[option];
 }
 
 static dcnow_status_t status;
-static int options[7];
+static int options[8];
 static int option_count = 0;
 static int probe_frames = 0; /* frames left before the device probe runs */
 
@@ -126,6 +135,7 @@ static dcnow_player_t all_list[DCNOW_PLAYER_MAX]; /* every player of the newest 
 static int all_count = 0;
 static dcnow_player_t list[DCNOW_PLAYER_MAX];     /* what the window shows */
 static int list_count = 0;
+static unsigned char list_card[DCNOW_PLAYER_MAX]; /* 1: the row's game is on the card, so A starts it */
 static int list_generation = -1;
 static int list_scroll = 0;
 static int focus = 0;      /* cursor over the list rows followed by the options */
@@ -140,8 +150,8 @@ static uint64_t last_fetch_started = 0; /* for the Auto-Refresh interval */
 /* Rows of the list that fit above the options. */
 static int
 list_rows(void) {
-    /* The network option takes one more line below the list. */
-    return (device == DCNOW_DEV_MODEM ? 5 : 6) - (have_list && fetch.from_pi ? 1 : 0);
+    /* The View and network options take a line each below the list. */
+    return (device == DCNOW_DEV_MODEM ? 5 : 6) - (have_list ? 1 : 0) - (have_list && fetch.from_pi ? 1 : 0);
 }
 
 /* Rebuilds the option list for the current state. Close is always last. */
@@ -172,6 +182,9 @@ build_options(void) {
             }
             if (have_list && fetch.from_pi) {
                 options[option_count++] = OPT_NETWORK;
+            }
+            if (have_list) {
+                options[option_count++] = OPT_VIEW;
             }
             if (device == DCNOW_DEV_MODEM && !(fetch.state == DCNOW_FETCH_RUNNING && !have_list)) {
                 options[option_count++] = OPT_DISCONNECT;
@@ -226,6 +239,56 @@ player_order(const void* left, const void* right) {
     return strcasecmp(a->name, b->name);
 }
 
+/* Games view: one row per game that somebody is in, with how many play it, the busiest first. */
+static int games_order_counts[DCNOW_PLAYER_MAX];
+
+static int
+games_order(const void* left, const void* right) {
+    const dcnow_player_t* a = left;
+    const dcnow_player_t* b = right;
+    const int ca = atoi(a->name);
+    const int cb = atoi(b->name);
+
+    if (ca != cb) {
+        return cb - ca;
+    }
+    return strcasecmp(a->title, b->title);
+}
+
+static void
+aggregate_games(void) {
+    static dcnow_player_t games[DCNOW_PLAYER_MAX];
+    int count = 0;
+
+    for (int i = 0; i < list_count; i++) {
+        int found = -1;
+
+        if (list[i].title[0] == '\0') {
+            continue;
+        }
+        for (int g = 0; g < count; g++) {
+            if (strcasecmp(games[g].title, list[i].title) == 0) {
+                found = g;
+                break;
+            }
+        }
+        if (found < 0) {
+            memset(&games[count], 0, sizeof(games[count]));
+            snprintf(games[count].title, sizeof(games[count].title), "%s", list[i].title);
+            snprintf(games[count].network, sizeof(games[count].network), "%s", list[i].network);
+            games_order_counts[count] = 0;
+            found = count++;
+        }
+        games_order_counts[found]++;
+    }
+    for (int g = 0; g < count; g++) {
+        snprintf(games[g].name, sizeof(games[g].name), "%d playing", games_order_counts[g]);
+        list[g] = games[g];
+    }
+    list_count = count;
+    qsort(list, (size_t)list_count, sizeof(list[0]), games_order);
+}
+
 /* Fills list[] from all_list[] for the chosen network, sorted. */
 static void
 apply_filter(void) {
@@ -241,7 +304,14 @@ apply_filter(void) {
         }
         list[list_count++] = all_list[i];
     }
-    qsort(list, (size_t)list_count, sizeof(list[0]), player_order);
+    if (games_view) {
+        aggregate_games();
+    } else {
+        qsort(list, (size_t)list_count, sizeof(list[0]), player_order);
+    }
+    for (int i = 0; i < list_count; i++) {
+        list_card[i] = online_games_find(list[i].title) != NULL;
+    }
 }
 
 /* Copies a newly arrived list, sorted. The first list puts the cursor on its
@@ -365,7 +435,7 @@ summary_line(char* out, size_t out_len) {
  * A name keeps 20 columns, a title 24, one less when the scrollbar takes the
  * last one. A player without a game shows "(Idle)". */
 static void
-list_row(const dcnow_player_t* p, char* name, size_t name_len, char* title, size_t title_len, int title_max) {
+list_row(const dcnow_player_t* p, int on_card, char* name, size_t name_len, char* title, size_t title_len, int title_max) {
     if (strlen(p->name) > 20) {
         snprintf(name, name_len, "%.17s...", p->name);
     } else {
@@ -374,9 +444,18 @@ list_row(const dcnow_player_t* p, char* name, size_t name_len, char* title, size
     const char* text = p->title[0] != '\0' ? p->title : "(Idle)";
     char tagged[DCNOW_TITLE_LEN + 12];
 
+    /* A game that is on the card (A starts it) is marked with an arrow. */
+    if (p->title[0] != '\0' && on_card) {
+        snprintf(tagged, sizeof(tagged), "> %s", text);
+        text = tagged;
+    }
+
     /* With every network listed, a player who is not on DCNow! says where. */
-    if (net_filter == NET_ALL && p->network[0] != '\0' && strcmp(p->network, "DCNow!") != 0) {
-        snprintf(tagged, sizeof(tagged), "[%s] %s", p->network, text);
+    if (net_filter == NET_ALL && !games_view && p->network[0] != '\0' && strcmp(p->network, "DCNow!") != 0) {
+        char again[DCNOW_TITLE_LEN + 12];
+
+        snprintf(again, sizeof(again), "[%s] %s", p->network, text);
+        snprintf(tagged, sizeof(tagged), "%s", again);
         text = tagged;
     }
     if ((int)strlen(text) > title_max) {
@@ -505,10 +584,29 @@ dcnow_leave(void) {
 
 static void
 option_accept(void) {
-    if (option_count == 0 || focus < list_count) {
+    if (focus < list_count && focus >= 0) {
+        /* A row whose game is on the card starts it. */
+        const gd_item* item = list_card[focus] ? online_games_find(list[focus].title) : NULL;
+
+        if (item != NULL) {
+            dreamcast_launch_disc(item);
+        }
+        return;
+    }
+    if (option_count == 0) {
         return;
     }
     switch (options[focus - list_count]) {
+        case OPT_VIEW: {
+            int index = focus - list_count;
+
+            games_view = !games_view;
+            apply_filter();
+            list_scroll = 0;
+            build_options();
+            focus = list_count + (index < option_count ? index : option_count - 1);
+            break;
+        }
         case OPT_CONNECT:
         case OPT_RETRY:
             if (status.state == DCNOW_CONN_ONLINE) {
@@ -843,7 +941,7 @@ draw_dcnow_tr(void) {
                 char title[32];
                 const int row = list_scroll + i;
 
-                list_row(&list[row], name, sizeof(name), title, sizeof(title), list_count > rows ? 23 : 24);
+                list_row(&list[row], list_card[row], name, sizeof(name), title, sizeof(title), list_count > rows ? 23 : 24);
                 snprintf(line_buf, sizeof(line_buf), "%-2s %-*s %s", list[row].country, list_count > rows ? 23 : 24,
                          title, name);
                 font_bmp_set_color(row == focus ? highlight_color : text_color);
@@ -909,7 +1007,7 @@ draw_dcnow_tr(void) {
                 const int row = list_scroll + i;
                 const uint32_t color = row == focus ? highlight_color : text_color;
 
-                list_row(&list[row], name, sizeof(name), title, sizeof(title), list_count > rows ? 23 : 24);
+                list_row(&list[row], list_card[row], name, sizeof(name), title, sizeof(title), list_count > rows ? 23 : 24);
                 /* The BMF drawer reads past an empty string, so a missing
                  * country draws nothing in its column. */
                 if (list[row].country[0] != '\0') {

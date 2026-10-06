@@ -43,3 +43,10 @@ int dreampi_link_game_playing(const struct gd_item* item);
 /* The DC99 event banner. Returns 1 while it should be on screen (20 seconds when a reminder first comes due, and again at 5 minutes, 1 minute
  * and the start), with two lines: the source and the time ("Sega Discord: in 12 min"), and the title. */
 int dreampi_link_event_banner(char* line1, size_t line1_len, char* line2, size_t line2_len);
+
+/* Asks the DreamPi add-on to select a network (1 DCNow!, 2 DCNET), the way the web page's buttons do. Returns 0 when the request was queued
+ * (the worker sends it within a moment), -1 when there is no DreamPi with the add-on on this connection. */
+int dreampi_link_select_network(int kind);
+
+/* How the last request went: 0 none, 1 sending, 2 done, 3 the Pi did not take it, 4 no DreamPi with the add-on on this connection. */
+int dreampi_link_select_result(void);

@@ -175,6 +175,49 @@ online_games_tick(void) {
     }
 }
 
+/* The card's games with their names normalised, made once. */
+static char (*card_names)[NORM_LEN] = NULL;
+static int card_names_len = 0;
+
+const gd_item*
+online_games_find(const char* title) {
+    char want[NORM_LEN];
+    const int count = list_all_count();
+    const gd_item* best = NULL;
+    size_t best_len = 0;
+
+    if (title == NULL || count <= 1) {
+        return NULL;
+    }
+    if (card_names == NULL || card_names_len != count) {
+        free(card_names);
+        card_names = calloc((size_t)count, sizeof(card_names[0]));
+        card_names_len = card_names != NULL ? count : 0;
+        for (int g = 1; g < card_names_len; g++) {
+            const gd_item* item = list_all_item(g);
+
+            if (item != NULL && item->product[0] != '\0' && strcmp(item->disc, "DIR") != 0) {
+                normalize(item->name, card_names[g], NORM_LEN);
+            }
+        }
+    }
+    if (card_names == NULL) {
+        return NULL;
+    }
+    normalize(title, want, sizeof(want));
+    for (int g = 1; g < card_names_len; g++) {
+        if (card_names[g][0] == '\0' || !names_match(card_names[g], want)) {
+            continue;
+        }
+        /* Prefer the closest name; of several discs of one game the first. */
+        if (best == NULL || strlen(card_names[g]) < best_len) {
+            best = list_all_item(g);
+            best_len = strlen(card_names[g]);
+        }
+    }
+    return best;
+}
+
 int
 online_games_players(const gd_item* item) {
     /* The Pi's own account wins: it knows the games by their place on the card, and how many players are in each. */
