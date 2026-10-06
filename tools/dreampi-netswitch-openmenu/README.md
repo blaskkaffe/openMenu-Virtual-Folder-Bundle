@@ -45,7 +45,9 @@ Tests (optional)
   search, a Join for a fake player and a queued launch (10 checks, all passing).
 
 The answer to a poll also carries `NET dcnow|dcnet` (the selected network) and `PLY <slot>:<players> <slot>:<players> ...` (the card games someone plays online now, and how many play each; an older `PLAYING <slot> ...` line still works, one player each).
-openMenu reads both: the Folders list marks the `PLAYING` games, and a theme's panel border can follow `NET`.
+The next event comes as `EVN <minutes> <flag> <source> <title>`: minutes until it starts (negative once it has), `1` while a reminder is due, the source as one word
+(`discord` shows as Sega Discord, `dreamcastlive` as Dreamcast Live, `manual` / `dc99` as DC99, anything else as it is) and the title to the end of the line. When a reminder is
+due, the Folders list shows a small box at the top for 20 seconds, and again at 5 minutes, 1 minute and the start. openMenu reads all of these: the Folders list marks the `PLAYING` games, and a theme's panel border can follow `NET`.
 
 Wire protocol (openMenu to Pi, over the PPP link, on the Pi's web port; the Pi's address is the DNS server the Dreamcast was
 given)

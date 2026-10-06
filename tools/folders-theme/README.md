@@ -53,6 +53,12 @@ water, ported from its Three.js scene (`dc-background.js`, adapted from Robert D
   no such pattern.
 - **Previews.** `out_animated/*_preview.png` are one frame of that rendering with the panels and the picture over it.
 
+## Event reminders
+
+When the DreamPi's answer carries a reminder for a DC99 event (`EVN <minutes> <flag> <source> <title>` with the flag at 1), the Folders list shows a small box
+between the logo and the clock for 20 seconds: the source and the time ("Sega Discord: in 12 min") and the title. It comes up again at 5 minutes, 1 minute and the start.
+It uses the theme's popup colours and corners.
+
 ## Games being played online
 
 With the DreamPi add-on connected, openMenu takes the games from the Pi's own `PLY` line (the slots of the card's games that someone plays

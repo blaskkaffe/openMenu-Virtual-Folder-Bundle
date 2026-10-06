@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include <arch/timer.h>
@@ -64,6 +65,22 @@ static char playing_tok[PLAYING_MAX][LINK_PRODUCT_MAX];
 static int playing_n[PLAYING_MAX]; /* players in that game */
 static int playing_count = 0;
 static volatile int playing_valid = 0;
+
+/* The next DC99 event, from the Pi's "EVN <minutes> <flag> <source> <title>" line: minutes until it starts (negative once it has), flag 1 while
+ * a reminder is due, the source as one word (discord, dreamcastlive, manual ...). The banner shows for 20 seconds when a reminder first
+ * comes due and again at 5 minutes, at 1 minute and at the start. */
+#define EVENT_TITLE_MAX  48
+#define EVENT_SOURCE_MAX 16
+#define EVENT_SHOW_MS    20000
+static char event_title[EVENT_TITLE_MAX];
+static char event_source[EVENT_SOURCE_MAX];
+static int event_minutes = 0;
+static int event_flag = 0;
+static volatile int event_valid = 0;
+static uint64_t event_stamp = 0;      /* timer_ms_gettime64() when the minutes were told */
+static uint64_t event_show_until = 0; /* main thread only */
+static uint32_t event_seen_hash = 0;
+static int event_seen_bucket = -1;
 
 /* Waits for a socket event in 100 ms slices. Returns the events, 0 on timeout, -1 when asked to stop. */
 static int
@@ -321,6 +338,11 @@ read_poll_reply(const char* reply, int* need_games) {
     char tokens[PLAYING_MAX][LINK_PRODUCT_MAX];
     int counts[PLAYING_MAX];
     int token_count = 0;
+    char ev_t[EVENT_TITLE_MAX] = "";
+    char ev_s[EVENT_SOURCE_MAX] = "";
+    int ev_m = 0;
+    int ev_f = 0;
+    int ev_seen = 0;
     int net = 0;
     int seen = 0;
 
@@ -342,6 +364,25 @@ read_poll_reply(const char* reply, int* need_games) {
             net = 1;
         } else if (!strcmp(line, "NET dcnet")) {
             net = 2;
+        } else if (!strncmp(line, "EVN ", 4)) {
+            int minutes, flag, used = 0;
+            char source[EVENT_SOURCE_MAX];
+
+            /* Letters, digits and punctuation only: the menu's font stops at ASCII. */
+            if (sscanf(line + 4, "%d %d %15s %n", &minutes, &flag, source, &used) >= 3 && used > 0) {
+                size_t n = 0;
+
+                for (const char* t = line + 4 + used; *t != '\0' && n < sizeof(ev_t) - 1; t++) {
+                    if ((unsigned char)*t >= 0x20 && (unsigned char)*t < 0x7F) {
+                        ev_t[n++] = *t;
+                    }
+                }
+                ev_t[n] = '\0';
+                snprintf(ev_s, sizeof(ev_s), "%s", source);
+                ev_m = minutes;
+                ev_f = flag != 0;
+                ev_seen = n > 0;
+            }
         } else if (!strncmp(line, "PLY ", 4) || !strncmp(line, "PLAYING ", 8)) {
             char* tok = line + (line[2] == 'Y' ? 4 : 8);
 
@@ -377,6 +418,14 @@ read_poll_reply(const char* reply, int* need_games) {
         memcpy(playing_tok, tokens, sizeof(playing_tok[0]) * (size_t)token_count);
         memcpy(playing_n, counts, sizeof(playing_n[0]) * (size_t)token_count);
         playing_valid = 1;
+        event_valid = ev_seen;
+        if (ev_seen) {
+            snprintf(event_title, sizeof(event_title), "%s", ev_t);
+            snprintf(event_source, sizeof(event_source), "%s", ev_s);
+            event_minutes = ev_m;
+            event_flag = ev_f;
+            event_stamp = timer_ms_gettime64();
+        }
         mutex_unlock(&link_mutex);
     }
     return seen;
@@ -439,13 +488,14 @@ join_worker(void) {
 /* The live info is only as good as the connection that brought it. */
 static void
 dreampi_link_forget(void) {
-    if (!playing_valid && net_kind == 0) {
+    if (!playing_valid && net_kind == 0 && !event_valid) {
         return;
     }
     mutex_lock(&link_mutex);
     net_kind = 0;
     playing_count = 0;
     playing_valid = 0;
+    event_valid = 0;
     mutex_unlock(&link_mutex);
 }
 
@@ -478,6 +528,76 @@ dreampi_link_game_playing(const gd_item* item) {
     }
     mutex_unlock(&link_mutex);
     return players;
+}
+
+static const char*
+event_source_label(const char* source) {
+    if (!strcasecmp(source, "discord")) {
+        return "Sega Discord";
+    }
+    if (!strcasecmp(source, "dreamcastlive") || !strcasecmp(source, "dclive")) {
+        return "Dreamcast Live";
+    }
+    if (!strcasecmp(source, "manual") || !strcasecmp(source, "dc99")) {
+        return "DC99";
+    }
+    return source;
+}
+
+/* Called every frame from the main loop's tick (main thread). */
+static void
+event_tick(void) {
+    const uint64_t now = timer_ms_gettime64();
+    int minutes;
+    int bucket;
+    uint32_t hash = 2166136261u;
+
+    if (!event_valid || !event_flag) {
+        event_seen_hash = 0;
+        event_seen_bucket = -1;
+        return;
+    }
+    mutex_lock(&link_mutex);
+    minutes = event_minutes - (int)((now - event_stamp) / 60000);
+    for (const char* t = event_title; *t != '\0'; t++) {
+        hash = (hash ^ (unsigned char)*t) * 16777619u;
+    }
+    mutex_unlock(&link_mutex);
+    bucket = minutes > 5 ? 3 : (minutes > 1 ? 2 : (minutes > 0 ? 1 : 0));
+    if (hash != event_seen_hash || bucket != event_seen_bucket) {
+        event_seen_hash = hash;
+        event_seen_bucket = bucket;
+        event_show_until = now + EVENT_SHOW_MS;
+    }
+}
+
+int
+dreampi_link_event_banner(char* line1, size_t line1_len, char* line2, size_t line2_len) {
+    const uint64_t now = timer_ms_gettime64();
+    int minutes;
+
+    if (!event_valid || !event_flag || now >= event_show_until) {
+        return 0;
+    }
+    mutex_lock(&link_mutex);
+    minutes = event_minutes - (int)((now - event_stamp) / 60000);
+    snprintf(line2, line2_len, "%s", event_title);
+    snprintf(line1, line1_len, "%s", event_source_label(event_source));
+    mutex_unlock(&link_mutex);
+    {
+        const size_t used = strlen(line1);
+
+        if (minutes > 1) {
+            snprintf(line1 + used, line1_len - used, ": in %d min", minutes);
+        } else if (minutes == 1) {
+            snprintf(line1 + used, line1_len - used, ": in 1 min");
+        } else if (minutes == 0) {
+            snprintf(line1 + used, line1_len - used, ": starting now");
+        } else {
+            snprintf(line1 + used, line1_len - used, ": started %d min ago", -minutes);
+        }
+    }
+    return 1;
 }
 
 void
@@ -516,6 +636,7 @@ dreampi_link_tick(void) {
         modem_online = snap.state == DCNOW_CONN_ONLINE && dcnow_device_hint() == DCNOW_DEV_MODEM;
     }
     link_up = modem_online;
+    event_tick();
 
     if (worker != NULL && worker_done) {
         join_worker();

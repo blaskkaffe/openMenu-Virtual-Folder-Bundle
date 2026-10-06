@@ -264,6 +264,36 @@ draw_bg_layers(void) {
     }
 }
 
+/* The DC99 event reminder the DreamPi adds to its answers (EVN): a small box at the top, between the logo and the clock, for a few
+ * seconds when a reminder comes due. */
+static void
+draw_event_banner(void) {
+    char source_line[48];
+    char title_line[48];
+
+    if (!dreampi_link_event_banner(source_line, sizeof(source_line), title_line, sizeof(title_line))) {
+        return;
+    }
+    {
+        const int source_len = (int)strlen(source_line);
+        const int title_len = (int)strlen(title_line) > 40 ? 40 : (int)strlen(title_line);
+        const int chars = source_len > title_len ? source_len : title_len;
+        const int width = chars * FONT_CHAR_WIDTH + 20;
+        const int x = 200;
+        const int y = 12;
+
+        title_line[title_len] = '\0';
+        draw_set_corner_radius(cur_theme->colors.menu_corner_radius);
+        draw_draw_popup_frame(x, y, width, 40, 0, cur_theme->colors.menu_bkg_border_color,
+                              cur_theme->colors.menu_bkg_color);
+        font_bmp_begin_draw();
+        font_bmp_set_color(cur_theme->colors.menu_highlight_color);
+        font_bmp_draw_main(x + 10, y + 4, source_line);
+        font_bmp_set_color(cur_theme->colors.menu_text_color);
+        font_bmp_draw_main(x + 10, y + 20, title_line);
+    }
+}
+
 static void
 draw_gamelist(void) {
     if (list_len <= 0) {
@@ -1407,6 +1437,7 @@ FUNCTION(UI_NAME, drawTR) {
     draw_gamelist();
     draw_gameart();
     draw_item_details();
+    draw_event_banner();
     draw_clock();
 
     /* Check for pending Serial VMU backup on first frame */

@@ -39,3 +39,7 @@ int dreampi_link_playing_known(void);
 /* How many players are in this game online right now, by the Pi's account (0 when none): its PLY line names the game's slot (its SD
  * card folder number) or its product code, with the player count. */
 int dreampi_link_game_playing(const struct gd_item* item);
+
+/* The DC99 event banner. Returns 1 while it should be on screen (20 seconds when a reminder first comes due, and again at 5 minutes, 1 minute
+ * and the start), with two lines: the source and the time ("Sega Discord: in 12 min"), and the title. */
+int dreampi_link_event_banner(char* line1, size_t line1_len, char* line2, size_t line2_len);
