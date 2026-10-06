@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Renders a frame of openMenu's animated backdrop on the build machine, to check it against the web page's scene and to make the theme
-previews. It cuts the scene code (between the "The animated backdrop of themes" comment and "Rounded rectangles as real polygons") out of
+previews. It cuts the scene code (between the "The animated backdrop of themes" comment and "Rounded rectangles for popups") out of
 openMenu/src/openmenu/src/ui/draw_kos.c, compiles it with stand-ins for the PVR calls (gcc needed), runs it for N frames and draws the
 strips it submitted with a small software rasteriser: perspective-correct texture, Gouraud colour and the offset colour (the scene is opaque).
 
@@ -52,7 +52,7 @@ TAIL = r"""int main(int argc,char**argv){
 def build_and_run(frame, work):
     src = open(os.path.join(UI, "draw_kos.c")).read()
     a = src.index("/* The animated backdrop of themes")
-    b = src.index("/* Rounded rectangles as real polygons.")
+    b = src.index("/* Rounded rectangles for popups")
     code = src[a:b].replace('#include "ui/backdrop_texture.h"', '#include "backdrop_texture.h"')
     with open(os.path.join(work, "scene.c"), "w") as f:
         f.write(HEAD + code + "\n" + TAIL)
