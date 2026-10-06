@@ -412,8 +412,8 @@ draw_draw_phone_icon(int x, int y, uint32_t color) {
 #define SCENE_UP_Z      0.998305f
 #define PLANE_COLS      24
 #define PLANE_ROWS      22
-#define CYL_SEGMENTS    32
-#define CYL_ROWS        8
+#define CYL_SEGMENTS    16
+#define CYL_ROWS        5
 #define CYL_FIRST       26.0f /* the part of the cylinder that reaches the screen: from here ... */
 #define CYL_LAST        60.0f /* ... to here along its axis (its opacity is nearly zero beyond) */
 #define CYL_HEIGHT      70.0f

@@ -375,7 +375,7 @@ index 0000000..eb3625b
 +    0x02B9, 0x0339, 0x02B9, 0x0339,
 +};
 diff --git a/openMenu/src/openmenu/src/ui/draw_kos.c b/openMenu/src/openmenu/src/ui/draw_kos.c
-index a62bdcc..5042d7f 100644
+index a62bdcc..08f28ea 100644
 --- a/openMenu/src/openmenu/src/ui/draw_kos.c
 +++ b/openMenu/src/openmenu/src/ui/draw_kos.c
 @@ -367,6 +367,507 @@ draw_draw_quad(int x, int y, float width, float height, uint32_t color) {
@@ -427,8 +427,8 @@ index a62bdcc..5042d7f 100644
 +#define SCENE_UP_Z      0.998305f
 +#define PLANE_COLS      24
 +#define PLANE_ROWS      22
-+#define CYL_SEGMENTS    32
-+#define CYL_ROWS        8
++#define CYL_SEGMENTS    16
++#define CYL_ROWS        5
 +#define CYL_FIRST       26.0f /* the part of the cylinder that reaches the screen: from here ... */
 +#define CYL_LAST        60.0f /* ... to here along its axis (its opacity is nearly zero beyond) */
 +#define CYL_HEIGHT      70.0f
