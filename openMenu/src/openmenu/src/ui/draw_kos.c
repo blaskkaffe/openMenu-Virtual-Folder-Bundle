@@ -740,6 +740,7 @@ draw_convex(const float* px, const float* py, int n, float top, float bottom, ui
               bb = color_bottom & 0xFF;
 
     pvr_poly_cxt_col(&context, draw_get_list());
+    context.gen.culling = PVR_CULLING_NONE; /* the winding of these outlines is not the quads' one, and the PVR would cull them */
     pvr_poly_compile(&header, &context);
     pvr_prim(&header, sizeof(header));
 
@@ -776,6 +777,7 @@ draw_ring(float x, float y, float w, float h, float r, float bw, uint32_t color)
         return;
     }
     pvr_poly_cxt_col(&context, draw_get_list());
+    context.gen.culling = PVR_CULLING_NONE; /* the winding of these outlines is not the quads' one, and the PVR would cull them */
     pvr_poly_compile(&header, &context);
     pvr_prim(&header, sizeof(header));
 
