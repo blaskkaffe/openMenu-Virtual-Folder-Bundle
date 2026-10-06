@@ -44,3 +44,8 @@ Install `out_animated/` OR `out/` into `theme/FOLDERS_8` and `FOLDERS_9` on the 
 - [ ] LineDesc, Grid3 and Scroll look and behave as before.
 - [ ] Settings still saves, Exit to BIOS, multi-disc popups still work.
 - [ ] A theme without `backdrop=1` or `menu_corner_radius` looks exactly like stock.
+
+## 7. Video memory / polygon drops (main.c)
+- [ ] Open Settings, Extras, Save/Load and the DC Now! window over the animated theme: no missing characters, no see-through squares,
+      no black bars in the title row. (`pvr_init` now has one overflow set of object-pointer blocks.)
+- [ ] Box art and covers still load everywhere (the change costs about 150 KB of video memory; report any missing art).
