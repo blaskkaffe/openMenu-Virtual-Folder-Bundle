@@ -1470,6 +1470,9 @@ string_outer_concat(char* out, const char* left, const char* right, int len) {
 void
 draw_popup_menu_ex(int x, int y, int width, int height, int ui_mode) {
     menu_mouse_surface(x, y, width, height);
+    if (ui_mode != UI_FOLDERS) {
+        draw_set_corner_radius(0); /* only Folders themes have rounded popups; the radius is a global and must not carry over */
+    }
     /* Border, fill and (in the scroll and folders styles) the top header, with rounded corners when the theme asks. */
     draw_draw_popup_frame(x, y, width, height, (ui_mode == UI_SCROLL || ui_mode == UI_FOLDERS) ? 20 : 0,
                           menu_bkg_border_color, menu_bkg_color);
