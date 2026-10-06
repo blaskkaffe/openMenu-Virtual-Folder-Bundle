@@ -70,6 +70,7 @@ static volatile int playing_valid = 0;
  * 1 sending, 2 done, 3 the Pi did not take it, 4 no DreamPi with the add-on on this connection. */
 static volatile int net_request = 0;
 static volatile int net_result = 0;
+static volatile int net_status = 0; /* the HTTP status the Pi answered with, -1 when it did not answer */
 
 /* The next DC99 event, from the Pi's "EVN <minutes> <flag> <source> <title>" line: minutes until it starts (negative once it has), flag 1 while
  * a reminder is due, the source as one word (discord, dreamcastlive, manual ...). The banner shows for 20 seconds when a reminder first
@@ -448,6 +449,7 @@ send_network(const struct sockaddr_in* addr, const char* host, int kind) {
              "Connection: close\r\n\r\n",
              kind == 2 ? "/dcnet" : "/dcnow", host);
     status = http_exchange(addr, head, NULL, NULL, reply, sizeof(reply));
+    net_status = status;
     net_result = (status == 200 || status == 204 || status == 303) ? 2 : 3;
 }
 
@@ -513,8 +515,15 @@ join_worker(void) {
 
 int
 dreampi_link_select_network(int kind) {
-    if (!link_up || pi_state != 1 || (kind != 1 && kind != 2)) {
-        net_result = 4;
+    if (kind != 1 && kind != 2) {
+        return -1;
+    }
+    if (!link_up) {
+        net_result = 4; /* not online through the modem */
+        return -1;
+    }
+    if (pi_state != 1) {
+        net_result = 5; /* online, but no DreamPi add-on has answered on this connection */
         return -1;
     }
     net_result = 1;
@@ -525,6 +534,18 @@ dreampi_link_select_network(int kind) {
 int
 dreampi_link_select_result(void) {
     return net_result;
+}
+
+int
+dreampi_link_select_status(void) {
+    return net_status;
+}
+
+void
+dreampi_link_select_clear(void) {
+    if (net_result != 1) {
+        net_result = 0;
+    }
 }
 
 /* The live info is only as good as the connection that brought it. */
@@ -646,7 +667,19 @@ dreampi_link_event_banner(char* line1, size_t line1_len, char* line2, size_t lin
 void
 dreampi_link_abort(void) {
     stop_requested = 1;
-    join_worker();
+    if (worker != NULL) {
+        /* The worker checks stop_requested every 100 ms. Wait for it for a few seconds, but never for ever: this runs on the way to the
+         * BIOS, and a thread stuck in the network stack must not keep the Dreamcast from leaving. */
+        for (int waited = 0; waited < 3000 && !worker_done; waited += 100) {
+            thd_sleep(100);
+        }
+        if (!worker_done) {
+            worker = NULL; /* left behind; stop_requested stays set so it ends as soon as it can */
+            pi_state = 0;
+            return;
+        }
+        join_worker();
+    }
     stop_requested = 0;
     worker_done = 0;
     pi_state = 0;

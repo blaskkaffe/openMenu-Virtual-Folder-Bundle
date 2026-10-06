@@ -48,5 +48,12 @@ int dreampi_link_event_banner(char* line1, size_t line1_len, char* line2, size_t
  * (the worker sends it within a moment), -1 when there is no DreamPi with the add-on on this connection. */
 int dreampi_link_select_network(int kind);
 
-/* How the last request went: 0 none, 1 sending, 2 done, 3 the Pi did not take it, 4 no DreamPi with the add-on on this connection. */
+/* How the last request went: 0 none, 1 sending, 2 done, 3 the Pi did not take it, 4 not online through the modem, 5 online but no DreamPi
+ * add-on has answered. */
 int dreampi_link_select_result(void);
+
+/* With result 3: the HTTP status the Pi answered (403 refused, 404 no such page, 421 unknown host name ...), or -1 when it did not answer. */
+int dreampi_link_select_status(void);
+
+/* Forgets a finished result (the Extras menu does this when it opens). */
+void dreampi_link_select_clear(void);

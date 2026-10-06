@@ -1308,6 +1308,7 @@ cb_menu_setup(enum draw_state* state, theme_color* _colors, int* timeout_ptr, ui
     cb_options[cb_menu_count++] = CB_OPT_CLOSE;
     cb_menu_choice = 0;
     cb_message[0] = '\0';
+    dreampi_link_select_clear();
 }
 
 static void
@@ -1353,11 +1354,20 @@ cb_option_label(int index, char* out, size_t out_len) {
 /* What to say under the options: the answer to the last network request while it is news, else the last message. */
 static const char*
 cb_status_line(void) {
+    static char line[48];
+
     switch (dreampi_link_select_result()) {
         case 1: return "Telling the DreamPi...";
         case 2: return "Sent. Applies from the next call.";
-        case 3: return "The DreamPi did not take it.";
+        case 3:
+            if (dreampi_link_select_status() > 0) {
+                snprintf(line, sizeof(line), "The DreamPi answered %d.", dreampi_link_select_status());
+            } else {
+                snprintf(line, sizeof(line), "The DreamPi did not answer.");
+            }
+            return line;
         case 4: return "Connect with DC Now! first.";
+        case 5: return "No DreamPi add-on answered.";
         default: return cb_message;
     }
 }
