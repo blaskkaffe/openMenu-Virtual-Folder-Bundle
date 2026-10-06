@@ -31,22 +31,32 @@ water, ported from its Three.js scene (`dc-background.js`, adapted from Robert D
   small software rasteriser and writes `backdrop_frame.png` (the theme previews use it). Against a Chromium screenshot of the page's scene at
   640x480 the mean difference was about 1.4 levels out of 255 (the rasteriser is not the PVR, so it is a check of the geometry, texture mapping,
   colours and timing, not of the console's output).
-- **What is cut down from the page.** Its plane has 101 x 101 points; this one has 29 x 21 (crowded toward the middle, where the ripples are), and
-  the cylinder about 18 x 10. A frame is about 1560 vertices (roughly 50 KB of the 256 KB vertex buffer). The page's specular highlight is folded
-  into the plane's brightness. Nothing else is different.
+- **Why the scene is in the opaque list (the glitch fix).** The first version drew the scene in the translucent pass, where all the text is. The PVR
+  keeps a short list of polygons for each 32 x 32 tile and a tile with text in it is already about two thirds full (every character is its own
+  polygon), so a scene drawn there overflowed the lists: polygons were dropped, which showed as missing borders and panels, text that vanished,
+  and square holes in pictures. It was not the depth buffer (the scene's depth values are tiny, so everything else sits in front of it as it
+  should). Now the scene is opaque and goes in the opaque list, which nothing else uses: the page's fade to transparent is done with the
+  vertex colours (the picture times opacity and light, plus the sky behind it times one minus the opacity, as the offset colour), which adds up
+  to the same blend. The meshes are also kept near the screen, because the PVR draws polygons with huge coordinates wrongly: the plane's rows
+  are spaced evenly on the screen and its width follows the screen's at that row, and only the front half of the cylinder and the rows that
+  reach the screen are drawn. At most 12 polygon entries land in any tile (average 3.5), against the 32 a list holds.
+- **Less in the translucent pass too.** The background picture is drawn as three pieces (logo, Controls, disc) instead of the whole screen, and
+  the panels have no shadow, which saves an entry in most tiles.
+- **What is cut down from the page.** Its plane has 101 x 101 points; this one has 25 x 23 (rows spaced evenly on the screen, columns crowded
+  toward the middle, where the ripples are), and the cylinder the visible 16 x 8. A frame is about 1400 vertices. The page's specular highlight
+  is folded into the plane's brightness. Nothing else is different.
 - **Memory.** The 64x64 texture is 8 KB of video memory, allocated once the first time the backdrop draws (`backdrop_texture.h` holds it, RGB565
-  and twiddled, made by `make_backdrop_texture.py`). If that allocation fails the sky gradient still draws. About 25 KB of static arrays. The
+  and twiddled, made by `make_backdrop_texture.py`). If that allocation fails the sky gradient still draws. About 20 KB of static arrays. The
   theme's background picture is ARGB4444 instead of RGB565, both 16 bits per pixel, so its two textures are the same size as before (640 KB).
-- **The border follows the network.** The animated themes give `panel_border_color_dcnow` (orange) and `panel_border_color_dcnet` (blue): when the
-  DreamPi's answer says `NET dcnow` or `NET dcnet`, the panel borders take that colour, like the web page's network colours. Before the answer, or
-  without the add-on, a theme's own `panel_border_color` is used (orange for WebOrangeAnim, blue for WebBlueAnim). The logo swirl and the
-  Controls heading are part of the picture and keep their colour.
 - **The panels.** The rounded boxes are drawn by openMenu (`draw_draw_panel()`): a soft shadow, a fill like the web page's boxes (rgba 20,20,20
   at .78; a little lighter at the top) and a 3 px accent border, with real arcs for the corners. The rectangles are `panel_0` to `panel_3` in
   `THEME.INI`. The same arc code draws the rounded popups (`menu_corner_radius`).
 - **The picture.** `BG_L.PVR` / `BG_R.PVR` hold only the logo (with a soft shadow, because the white lettering sits on bright sky), the Controls
   text and an empty disc; the rest is see-through.
-- **Not run on a Dreamcast.** If it is slow, lower `PLANE_COLS` / `PLANE_ROWS` or `CYL_SEGMENTS` / `CYL_ROWS` in `draw_kos.c`. If the scene does
+- **Compatibility.** The still set (`out/`) works on a stock openMenu: it is a plain RGB565 picture and standard theme keys (`menu_corner_radius` and
+  `online_color` are ignored there, so popups are square and colours are the standard ones). The animated set needs this build: a stock openMenu
+  draws the background picture in the opaque pass, where its see-through parts come out black, and has no backdrop or panels.
+- **Not run on a Dreamcast beyond the first test.** If it is slow, lower `PLANE_COLS` / `PLANE_ROWS` or `CYL_SEGMENTS` / `CYL_ROWS` in `draw_kos.c`. If the scene does
   not show at all, tell me what you see (black, the plain gradient, no animation), because each points to a different cause: the gradient
   without the scene means the texture allocation failed.
 - **Dither.** Over a gradient the console's dithering shows as fine noise, which is how a 16-bit picture shows smooth shading. The still set has

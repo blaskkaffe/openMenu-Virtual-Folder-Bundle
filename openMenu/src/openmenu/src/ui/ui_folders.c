@@ -294,6 +294,19 @@ draw_event_banner(void) {
     }
 }
 
+/* The picture of a backdrop theme has only a logo, the Controls text and an empty disc on it, the rest is see-through. Drawn whole it would
+ * add an entry to every tile's polygon list in the translucent pass (the text fills those lists), so only the three pieces are drawn. */
+static void
+draw_bg_overlay(void) {
+    const dimen_RECT logo = {.x = 8, .y = 12, .w = 200, .h = 52};
+    const dimen_RECT right_left = {.x = 414, .y = 66, .w = 98, .h = 358};
+    const dimen_RECT right_right = {.x = 0, .y = 66, .w = 116, .h = 358};
+
+    draw_draw_sub_image(8, 12, 200, 52, COLOR_WHITE, &txr_bg_left, &logo);
+    draw_draw_sub_image(414, 66, 98, 358, COLOR_WHITE, &txr_bg_left, &right_left);
+    draw_draw_sub_image(512, 66, 116, 358, COLOR_WHITE, &txr_bg_right, &right_right);
+}
+
 static void
 draw_gamelist(void) {
     if (list_len <= 0) {
@@ -1404,6 +1417,7 @@ FUNCTION(UI_NAME, drawOP) {
     if (cur_theme->backdrop) {
         /* The background picture has see-through areas and is drawn in the translucent pass, over this. */
         draw_backdrop(cur_theme->backdrop_color);
+        draw_backdrop_scene();
     } else {
         draw_bg_layers();
     }
@@ -1411,8 +1425,7 @@ FUNCTION(UI_NAME, drawOP) {
 
 FUNCTION(UI_NAME, drawTR) {
     if (cur_theme->backdrop) {
-        /* The background scene, glass panels over it, then the background picture (logo, legend) over them. */
-        draw_backdrop_scene();
+        /* Glass panels over the background scene (drawn in the opaque pass), then the background picture (logo, legend) over them. */
         /* The border follows the network the DreamPi has selected, when the theme gives a colour for it. */
         uint32_t panel_border = cur_theme->panel_border_color ? cur_theme->panel_border_color : 0xF6B27A;
         const int network = dreampi_link_network();
@@ -1430,7 +1443,7 @@ FUNCTION(UI_NAME, drawTR) {
                                 panel_border, cur_theme->panel_fill_color, cur_theme->panel_alpha ? cur_theme->panel_alpha : 150);
             }
         }
-        draw_bg_layers();
+        draw_bg_overlay();
     }
 
     /* List, artwork and details always draw, popups go on top of them. */
