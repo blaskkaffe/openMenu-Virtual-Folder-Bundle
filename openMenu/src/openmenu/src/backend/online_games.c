@@ -1,7 +1,7 @@
 /*
  * File: online_games.c
  * Project: openmenu
- * Which games on the card somebody is playing online right now. With the DreamPi add-on the Pi says so (its PLAYING line); otherwise the
+ * Which games on the card somebody is playing online right now. With the DreamPi add-on the Pi says so (its PLY line); otherwise the
  * player list the Dreamcast Now! window shows is used. A game
  * matches a player's title when the two names agree once case, punctuation and bracketed parts such as "(USA)" are ignored, or, for
  * names of six or more letters, when one holds the other ("Sonic Adventure 2" and "Sonic Adventure 2 Battle").
@@ -177,9 +177,9 @@ online_games_tick(void) {
 
 int
 online_games_players(const gd_item* item) {
-    /* The Pi's own account wins: it knows the games by their place on the card. It does not count the players, so a game counts as one. */
+    /* The Pi's own account wins: it knows the games by their place on the card, and how many players are in each. */
     if (dreampi_link_playing_known()) {
-        return dreampi_link_game_playing(item) ? 1 : 0;
+        return dreampi_link_game_playing(item);
     }
 
     const uintptr_t base = (uintptr_t)list_all_item(0);

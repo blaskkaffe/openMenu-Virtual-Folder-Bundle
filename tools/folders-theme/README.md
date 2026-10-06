@@ -55,8 +55,8 @@ water, ported from its Three.js scene (`dc-background.js`, adapted from Robert D
 
 ## Games being played online
 
-With the DreamPi add-on connected, openMenu takes the games from the Pi's own `PLAYING` line (the slots of the card's games that someone plays
-online now), so the marks work without fetching the player list and with Auto-Refresh off. Without the add-on it falls back to what is below.
+With the DreamPi add-on connected, openMenu takes the games from the Pi's own `PLY` line (the slots of the card's games that someone plays
+online now, with the player count), so the marks work without fetching the player list and with Auto-Refresh off. Without the add-on it falls back to what is below.
 
 With the rebuilt openMenu, a game in the Folders list that somebody is playing online right now is drawn in the theme's `online_color` (these
 themes use the web page's bright green, `72,216,96`; without the key openMenu uses a built-in green) and has a small telephone after its title

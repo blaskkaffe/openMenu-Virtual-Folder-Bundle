@@ -43,8 +43,8 @@
 #define LINK_FIRST_FAILS   12 /* before the Pi has answered: the link has just come up and may not carry traffic yet */
 #define LINK_FIRST_WAIT_MS 5000
 #define LINK_REPLY_MAX     1024 /* the Pi's answer: its headers are about 450 bytes, then the lines */
-#define LINK_LINE_MAX      160
-#define PLAYING_MAX        16
+#define LINK_LINE_MAX      400
+#define PLAYING_MAX        32
 #define LINK_PRODUCT_MAX   12
 
 static mutex_t link_mutex = MUTEX_INITIALIZER;
@@ -61,6 +61,7 @@ static char pending[LINK_PRODUCT_MAX]; /* guarded by link_mutex */
  * (slot numbers, or product codes). playing_valid says the Pi answered on this connection, so an empty list means nobody. */
 static int net_kind = 0; /* 0 not known, 1 DCNow!, 2 DCNET */
 static char playing_tok[PLAYING_MAX][LINK_PRODUCT_MAX];
+static int playing_n[PLAYING_MAX]; /* players in that game */
 static int playing_count = 0;
 static volatile int playing_valid = 0;
 
@@ -312,11 +313,13 @@ product_valid(const char* text) {
 }
 
 /* Reads the Pi's answer to a poll. Returns 1 when it is an openMenu answer. Lines: "openmenu 1", "NEED games", "LAUNCH <product>", "NET
- * dcnow|dcnet", "PLAYING <slot or product> ...". */
+ * dcnow|dcnet", "PLY <slot>:<players> ..." (a slot number or a product code, and
+ * how many play that game; "PLAYING <slot> ..." from an older add-on counts one each). */
 static int
 read_poll_reply(const char* reply, int* need_games) {
     const char* p = reply;
     char tokens[PLAYING_MAX][LINK_PRODUCT_MAX];
+    int counts[PLAYING_MAX];
     int token_count = 0;
     int net = 0;
     int seen = 0;
@@ -339,16 +342,24 @@ read_poll_reply(const char* reply, int* need_games) {
             net = 1;
         } else if (!strcmp(line, "NET dcnet")) {
             net = 2;
-        } else if (!strncmp(line, "PLAYING ", 8)) {
-            char* tok = line + 8;
+        } else if (!strncmp(line, "PLY ", 4) || !strncmp(line, "PLAYING ", 8)) {
+            char* tok = line + (line[2] == 'Y' ? 4 : 8);
 
             while (*tok != '\0' && token_count < PLAYING_MAX) {
                 char* end = tok + strcspn(tok, " ");
                 char saved = *end;
+                char* colon;
+                int players = 1;
 
                 *end = '\0';
-                if (product_valid(tok)) {
-                    snprintf(tokens[token_count++], LINK_PRODUCT_MAX, "%s", tok);
+                colon = strchr(tok, ':');
+                if (colon != NULL) {
+                    *colon = '\0';
+                    players = atoi(colon + 1);
+                }
+                if (product_valid(tok) && players > 0) {
+                    snprintf(tokens[token_count], LINK_PRODUCT_MAX, "%s", tok);
+                    counts[token_count++] = players;
                 }
                 if (saved == '\0') {
                     break;
@@ -364,6 +375,7 @@ read_poll_reply(const char* reply, int* need_games) {
         net_kind = net;
         playing_count = token_count;
         memcpy(playing_tok, tokens, sizeof(playing_tok[0]) * (size_t)token_count);
+        memcpy(playing_n, counts, sizeof(playing_n[0]) * (size_t)token_count);
         playing_valid = 1;
         mutex_unlock(&link_mutex);
     }
@@ -449,21 +461,23 @@ dreampi_link_playing_known(void) {
 
 int
 dreampi_link_game_playing(const gd_item* item) {
-    int found = 0;
+    int players = 0;
 
     if (!playing_valid || item == NULL) {
         return 0;
     }
     mutex_lock(&link_mutex);
-    for (int i = 0; i < playing_count && !found; i++) {
+    for (int i = 0; i < playing_count && players == 0; i++) {
         const char* tok = playing_tok[i];
         const int numeric = isdigit((unsigned char)tok[0]) && strspn(tok, "0123456789") == strlen(tok);
 
         /* A slot number is the game's place on the card (its SD folder); anything else is a product code. */
-        found = numeric ? (unsigned int)atoi(tok) == item->slot_num : (item->product[0] != '\0' && !strcmp(tok, item->product));
+        if (numeric ? (unsigned int)atoi(tok) == item->slot_num : (item->product[0] != '\0' && !strcmp(tok, item->product))) {
+            players = playing_n[i];
+        }
     }
     mutex_unlock(&link_mutex);
-    return found;
+    return players;
 }
 
 void

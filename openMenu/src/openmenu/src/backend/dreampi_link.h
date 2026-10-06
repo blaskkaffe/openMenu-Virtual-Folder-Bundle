@@ -36,6 +36,6 @@ int dreampi_link_network(void);
 /* 1 once the Pi has answered on this connection, so dreampi_link_game_playing() means something (nobody playing is an answer too). */
 int dreampi_link_playing_known(void);
 
-/* 1 when someone plays this game online right now, by the Pi's account: its PLAYING line names the game's slot (its SD card folder
- * number) or its product code. */
+/* How many players are in this game online right now, by the Pi's account (0 when none): its PLY line names the game's slot (its SD
+ * card folder number) or its product code, with the player count. */
 int dreampi_link_game_playing(const struct gd_item* item);
