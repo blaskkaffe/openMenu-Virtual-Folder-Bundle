@@ -49,3 +49,6 @@ Install `out_animated/` OR `out/` into `theme/FOLDERS_8` and `FOLDERS_9` on the 
 - [ ] Open Settings, Extras, Save/Load and the DC Now! window over the animated theme: no missing characters, no see-through squares,
       no black bars in the title row. (`pvr_init` now has one overflow set of object-pointer blocks.)
 - [ ] Box art and covers still load everywhere (the change costs about 150 KB of video memory; report any missing art).
+
+## 8. Low-res wave (`out_lowres/`)
+- [ ] Install `out_lowres/FOLDERS_8` / `FOLDERS_9` instead of the animated ones: it is named `WebOrangeLow` / `WebBlueLow`. The wave still moves, a little coarser, and it runs at least as smoothly as the full one.

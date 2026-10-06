@@ -223,7 +223,7 @@ def snap(c):
     return (c[0] & ~7, c[1] & ~3, c[2] & ~7)
 
 
-def ini(theme, animated=False):
+def ini(theme, animated=False, lowres=False):
     base, light = theme["base"], theme["light"]
     sel = mix(CARD, base, 0.38)                        # the cursor bar: the box colour, dimmed
     rgb = lambda c: "%d,%d,%d" % snap(c)
@@ -253,8 +253,8 @@ item_details_text_color=%s
 clock_x=623
 clock_y=36
 clock_text_color=%s
-%s""" % (theme["name"] + ("Anim" if animated else ""), rgb(TEXT), rgb(light), rgb(sel), rgb(light), rgb(PAGE), rgb(TEXT), rgb(light), rgb(CARD), rgb(light),
-       rgb(TEXT), rgb(light), ("backdrop=1\n%s" % panel_keys(theme)) if animated else "")
+%s""" % (theme["name"] + ("Low" if lowres else "Anim" if animated else ""), rgb(TEXT), rgb(light), rgb(sel), rgb(light), rgb(PAGE), rgb(TEXT), rgb(light), rgb(CARD), rgb(light),
+       rgb(TEXT), rgb(light), ("backdrop=%d\n%s" % (2 if lowres else 1, panel_keys(theme))) if animated else "")
 
 
 def panel_keys(theme):
@@ -265,7 +265,7 @@ def panel_keys(theme):
         rgb(theme["light"]), rgb(theme["fill"]), PANEL_ALPHA, RADIUS, BORDER)
 
 
-def write(theme, out_dir, animated=False):
+def write(theme, out_dir, animated=False, lowres=False):
     import numpy as np
     folder = os.path.join(out_dir, theme["folder"])
     os.makedirs(folder, exist_ok=True)
@@ -279,8 +279,8 @@ def write(theme, out_dir, animated=False):
     with open(os.path.join(folder, "BG_R.PVR"), "wb") as f:
         f.write(pvr.encode(np.array(right), 1026, twiddled=False, argb4444=animated))
     with open(os.path.join(folder, "THEME.INI"), "w") as f:
-        f.write(ini(theme, animated))
-    name = theme["name"] + ("Anim" if animated else "")
+        f.write(ini(theme, animated, lowres))
+    name = theme["name"] + ("Low" if lowres else "Anim" if animated else "")
     if animated:      # what it looks like over one frame of the backdrop
         scene = os.path.join(HERE, "backdrop_frame.png")        # from render_backdrop_frame.py
         base_frame = Image.open(scene).convert("RGB") if os.path.exists(scene) else backdrop_frame(theme, 2.0).convert("RGB")
@@ -298,3 +298,4 @@ if __name__ == "__main__":
     for t in THEMES:
         print("wrote", write(t, os.path.join(base_out, "out")))
         print("wrote", write(t, os.path.join(base_out, "out_animated"), animated=True))
+        print("wrote", write(t, os.path.join(base_out, "out_lowres"), animated=True, lowres=True))   # same, with the 16 x 16 wave (backdrop=2)

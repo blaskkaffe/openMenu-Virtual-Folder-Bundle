@@ -578,20 +578,20 @@ plane_y_at_row(float sy) {
 }
 
 static void
-draw_scene_plane(float t) {
-    static scene_vertex_t grid[PLANE_ROWS + 1][PLANE_COLS + 1];
+draw_scene_plane(float t, int cols, int rows) {
+    static scene_vertex_t grid[PLANE_ROWS + 1][PLANE_COLS + 1]; /* the largest size; a low-res theme uses less of it */
 
-    for (int j = 0; j <= PLANE_ROWS; j++) {
+    for (int j = 0; j <= rows; j++) {
         /* Row 0 is the plane's far edge (y = 15). The others run from just below the horizon to the bottom of the screen, evenly on the
          * screen, so that the rows are about 10 px apart wherever the ripples are. */
-        const float row_y = j == 0 ? 15.0f : plane_y_at_row(300.0f + 215.0f * (float)(j - 1) / (PLANE_ROWS - 1));
+        const float row_y = j == 0 ? 15.0f : plane_y_at_row(300.0f + 215.0f * (float)(j - 1) / (rows - 1));
         const float depth = SCENE_FWD_Y * (row_y - SCENE_CAM_Y) + SCENE_FWD_Z * (0.0f - SCENE_CAM_Z);
         /* The width of the screen plus a margin, as plane units at this row, and never more than the part of the plane that shows. */
         float half = 400.0f * depth * (1.0f / SCENE_FOCAL);
 
         half = half > 20.0f ? 20.0f : half;
-        for (int i = 0; i <= PLANE_COLS; i++) {
-            const float s = -1.0f + 2.0f * (float)i / PLANE_COLS;
+        for (int i = 0; i <= cols; i++) {
+            const float s = -1.0f + 2.0f * (float)i / cols;
             const float x = (s < 0.0f ? -half : half) * powf(fabsf(s), 1.4f);
             float opacity;
             const float h = plane_height(x, row_y, t, &opacity);
@@ -608,14 +608,14 @@ draw_scene_plane(float t) {
     }
 
     scene_header(1);
-    for (int j = 0; j < PLANE_ROWS; j++) {
-        for (int i = 0; i <= PLANE_COLS; i++) {
+    for (int j = 0; j < rows; j++) {
+        for (int i = 0; i <= cols; i++) {
             /* Rows run from the far side to the near side; a strip takes the lower point (nearer) and the upper one. */
             if (!grid[j][i].ok || !grid[j + 1][i].ok) {
                 continue;
             }
             scene_strip_vertex(&grid[j + 1][i], 0);
-            scene_strip_vertex(&grid[j][i], i == PLANE_COLS);
+            scene_strip_vertex(&grid[j][i], i == cols);
         }
     }
 }
@@ -677,7 +677,7 @@ draw_scene_cylinder(uint32_t frame) {
 }
 
 void
-draw_backdrop_scene(void) {
+draw_backdrop_scene(int low_res) {
     const float t = (float)backdrop_frame * 0.016f; /* the page adds 0.016 a frame */
 
     backdrop_frame++;
@@ -685,7 +685,8 @@ draw_backdrop_scene(void) {
         return;
     }
     draw_scene_cylinder(backdrop_frame);
-    draw_scene_plane(t);
+    /* 24 x 22 cells normally, 16 x 16 for a low-res theme (THEME.INI backdrop=2): about half the triangles */
+    draw_scene_plane(t, low_res ? 16 : PLANE_COLS, low_res ? 16 : PLANE_ROWS);
 }
 
 /* Rounded rectangles for popups (THEME.INI menu_corner_radius; zero keeps the square frame) and, with a backdrop, glass panels

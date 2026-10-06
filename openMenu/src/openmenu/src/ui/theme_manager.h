@@ -75,7 +75,7 @@ typedef struct theme_scroll {
     int clock_x;
     int clock_y;
     uint32_t clock_text_color;
-    int backdrop;            /* Folders: draw the animated backdrop under a see-through background */
+    int backdrop;            /* Folders: draw the animated backdrop under a see-through background (1), or a low-res one (2) */
     uint32_t backdrop_color; /* a colour the backdrop is multiplied by, zero = none (the web page's own colours) */
     uint32_t online_color;   /* Folders: text colour of a game somebody is playing online, zero = the built-in green */
     /* Folders with a backdrop: glass panels drawn in code under the background picture (THEME.INI panel_0 .. panel_5 = x,y,w,h) */

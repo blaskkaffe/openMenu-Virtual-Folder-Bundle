@@ -375,10 +375,10 @@ index 0000000..eb3625b
 +    0x02B9, 0x0339, 0x02B9, 0x0339,
 +};
 diff --git a/openMenu/src/openmenu/src/ui/draw_kos.c b/openMenu/src/openmenu/src/ui/draw_kos.c
-index a62bdcc..15dc611 100644
+index a62bdcc..5042d7f 100644
 --- a/openMenu/src/openmenu/src/ui/draw_kos.c
 +++ b/openMenu/src/openmenu/src/ui/draw_kos.c
-@@ -367,6 +367,506 @@ draw_draw_quad(int x, int y, float width, float height, uint32_t color) {
+@@ -367,6 +367,507 @@ draw_draw_quad(int x, int y, float width, float height, uint32_t color) {
  #endif
  }
  
@@ -593,20 +593,20 @@ index a62bdcc..15dc611 100644
 +}
 +
 +static void
-+draw_scene_plane(float t) {
-+    static scene_vertex_t grid[PLANE_ROWS + 1][PLANE_COLS + 1];
++draw_scene_plane(float t, int cols, int rows) {
++    static scene_vertex_t grid[PLANE_ROWS + 1][PLANE_COLS + 1]; /* the largest size; a low-res theme uses less of it */
 +
-+    for (int j = 0; j <= PLANE_ROWS; j++) {
++    for (int j = 0; j <= rows; j++) {
 +        /* Row 0 is the plane's far edge (y = 15). The others run from just below the horizon to the bottom of the screen, evenly on the
 +         * screen, so that the rows are about 10 px apart wherever the ripples are. */
-+        const float row_y = j == 0 ? 15.0f : plane_y_at_row(300.0f + 215.0f * (float)(j - 1) / (PLANE_ROWS - 1));
++        const float row_y = j == 0 ? 15.0f : plane_y_at_row(300.0f + 215.0f * (float)(j - 1) / (rows - 1));
 +        const float depth = SCENE_FWD_Y * (row_y - SCENE_CAM_Y) + SCENE_FWD_Z * (0.0f - SCENE_CAM_Z);
 +        /* The width of the screen plus a margin, as plane units at this row, and never more than the part of the plane that shows. */
 +        float half = 400.0f * depth * (1.0f / SCENE_FOCAL);
 +
 +        half = half > 20.0f ? 20.0f : half;
-+        for (int i = 0; i <= PLANE_COLS; i++) {
-+            const float s = -1.0f + 2.0f * (float)i / PLANE_COLS;
++        for (int i = 0; i <= cols; i++) {
++            const float s = -1.0f + 2.0f * (float)i / cols;
 +            const float x = (s < 0.0f ? -half : half) * powf(fabsf(s), 1.4f);
 +            float opacity;
 +            const float h = plane_height(x, row_y, t, &opacity);
@@ -623,14 +623,14 @@ index a62bdcc..15dc611 100644
 +    }
 +
 +    scene_header(1);
-+    for (int j = 0; j < PLANE_ROWS; j++) {
-+        for (int i = 0; i <= PLANE_COLS; i++) {
++    for (int j = 0; j < rows; j++) {
++        for (int i = 0; i <= cols; i++) {
 +            /* Rows run from the far side to the near side; a strip takes the lower point (nearer) and the upper one. */
 +            if (!grid[j][i].ok || !grid[j + 1][i].ok) {
 +                continue;
 +            }
 +            scene_strip_vertex(&grid[j + 1][i], 0);
-+            scene_strip_vertex(&grid[j][i], i == PLANE_COLS);
++            scene_strip_vertex(&grid[j][i], i == cols);
 +        }
 +    }
 +}
@@ -692,7 +692,7 @@ index a62bdcc..15dc611 100644
 +}
 +
 +void
-+draw_backdrop_scene(void) {
++draw_backdrop_scene(int low_res) {
 +    const float t = (float)backdrop_frame * 0.016f; /* the page adds 0.016 a frame */
 +
 +    backdrop_frame++;
@@ -700,7 +700,8 @@ index a62bdcc..15dc611 100644
 +        return;
 +    }
 +    draw_scene_cylinder(backdrop_frame);
-+    draw_scene_plane(t);
++    /* 24 x 22 cells normally, 16 x 16 for a low-res theme (THEME.INI backdrop=2): about half the triangles */
++    draw_scene_plane(t, low_res ? 16 : PLANE_COLS, low_res ? 16 : PLANE_ROWS);
 +}
 +
 +/* Rounded rectangles for popups (THEME.INI menu_corner_radius; zero keeps the square frame) and, with a backdrop, glass panels
@@ -886,7 +887,7 @@ index a62bdcc..15dc611 100644
  void
  draw_draw_square(int x, int y, float size, uint32_t color, void* user) {
 diff --git a/openMenu/src/openmenu/src/ui/draw_prototypes.h b/openMenu/src/openmenu/src/ui/draw_prototypes.h
-index 10b9833..9fd99ec 100644
+index 10b9833..2405861 100644
 --- a/openMenu/src/openmenu/src/ui/draw_prototypes.h
 +++ b/openMenu/src/openmenu/src/ui/draw_prototypes.h
 @@ -58,6 +58,14 @@ void draw_draw_sub_image(int x, int y, float width, float height, uint32_t color
@@ -894,7 +895,7 @@ index 10b9833..9fd99ec 100644
  /* Draws untextured quad at coords with size and color(rgba) */
  void draw_draw_quad(int x, int y, float width, float height, uint32_t color);
 +void draw_backdrop(uint32_t tint);
-+void draw_backdrop_scene(void);
++void draw_backdrop_scene(int low_res);
 +void draw_draw_phone_icon(int x, int y, uint32_t color);
 +void draw_draw_panel(int x, int y, int width, int height, int radius, int border_width, uint32_t border_rgb,
 +                     uint32_t fill_rgb, int alpha);
@@ -977,7 +978,7 @@ index 117c298..ce8a7af 100644
              new_theme->clock_x = atoi(value);
              return 1;
 diff --git a/openMenu/src/openmenu/src/ui/theme_manager.h b/openMenu/src/openmenu/src/ui/theme_manager.h
-index 56c2ae3..ea662ba 100644
+index 56c2ae3..50f40cb 100644
 --- a/openMenu/src/openmenu/src/ui/theme_manager.h
 +++ b/openMenu/src/openmenu/src/ui/theme_manager.h
 @@ -25,6 +25,7 @@ typedef struct theme_color {
@@ -992,7 +993,7 @@ index 56c2ae3..ea662ba 100644
      int clock_x;
      int clock_y;
      uint32_t clock_text_color;
-+    int backdrop;            /* Folders: draw the animated backdrop under a see-through background */
++    int backdrop;            /* Folders: draw the animated backdrop under a see-through background (1), or a low-res one (2) */
 +    uint32_t backdrop_color; /* a colour the backdrop is multiplied by, zero = none (the web page's own colours) */
 +    uint32_t online_color;   /* Folders: text colour of a game somebody is playing online, zero = the built-in green */
 +    /* Folders with a backdrop: glass panels drawn in code under the background picture (THEME.INI panel_0 .. panel_5 = x,y,w,h) */
@@ -1009,7 +1010,7 @@ index 56c2ae3..ea662ba 100644
  
  int theme_manager_load(void);
 diff --git a/openMenu/src/openmenu/src/ui/ui_folders.c b/openMenu/src/openmenu/src/ui/ui_folders.c
-index c26602e..aff9469 100644
+index c26602e..ded2f91 100644
 --- a/openMenu/src/openmenu/src/ui/ui_folders.c
 +++ b/openMenu/src/openmenu/src/ui/ui_folders.c
 @@ -262,6 +262,22 @@ draw_bg_layers(void) {
@@ -1065,7 +1066,7 @@ index c26602e..aff9469 100644
 +    if (cur_theme->backdrop) {
 +        /* The background picture has see-through areas and is drawn in the translucent pass, over this. */
 +        draw_backdrop(cur_theme->backdrop_color);
-+        draw_backdrop_scene();
++        draw_backdrop_scene(cur_theme->backdrop >= 2);
 +    } else {
 +        draw_bg_layers();
 +    }

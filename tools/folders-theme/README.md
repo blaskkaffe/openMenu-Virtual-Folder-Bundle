@@ -12,7 +12,7 @@ Each folder has `THEME.INI`, `BG_L.PNG` / `BG_R.PNG` and `BG_L.PVR` / `BG_R.PVR`
 
 **Two sets, same slots.** `out/` is the still version. `out_animated/` is the same two themes (named `WebOrangeAnim` / `WebBlueAnim`) with an
 animated backdrop: slow silk-like waves in the theme colour behind the boxes. All ten Folders slots are taken (`FOLDERS`, `FOLDERS_0` to
-`FOLDERS_7` ship, 8 and 9 are these), so install one set or the other. `out_animated/*_preview.png` is one frame of the animation.
+`FOLDERS_7` ship, 8 and 9 are these), so install one set or the other. `out_lowres/` is a third set (`WebOrangeLow` / `WebBlueLow`, `backdrop=2` in THEME.INI) whose wave is 16 x 16 cells instead of 24 x 22: about half the triangles (about 510 instead of 1,060 for the plane) in case the full wave is too heavy. `out_animated/*_preview.png` is one frame of the animation.
 
 ### The animated backdrop and glass panels
 

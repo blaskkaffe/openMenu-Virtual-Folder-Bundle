@@ -45,7 +45,7 @@ static void pvr_prim(void* p,int n){ if(n==(int)sizeof(pvr_vertex_t)){pvr_vertex
 """
 TAIL = r"""int main(int argc,char**argv){
  out=fopen(argv[1],"w"); int frames=atoi(argv[2]);
- for(int f=0;f<frames;f++){ fprintf(out,"F\n"); draw_backdrop(0); draw_backdrop_scene(); }
+ for(int f=0;f<frames;f++){ fprintf(out,"F\n"); draw_backdrop(0); draw_backdrop_scene(0); }
  fclose(out); return 0;}"""
 
 
