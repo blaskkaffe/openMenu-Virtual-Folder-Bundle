@@ -39,6 +39,7 @@ LEGEND_BOX = (414, 66, 628, 204)
 ART_BOX = (414, 210, 628, 424)
 DETAILS_BOX = (414, 428, 628, 448)
 RADIUS = 12
+CLOUDS = 250           # THEME.INI backdrop_clouds: the cloud cylinder's opacity in percent of the web page's (the page's own is very faint)
 BORDER = 3
 
 
@@ -253,7 +254,7 @@ clock_x=623
 clock_y=36
 clock_text_color=%s
 %s""" % (theme["name"] + ("Low" if lowres else "Anim" if animated else ""), rgb(TEXT), rgb(light), rgb(sel), rgb(light), rgb(PAGE), rgb(TEXT), rgb(light), rgb(CARD), rgb(light),
-       rgb(TEXT), rgb(light), ("backdrop=%d\n%s" % (2 if lowres else 1, panel_keys(theme))) if animated else "")
+       rgb(TEXT), rgb(light), ("backdrop=%d\nbackdrop_clouds=%d\n%s" % (2 if lowres else 1, CLOUDS, panel_keys(theme))) if animated else "")
 
 
 def panel_keys(theme):

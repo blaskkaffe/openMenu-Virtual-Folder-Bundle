@@ -411,7 +411,6 @@ draw_gamelist(void) {
                 font_bmp_draw_main(tx, ty, buffer);
             }
         }
-        }
     }
 
     if (show_scrollbar) {
@@ -1376,7 +1375,7 @@ FUNCTION(UI_NAME, drawOP) {
     if (cur_theme->backdrop) {
         /* The background picture has see-through areas and is drawn in the translucent pass, over this. */
         draw_backdrop(cur_theme->backdrop_color);
-        draw_backdrop_scene(cur_theme->backdrop >= 2);
+        draw_backdrop_scene(cur_theme->backdrop >= 2, cur_theme->backdrop_clouds);
     } else {
         draw_bg_layers();
     }

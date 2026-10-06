@@ -76,6 +76,7 @@ typedef struct theme_scroll {
     int clock_y;
     uint32_t clock_text_color;
     int backdrop;            /* Folders: draw the animated backdrop under a see-through background (1), or a low-res one (2) */
+    int backdrop_clouds;     /* the cloud cylinder's opacity in percent of the page's own (0 = 100); 200 shows twice as much */
     uint32_t backdrop_color; /* a colour the backdrop is multiplied by, zero = none (the web page's own colours) */
     /* Folders with a backdrop: glass panels drawn in code under the background picture (THEME.INI panel_0 .. panel_5 = x,y,w,h) */
     int panel_count;

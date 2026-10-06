@@ -18,7 +18,7 @@ link, no dial-up changes, no Extras menu, no online marks.
 Themes without the new keys look and behave exactly as before.
 
 ## New THEME.INI keys (all optional, Folders only)
-`menu_corner_radius` (popups, 0 = square), `backdrop` (1 = wave, 2 = low-res wave with fewer triangles), `backdrop_color`,
+`menu_corner_radius` (popups, 0 = square), `backdrop` (1 = wave, 2 = low-res wave with fewer triangles), `backdrop_clouds` (the cloud cylinder's opacity in percent of the web page's very faint one; the themes use 250), `backdrop_color`,
 `panel_0` .. `panel_5` (x,y,w,h), `panel_border_color`, `panel_fill_color`, `panel_alpha`, `panel_radius`, `panel_border_width`.
 
 ## The themes (`tools/folders-theme/`)

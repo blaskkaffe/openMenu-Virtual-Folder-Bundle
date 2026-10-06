@@ -606,7 +606,7 @@ draw_scene_plane(float t, int cols, int rows) {
 }
 
 static void
-draw_scene_cylinder(uint32_t frame) {
+draw_scene_cylinder(uint32_t frame, float clouds) {
     static scene_vertex_t ring[CYL_SEGMENTS + 1][CYL_ROWS + 1];
     const float spin = -0.001f * (float)frame; /* rotation.y of the page's cylinder */
     const float tilt_c = 0.0839f;              /* cos / sin of rotation.x = pi / 0.655 */
@@ -627,8 +627,10 @@ draw_scene_cylinder(uint32_t frame) {
             const float n = yl * (1.0f / 60.0f);
             const float t0 = (n + 0.7f) * (1.0f / 1.8f); /* smoothstep(-0.7, 1.1, n) */
             const float tt = t0 < 0.0f ? 0.0f : (t0 > 1.0f ? 1.0f : t0);
-            const float opacity = 1.0f - tt * tt * (3.0f - 2.0f * tt);
+            float opacity = (1.0f - tt * tt * (3.0f - 2.0f * tt)) * clouds; /* clouds: 1 = the page's own faint cylinder */
             scene_vertex_t* v = &ring[k][j];
+
+            opacity = opacity > 1.0f ? 1.0f : opacity;
 
             if (scene_project(xs, wy, wz, v)) {
                 /* The page's shader uses the raw texture coordinates (its repeat and offset settings do not reach a shader), so the
@@ -662,14 +664,14 @@ draw_scene_cylinder(uint32_t frame) {
 }
 
 void
-draw_backdrop_scene(int low_res) {
+draw_backdrop_scene(int low_res, int clouds_percent) {
     const float t = (float)backdrop_frame * 0.016f; /* the page adds 0.016 a frame */
 
     backdrop_frame++;
     if (!backdrop_texture()) {
         return;
     }
-    draw_scene_cylinder(backdrop_frame);
+    draw_scene_cylinder(backdrop_frame, clouds_percent > 0 ? (float)clouds_percent * 0.01f : 1.0f);
     /* 24 x 22 cells normally, 16 x 16 for a low-res theme (THEME.INI backdrop=2): about half the triangles */
     draw_scene_plane(t, low_res ? 16 : PLANE_COLS, low_res ? 16 : PLANE_ROWS);
 }
