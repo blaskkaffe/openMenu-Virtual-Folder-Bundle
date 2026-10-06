@@ -437,7 +437,7 @@ backdrop_texture(void) {
         backdrop_txr_tried = 1;
         backdrop_txr = pvr_mem_malloc(sizeof(backdrop_texture_data));
         if (backdrop_txr != NULL) {
-            pvr_txr_load(backdrop_texture_data, backdrop_txr, sizeof(backdrop_texture_data));
+            pvr_txr_load((void*)backdrop_texture_data, backdrop_txr, sizeof(backdrop_texture_data));
         }
     }
     return backdrop_txr != NULL;
@@ -703,6 +703,10 @@ draw_set_corner_radius(int radius) {
 
 /* The outline of a rectangle with its own radius at each corner (top left, top right, bottom right, bottom left), clockwise. A corner
  * with radius 0 is one point. Returns the number of points. */
+/* cos and sin of k * 15 degrees, k = 0..6 (ARC_SEG is 6) */
+static const float ARC_COS[7] = {1.0f, 0.9659258f, 0.8660254f, 0.7071068f, 0.5f, 0.2588190f, 0.0f};
+static const float ARC_SIN[7] = {0.0f, 0.2588190f, 0.5f, 0.7071068f, 0.8660254f, 0.9659258f, 1.0f};
+
 static int
 rr_outline(float x, float y, float w, float h, float r0, float r1, float r2, float r3, float* px, float* py) {
     /* A radius larger than half the shorter side makes the arcs cross; that was the buggy corner of the 20 px high details bar. */
@@ -725,10 +729,16 @@ rr_outline(float x, float y, float w, float h, float r0, float r1, float r2, flo
             continue;
         }
         for (int k = 0; k <= ARC_SEG; k++) {
-            const float a = (float)(2 + c) * 1.5707963f + (float)k * (1.5707963f / ARC_SEG);
+            /* A quarter circle from a table (no trig on the console), turned for each corner: the corners start at the left, the top,
+             * the right and the bottom. */
+            const float co = ARC_COS[k], si = ARC_SIN[k];
 
-            px[n] = cx[c] + radii[c] * fcos(a);
-            py[n++] = cy[c] + radii[c] * fsin(a);
+            switch (c) {
+                case 0: px[n] = cx[c] - radii[c] * co; py[n++] = cy[c] - radii[c] * si; break;
+                case 1: px[n] = cx[c] + radii[c] * si; py[n++] = cy[c] - radii[c] * co; break;
+                case 2: px[n] = cx[c] + radii[c] * co; py[n++] = cy[c] + radii[c] * si; break;
+                default: px[n] = cx[c] - radii[c] * si; py[n++] = cy[c] + radii[c] * co; break;
+            }
         }
     }
     return n;
@@ -806,7 +816,11 @@ draw_ring(float x, float y, float w, float h, float r, float bw, uint32_t color)
 /* A popup's frame: a 2 px border, the fill, and with header_height above zero a header bar in the border colour. */
 void
 draw_draw_popup_frame(int x, int y, int width, int height, int header_height, uint32_t border_color, uint32_t fill_color) {
-    const float r = (float)popup_corner_radius;
+    float r = (float)popup_corner_radius;
+
+    if (header_height > 0 && r > (float)header_height * 0.5f) {
+        r = (float)header_height * 0.5f; /* the header's arcs must match the fill's */
+    }
 
     if (popup_corner_radius == 0) {
         draw_draw_quad(x - 2, y - 2, (float)(width + 4), (float)(height + 4), border_color);
