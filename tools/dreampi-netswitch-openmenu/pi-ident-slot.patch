@@ -1,0 +1,95 @@
+diff --git a/README.md b/README.md
+index 3338ea7..ed1c015 100644
+--- a/README.md
++++ b/README.md
+@@ -143,7 +143,7 @@ The **openMenu link** module (on by default; switch it off in Settings > System
+ 
+ The module also announces to the rest of the add-on which of the card's games work online (they are in the online game table that the Online players module reads), and the **Online players** box and the **DC99 events** box then get a **play button** (▶) next to such a game, to the player who is in it, and to an event that names it. Tap it, confirm, and openMenu starts the game within a few seconds; nothing is pushed to the Dreamcast. The buttons are off while the Dreamcast is not connected. There is no PIN on starting a game (like switching the network).
+ 
+-The Dreamcast gets live info back in the answer to its poll: `NET dcnow` or `NET dcnet` (the selected network) and `PLAYING game02 game07` (the folders of the card's games that someone plays online right now), so openMenu can show it. On the Dreamcast set **DC Now!** to **On (Auto-Connect)** (or connect by hand); the list appears after the first poll. **Not tried on a Dreamcast or a Pi**, and the openMenu side does not read `NET` / `PLAYING` yet; the protocol, the folder assumption and the limits are in [docs/openmenu.md](docs/openmenu.md).
++The Dreamcast gets live info back in the answer to its poll: `NET dcnow` or `NET dcnet` (the selected network) and `PLAYING 2 7` (the slots of the card's games that someone plays online right now), so openMenu can show it. On the Dreamcast set **DC Now!** to **On (Auto-Connect)** (or connect by hand); the list appears after the first poll. **Not tried on a Dreamcast or a Pi**, and the protocol and the limits are in [docs/openmenu.md](docs/openmenu.md).
+ 
+ ## Web page
+ 
+diff --git a/docs/hardware-status.md b/docs/hardware-status.md
+index 010259d..37f1822 100644
+--- a/docs/hardware-status.md
++++ b/docs/hardware-status.md
+@@ -50,4 +50,4 @@ Check this before saying something works. Anything not listed under Verified has
+ 
+ - New LED effects (fade, breathe, short / double / triple blink, rainbow), Ready for calls per network, the editable palette with a per-colour LED value and its Preview on LED: the maths and timings are tested off-hardware (`tests/test_led_engine.py`, `tests/test_led_messages.py`) and the page's preview in a browser. **Not seen on a real LED**: how the fades look at a low maximum brightness (few steps, no dithering), whether the lowest breath step is visible and keeps its hue, how the rainbow looks after gamma and white balance, and whether the default colours need changing.
+ - LED reaction time and the faster checks (`checker_step()` every 0.5 s, the LED service's quick look at the state files, `core.poke("internet")` from the hook): tested off-hardware, with the LED driver simulated (a change shows about 0.2 s after the file is written). Not measured on a Pi: the CPU use of the half-second checks, and whether the shorter hold (0.12 s) lets a flicker through while DreamPi starts or ends a call.
+-- openMenu link module (`modules/openmenu/`): the Pi side (poll, game upload, the launch handshake, the texts of the box, the `NET` / `PLAYING` lines, which games are announced as online, the poke that makes the players list current) is tested off-hardware (`tests/test_openmenu.py`, `tests/test_players.py`) and the boxes in headless Chromium (`tests/ui/openmenu.js`: the search, Start asking first, the buttons off while disconnected, the play buttons in the Online players box). **Never run with a Dreamcast or a Pi**; the openMenu side was only syntax-checked by its author and does not read `NET` / `PLAYING` yet. That a game's "folder" in the upload is what the Dreamcast calls it in `PLAYING` (game02) is an assumption.
++- openMenu link module (`modules/openmenu/`): the Pi side (poll, game upload, the launch handshake, the texts of the box, the `NET` / `PLAYING` lines, which games are announced as online, the poke that makes the players list current) is tested off-hardware (`tests/test_openmenu.py`, `tests/test_players.py`) and the boxes in headless Chromium (`tests/ui/openmenu.js`: the search, Start asking first, the buttons off while disconnected, the play buttons in the Online players box). **Never run with a Dreamcast or a Pi**; the openMenu side was only syntax-checked by its author and does not read `NET` / `PLAYING` yet.
+diff --git a/docs/openmenu.md b/docs/openmenu.md
+index 4400b78..623f84a 100644
+--- a/docs/openmenu.md
++++ b/docs/openmenu.md
+@@ -48,7 +48,7 @@ The other direction: openMenu on the Dreamcast tells the Pi what is on its SD ca
+   - `LAUNCH <product>` once, when a launch is queued
+   - `NEED games` when the Pi's copy of the game list does not match the hash (or there is none)
+   - `NET dcnow` or `NET dcnet`: the selected network (`dcnet` only when DreamPi can use it, the same rule as `GET /tag`)
+-  - `PLAYING game02 game07`: the **folders** of the card's games that someone plays online right now (up to 16, each once; the line is left out when nobody does). A folder is the `folder` field the Dreamcast uploaded; one that is not a single word (letters, digits, `_ . -`) is replaced by the product code. *This takes "folder" as openMenu's own name for the game's entry (game02); if openMenu means something else, `ident()` in `netswitch_openmenu.py` is the one place to change.*
++  - `PLAYING 2 7`: the **slots** of the card's games that someone plays online right now (up to 16, each once; the line is left out when nobody does). A slot is the game's place on the card, the number of its SD card folder, which openMenu uploads as the `slot` field (the upload's `folder` is the game's virtual folder in the Folders view, shared by several games, so it is not used). A game without a slot is named by its product code.
+   - Lines an older openMenu does not know should be ignored; the new ones come after the old ones.
+ - `POST /openmenu/games` with `X-Requested-With: openMenu`; body `#openmenu-games 1 <hash> <count>`, then one game per line, tab separated: product, slot, disc, region, folder, name. Kept in `openmenu_games.json` (`core.OPENMENU_GAMES`), at most 5000 games.
+ 
+diff --git a/modules/openmenu/netswitch_openmenu.py b/modules/openmenu/netswitch_openmenu.py
+index a874f23..f44f9c0 100644
+--- a/modules/openmenu/netswitch_openmenu.py
++++ b/modules/openmenu/netswitch_openmenu.py
+@@ -12,7 +12,7 @@
+ # Events are not handled here: the events module owns them (GET /api/events/upcoming). Nothing is pushed to the Dreamcast:
+ # a launch waits until openMenu asks. The answer to a poll also carries two short lines of live info for the Dreamcast:
+ #   NET dcnet|dcnow                               the network that is selected
+-#   PLAYING game02 game07                         the folders of the card's games that someone plays online right now (left out when none)
++#   PLAYING 2 7                                   the slots of the card's games that someone plays online right now (left out when none)
+ # The module announces itself to the rest of the add-on in module.json ("launcher"): the card's games that are in the online game table
+ # (GET /openmenu/games, "online": true) and how to start one, so the Online players and DC99 events lists can show a Start button.
+ # The online players and the table of online games are read from the Online players module's file (core.PLAYERS_CACHE), never from its
+@@ -155,9 +155,11 @@ def is_online(name, table):
+ 
+ 
+ def ident(game):
+-    """What the Dreamcast calls the game in the live info: its folder as openMenu uploaded it (game02), else the product code."""
+-    folder = game.get("folder") or ""
+-    return folder if re.match(r"^[A-Za-z0-9_.-]+$", folder) else game["product"]
++    """What the Dreamcast calls the game in the live info: its slot, the game's place on the card (the number of its SD card folder,
++    which openMenu uploads as "slot"), else the product code. Not the upload's "folder": that is the game's virtual folder in openMenu's
++    Folders view (Racing/Arcade, or empty for a game in the root), and several games share one."""
++    slot = game.get("slot")
++    return str(slot) if isinstance(slot, int) and slot > 0 else game["product"]
+ 
+ 
+ def playing_now(players):
+diff --git a/tests/test_openmenu.py b/tests/test_openmenu.py
+index c0d958a..f293532 100644
+--- a/tests/test_openmenu.py
++++ b/tests/test_openmenu.py
+@@ -168,20 +168,22 @@ class LiveInfo(Base):
+         with mock.patch.object(core, "tag", return_value="DCNET_OFF"):           # selected, but calls go to DCNow! anyway
+             self.assertIn("NET dcnow", self.poll_lines())
+ 
+-    def test_the_games_played_online_go_back_as_folders(self):
++    def test_the_games_played_online_go_back_as_slots(self):
+         self.upload2()
+         self.players_file([{"player": "Dave", "game": "Crazy Taxi", "network": "DCNow!"}, {"player": "Eve", "game": "Quake III Arena", "network": "DCNET"},
+                            {"player": "Fay", "game": "Quake III Arena", "network": "DCNow!"}, {"player": "Gus", "game": "Not On The Card", "network": "DCNow!"},
+                            {"player": "Idle", "game": "", "network": "DCNow!"}])
+         lines = self.poll_lines()
+-        self.assertIn("PLAYING game02 game03", lines)              # once each, in the order of the players; unknown and idle ones are left out
++        self.assertIn("PLAYING 2 3", lines)              # once each, in the order of the players; unknown and idle ones are left out
+         self.players_file([])
+         self.assertFalse([l for l in self.poll_lines() if l.startswith("PLAYING")])     # nobody: no line
+ 
+-    def test_a_folder_that_is_not_one_word_is_replaced_by_the_product_code(self):
++    def test_a_virtual_folder_is_not_the_games_name(self):
++        """Several games can share a virtual folder (the upload's "folder"); the live info names the game by its slot."""
+         self.upload2()
+         self.players_file([{"player": "Dave", "game": "Death Crimson 2", "network": "DCNow!"}])
+-        self.assertIn("PLAYING HDR-0001", self.poll_lines())
++        self.assertIn("PLAYING 4", self.poll_lines())
++        self.assertNotIn("PLAYING Racing", " ".join(self.poll_lines()))
+ 
+     def test_an_old_players_list_says_nobody_plays(self):
+         self.upload2()

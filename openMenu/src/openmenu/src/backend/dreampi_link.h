@@ -26,3 +26,16 @@ void dreampi_link_abort(void);
  * still under way it waits (up to a few seconds, or until *abort_flag is set) so the first player list can
  * already come from the Pi. Returns 1 with the address and its text, 0 when there is no add-on to ask. */
 int dreampi_link_pi(struct sockaddr_in* addr, char* host, size_t host_len, const volatile int* abort_flag);
+
+struct gd_item;
+
+/* The live info the Pi adds to every answer. All of it is gone again when the connection is. */
+/* The network the DreamPi has selected: 0 not known, 1 DCNow!, 2 DCNET. */
+int dreampi_link_network(void);
+
+/* 1 once the Pi has answered on this connection, so dreampi_link_game_playing() means something (nobody playing is an answer too). */
+int dreampi_link_playing_known(void);
+
+/* 1 when someone plays this game online right now, by the Pi's account: its PLAYING line names the game's slot (its SD card folder
+ * number) or its product code. */
+int dreampi_link_game_playing(const struct gd_item* item);

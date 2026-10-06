@@ -1,3 +1,8 @@
+> **Note:** the add-on's own repository now holds the current version of this module (it has grown a `launcher` announcement, `NET` and
+> `PLAYING` lines and more). The files in this folder are the earlier version this branch's openMenu was written against. The one change
+> openMenu needs from the current module is in `pi-ident-slot.patch`: `PLAYING` must name games by their **slot**, not by the upload's
+> `folder` (that is the game's virtual folder in the Folders view, shared by several games).
+
 # openMenu link: DreamPi Netswitch module
 
 Drop-in module for [DreamPiAutoToggle](https://github.com/blaskkaffe/DreamPiAutoToggle), written for the **`development`
@@ -38,6 +43,9 @@ Tests (optional)
 - `tests/ui/openmenu.js` is a browser check like the other files in `tests/ui/`: start the demo server with `FAKEPLAYERS=1`,
   then `NODE_PATH=/opt/node22/lib/node_modules PORT=<port> node openmenu.js`. It uploads a game list, checks the box, the
   search, a Join for a fake player and a queued launch (10 checks, all passing).
+
+The answer to a poll also carries `NET dcnow|dcnet` (the selected network) and `PLAYING <slot> <slot> ...` (the card games someone plays online now).
+openMenu reads both: the Folders list marks the `PLAYING` games, and a theme's panel border can follow `NET`.
 
 Wire protocol (openMenu to Pi, over the PPP link, on the Pi's web port; the Pi's address is the DNS server the Dreamcast was
 given)

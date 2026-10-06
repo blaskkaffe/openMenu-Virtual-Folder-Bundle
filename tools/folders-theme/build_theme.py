@@ -261,7 +261,7 @@ def panel_keys(theme):
     """THEME.INI lines for the glass panels openMenu draws under the picture."""
     rgb = lambda c: "%d,%d,%d" % c
     lines = ["panel_%d=%d,%d,%d,%d" % ((i,) + p) for i, p in enumerate(PANELS)]
-    return "\n".join(lines) + "\npanel_border_color=%s\npanel_fill_color=%s\npanel_alpha=%d\npanel_radius=%d\npanel_border_width=%d\n" % (
+    return "\n".join(lines) + "\npanel_border_color_dcnow=246,178,122\npanel_border_color_dcnet=128,177,246\npanel_border_color=%s\npanel_fill_color=%s\npanel_alpha=%d\npanel_radius=%d\npanel_border_width=%d\n" % (
         rgb(theme["light"]), rgb(theme["fill"]), PANEL_ALPHA, RADIUS, BORDER)
 
 

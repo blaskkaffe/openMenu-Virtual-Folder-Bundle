@@ -264,6 +264,12 @@ read_folder_theme_ini(void* user, const char* section, const char* name, const c
         } else if (strcasecmp(name, "PANEL_BORDER_COLOR") == 0) {
             new_theme->panel_border_color = str2argb(value) & 0x00FFFFFF;
             return 1;
+        } else if (strcasecmp(name, "PANEL_BORDER_COLOR_DCNOW") == 0) {
+            new_theme->panel_border_dcnow = str2argb(value) & 0x00FFFFFF;
+            return 1;
+        } else if (strcasecmp(name, "PANEL_BORDER_COLOR_DCNET") == 0) {
+            new_theme->panel_border_dcnet = str2argb(value) & 0x00FFFFFF;
+            return 1;
         } else if (strcasecmp(name, "PANEL_FILL_COLOR") == 0) {
             new_theme->panel_fill_color = str2argb(value) & 0x00FFFFFF;
             return 1;

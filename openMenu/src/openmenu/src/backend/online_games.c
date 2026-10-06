@@ -1,7 +1,8 @@
 /*
  * File: online_games.c
  * Project: openmenu
- * Which games on the card somebody is playing online right now. The player list is the one the Dreamcast Now! window shows. A game
+ * Which games on the card somebody is playing online right now. With the DreamPi add-on the Pi says so (its PLAYING line); otherwise the
+ * player list the Dreamcast Now! window shows is used. A game
  * matches a player's title when the two names agree once case, punctuation and bracketed parts such as "(USA)" are ignored, or, for
  * names of six or more letters, when one holds the other ("Sonic Adventure 2" and "Sonic Adventure 2 Battle").
  */
@@ -19,6 +20,7 @@
 
 #include "backend/dcnow_fetch.h"
 #include "backend/dcnow_net.h"
+#include "backend/dreampi_link.h"
 #include "backend/online_games.h"
 
 #define NORM_LEN   48
@@ -146,6 +148,11 @@ online_games_tick(void) {
     dcnow_conn_poll(&status);
     dcnow_fetch_poll(&fetch);
 
+    /* A DreamPi with the add-on says which games are played in its answers, so the player list is not needed for the marks. */
+    if (dreampi_link_playing_known()) {
+        return;
+    }
+
     /* With Auto-Refresh on, the list stays fresh without the window: first when a connection comes up, then every interval. Any
      * fetch, the window's or the VMU screen's included, restarts the interval. */
     if (fetch.state == DCNOW_FETCH_RUNNING) {
@@ -170,6 +177,11 @@ online_games_tick(void) {
 
 int
 online_games_players(const gd_item* item) {
+    /* The Pi's own account wins: it knows the games by their place on the card. It does not count the players, so a game counts as one. */
+    if (dreampi_link_playing_known()) {
+        return dreampi_link_game_playing(item) ? 1 : 0;
+    }
+
     const uintptr_t base = (uintptr_t)list_all_item(0);
     const uintptr_t at = (uintptr_t)item;
 

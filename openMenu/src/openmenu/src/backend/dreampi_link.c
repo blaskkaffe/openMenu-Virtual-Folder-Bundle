@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -41,7 +42,9 @@
 #define LINK_MAX_FAILS     5  /* in a row, once the Pi has answered */
 #define LINK_FIRST_FAILS   12 /* before the Pi has answered: the link has just come up and may not carry traffic yet */
 #define LINK_FIRST_WAIT_MS 5000
-#define LINK_REPLY_MAX     512
+#define LINK_REPLY_MAX     1024 /* the Pi's answer: its headers are about 450 bytes, then the lines */
+#define LINK_LINE_MAX      160
+#define PLAYING_MAX        16
 #define LINK_PRODUCT_MAX   12
 
 static mutex_t link_mutex = MUTEX_INITIALIZER;
@@ -53,6 +56,13 @@ static volatile int ui_is_idle = 0;
 static volatile int pi_state = 0;      /* 0 not known yet, 1 the add-on answered, 2 there is none on this link */
 static int tried_this_link = 0;        /* main thread only: one worker per connection */
 static char pending[LINK_PRODUCT_MAX]; /* guarded by link_mutex */
+
+/* The live info in the Pi's answers (guarded by link_mutex): the selected network, and which games of the card someone plays online now
+ * (slot numbers, or product codes). playing_valid says the Pi answered on this connection, so an empty list means nobody. */
+static int net_kind = 0; /* 0 not known, 1 DCNow!, 2 DCNET */
+static char playing_tok[PLAYING_MAX][LINK_PRODUCT_MAX];
+static int playing_count = 0;
+static volatile int playing_valid = 0;
 
 /* Waits for a socket event in 100 ms slices. Returns the events, 0 on timeout, -1 when asked to stop. */
 static int
@@ -123,7 +133,7 @@ typedef int (*body_fn)(int fd, uint64_t deadline, void* ctx);
 static int
 http_exchange(const struct sockaddr_in* addr, const char* head, body_fn body, void* ctx, char* reply,
               size_t reply_max) {
-    char buf[LINK_REPLY_MAX];
+    char buf[LINK_REPLY_MAX + 512];
     size_t used = 0;
     uint64_t deadline = timer_ms_gettime64() + LINK_IO_TIMEOUT_MS;
     int status = -1;
@@ -301,15 +311,19 @@ product_valid(const char* text) {
     return 1;
 }
 
-/* Reads the Pi's answer to a poll. Returns 1 when it is an openMenu answer. */
+/* Reads the Pi's answer to a poll. Returns 1 when it is an openMenu answer. Lines: "openmenu 1", "NEED games", "LAUNCH <product>", "NET
+ * dcnow|dcnet", "PLAYING <slot or product> ...". */
 static int
 read_poll_reply(const char* reply, int* need_games) {
     const char* p = reply;
+    char tokens[PLAYING_MAX][LINK_PRODUCT_MAX];
+    int token_count = 0;
+    int net = 0;
     int seen = 0;
 
     *need_games = 0;
     while (*p) {
-        char line[48];
+        char line[LINK_LINE_MAX];
         size_t len = strcspn(p, "\r\n");
 
         snprintf(line, sizeof(line), "%.*s", (int)len, p);
@@ -321,9 +335,37 @@ read_poll_reply(const char* reply, int* need_games) {
             mutex_lock(&link_mutex);
             snprintf(pending, sizeof(pending), "%s", line + 7);
             mutex_unlock(&link_mutex);
+        } else if (!strcmp(line, "NET dcnow")) {
+            net = 1;
+        } else if (!strcmp(line, "NET dcnet")) {
+            net = 2;
+        } else if (!strncmp(line, "PLAYING ", 8)) {
+            char* tok = line + 8;
+
+            while (*tok != '\0' && token_count < PLAYING_MAX) {
+                char* end = tok + strcspn(tok, " ");
+                char saved = *end;
+
+                *end = '\0';
+                if (product_valid(tok)) {
+                    snprintf(tokens[token_count++], LINK_PRODUCT_MAX, "%s", tok);
+                }
+                if (saved == '\0') {
+                    break;
+                }
+                tok = end + 1;
+            }
         }
         p += len;
         p += strspn(p, "\r\n");
+    }
+    if (seen) {
+        mutex_lock(&link_mutex);
+        net_kind = net;
+        playing_count = token_count;
+        memcpy(playing_tok, tokens, sizeof(playing_tok[0]) * (size_t)token_count);
+        playing_valid = 1;
+        mutex_unlock(&link_mutex);
     }
     return seen;
 }
@@ -372,12 +414,56 @@ link_main(void* param) {
     return NULL;
 }
 
+static void dreampi_link_forget(void);
+
 static void
 join_worker(void) {
     if (worker != NULL) {
         thd_join(worker, NULL);
         worker = NULL;
     }
+}
+
+/* The live info is only as good as the connection that brought it. */
+static void
+dreampi_link_forget(void) {
+    if (!playing_valid && net_kind == 0) {
+        return;
+    }
+    mutex_lock(&link_mutex);
+    net_kind = 0;
+    playing_count = 0;
+    playing_valid = 0;
+    mutex_unlock(&link_mutex);
+}
+
+int
+dreampi_link_network(void) {
+    return net_kind;
+}
+
+int
+dreampi_link_playing_known(void) {
+    return playing_valid;
+}
+
+int
+dreampi_link_game_playing(const gd_item* item) {
+    int found = 0;
+
+    if (!playing_valid || item == NULL) {
+        return 0;
+    }
+    mutex_lock(&link_mutex);
+    for (int i = 0; i < playing_count && !found; i++) {
+        const char* tok = playing_tok[i];
+        const int numeric = isdigit((unsigned char)tok[0]) && strspn(tok, "0123456789") == strlen(tok);
+
+        /* A slot number is the game's place on the card (its SD folder); anything else is a product code. */
+        found = numeric ? (unsigned int)atoi(tok) == item->slot_num : (item->product[0] != '\0' && !strcmp(tok, item->product));
+    }
+    mutex_unlock(&link_mutex);
+    return found;
 }
 
 void
@@ -387,6 +473,7 @@ dreampi_link_abort(void) {
     stop_requested = 0;
     worker_done = 0;
     pi_state = 0;
+    dreampi_link_forget();
 }
 
 void
@@ -423,6 +510,7 @@ dreampi_link_tick(void) {
     if (!modem_online) {
         tried_this_link = 0;
         pi_state = 0;
+        dreampi_link_forget();
     } else if (worker == NULL && !tried_this_link) {
         tried_this_link = 1;
         worker = thd_create(false, link_main, NULL);

@@ -37,6 +37,10 @@ water, ported from its Three.js scene (`dc-background.js`, adapted from Robert D
 - **Memory.** The 64x64 texture is 8 KB of video memory, allocated once the first time the backdrop draws (`backdrop_texture.h` holds it, RGB565
   and twiddled, made by `make_backdrop_texture.py`). If that allocation fails the sky gradient still draws. About 25 KB of static arrays. The
   theme's background picture is ARGB4444 instead of RGB565, both 16 bits per pixel, so its two textures are the same size as before (640 KB).
+- **The border follows the network.** The animated themes give `panel_border_color_dcnow` (orange) and `panel_border_color_dcnet` (blue): when the
+  DreamPi's answer says `NET dcnow` or `NET dcnet`, the panel borders take that colour, like the web page's network colours. Before the answer, or
+  without the add-on, a theme's own `panel_border_color` is used (orange for WebOrangeAnim, blue for WebBlueAnim). The logo swirl and the
+  Controls heading are part of the picture and keep their colour.
 - **The panels.** The rounded boxes are drawn by openMenu (`draw_draw_panel()`): a soft shadow, a fill like the web page's boxes (rgba 20,20,20
   at .78; a little lighter at the top) and a 3 px accent border, with real arcs for the corners. The rectangles are `panel_0` to `panel_3` in
   `THEME.INI`. The same arc code draws the rounded popups (`menu_corner_radius`).
@@ -50,6 +54,9 @@ water, ported from its Three.js scene (`dc-background.js`, adapted from Robert D
 - **Previews.** `out_animated/*_preview.png` are one frame of that rendering with the panels and the picture over it.
 
 ## Games being played online
+
+With the DreamPi add-on connected, openMenu takes the games from the Pi's own `PLAYING` line (the slots of the card's games that someone plays
+online now), so the marks work without fetching the player list and with Auto-Refresh off. Without the add-on it falls back to what is below.
 
 With the rebuilt openMenu, a game in the Folders list that somebody is playing online right now is drawn in the theme's `online_color` (these
 themes use the web page's bright green, `72,216,96`; without the key openMenu uses a built-in green) and has a small telephone after its title

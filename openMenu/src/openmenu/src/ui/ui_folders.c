@@ -1383,13 +1383,21 @@ FUNCTION(UI_NAME, drawTR) {
     if (cur_theme->backdrop) {
         /* The background scene, glass panels over it, then the background picture (logo, legend) over them. */
         draw_backdrop_scene();
+        /* The border follows the network the DreamPi has selected, when the theme gives a colour for it. */
+        uint32_t panel_border = cur_theme->panel_border_color ? cur_theme->panel_border_color : 0xF6B27A;
+        const int network = dreampi_link_network();
+
+        if (network == 1 && cur_theme->panel_border_dcnow) {
+            panel_border = cur_theme->panel_border_dcnow;
+        } else if (network == 2 && cur_theme->panel_border_dcnet) {
+            panel_border = cur_theme->panel_border_dcnet;
+        }
         for (int i = 0; i < cur_theme->panel_count; i++) {
             const int* r = cur_theme->panel_rect[i];
 
             if (r[2] > 0 && r[3] > 0) {
                 draw_draw_panel(r[0], r[1], r[2], r[3], cur_theme->panel_radius, cur_theme->panel_border_width ? cur_theme->panel_border_width : 3,
-                                cur_theme->panel_border_color ? cur_theme->panel_border_color : 0xF6B27A,
-                                cur_theme->panel_fill_color, cur_theme->panel_alpha ? cur_theme->panel_alpha : 150);
+                                panel_border, cur_theme->panel_fill_color, cur_theme->panel_alpha ? cur_theme->panel_alpha : 150);
             }
         }
         draw_bg_layers();

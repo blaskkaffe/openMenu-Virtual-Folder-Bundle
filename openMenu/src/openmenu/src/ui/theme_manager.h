@@ -83,6 +83,8 @@ typedef struct theme_scroll {
     int panel_rect[6][4];
     uint32_t panel_border_color; /* 0xRRGGBB */
     uint32_t panel_fill_color;   /* 0xRRGGBB */
+    uint32_t panel_border_dcnow; /* 0xRRGGBB: the border while the DreamPi has DCNow! selected, zero = panel_border_color */
+    uint32_t panel_border_dcnet; /* the same for DCNET */
     int panel_alpha;             /* opacity of the fill at the top, 0..255 */
     int panel_radius;
     int panel_border_width;
