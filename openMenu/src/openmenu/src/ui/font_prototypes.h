@@ -37,6 +37,8 @@ int font_bmp_init(const char* filename, int char_width, int char_height);
 void font_bmp_destroy(void);
 
 void font_bmp_begin_draw(void);
+/* Draws the fixed width font at this size (1 = its own, 0.75 = three quarters) until it is set back to 1. */
+void font_bmp_set_scale(float scale);
 void font_bmp_set_color(uint32_t color);
 void font_bmp_set_color_components(int r, int g, int b, int a);
 

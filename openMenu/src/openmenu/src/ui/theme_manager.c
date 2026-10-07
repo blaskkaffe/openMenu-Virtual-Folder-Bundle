@@ -19,6 +19,7 @@
 #include "ui/draw_prototypes.h"
 
 #include "ui/theme_manager.h"
+#include "ui/backdrop.h"
 
 /* Missing on sh-elf-gcc 9.1 ? */
 char* strdup(const char* s);
@@ -244,6 +245,9 @@ read_folder_theme_ini(void* user, const char* section, const char* name, const c
         } else if (strcasecmp(name, "ITEM_DETAILS_Y") == 0) {
             new_theme->item_details_y = atoi(value);
             return 1;
+        } else if (strcasecmp(name, "ITEM_DETAILS_SCALE") == 0) {
+            new_theme->item_details_scale = atoi(value);
+            return 1;
         } else if (strcasecmp(name, "ITEM_DETAILS_TEXT_COLOR") == 0) {
             new_theme->item_details_text_color = str2argb(value);
             return 1;
@@ -278,6 +282,36 @@ read_folder_theme_ini(void* user, const char* section, const char* name, const c
             return 1;
         } else if (strcasecmp(name, "BACKDROP") == 0) {
             new_theme->backdrop = atoi(value);
+            return 1;
+        } else if (strcasecmp(name, "BACKDROP_SCENE") == 0) {
+            new_theme->backdrop_scene = (int)backdrop_scene_from_name(value);
+            return 1;
+        } else if (strcasecmp(name, "BACKDROP_SPEED") == 0) {
+            new_theme->backdrop_speed = atoi(value);
+            return 1;
+        } else if (strcasecmp(name, "BACKDROP_PEAKS") == 0) {
+            new_theme->backdrop_peaks = atoi(value);
+            return 1;
+        } else if (strcasecmp(name, "SCENE_SKY_TOP") == 0) {
+            new_theme->scene_sky_top = str2argb(value) & 0x00FFFFFF;
+            return 1;
+        } else if (strcasecmp(name, "SCENE_SKY_BOTTOM") == 0) {
+            new_theme->scene_sky_bottom = str2argb(value) & 0x00FFFFFF;
+            return 1;
+        } else if (strcasecmp(name, "SCENE_SUN_TOP") == 0) {
+            new_theme->scene_sun_top = str2argb(value) & 0x00FFFFFF;
+            return 1;
+        } else if (strcasecmp(name, "SCENE_SUN_BOTTOM") == 0) {
+            new_theme->scene_sun_bottom = str2argb(value) & 0x00FFFFFF;
+            return 1;
+        } else if (strcasecmp(name, "SCENE_GRID") == 0) {
+            new_theme->scene_grid = str2argb(value) & 0x00FFFFFF;
+            return 1;
+        } else if (strcasecmp(name, "SCENE_GROUND") == 0) {
+            new_theme->scene_ground = str2argb(value) & 0x00FFFFFF;
+            return 1;
+        } else if (strcasecmp(name, "SCENE_MOUNTAIN") == 0) {
+            new_theme->scene_mountain = str2argb(value) & 0x00FFFFFF;
             return 1;
         } else if (strcasecmp(name, "BACKDROP_CLOUDS") == 0) {
             new_theme->backdrop_clouds = atoi(value);

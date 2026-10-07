@@ -22,8 +22,8 @@ Themes without the new keys look and behave exactly as before.
 `panel_0` .. `panel_5` (x,y,w,h), `panel_border_color`, `panel_fill_color`, `panel_alpha`, `panel_radius`, `panel_border_width`.
 
 ## The themes (`tools/folders-theme/`)
-`python3 build_theme.py` (needs Pillow and numpy) writes three sets, each with `FOLDERS_8` (orange) and `FOLDERS_9` (blue):
-`out/` still wave picture (also works on stock openMenu), `out_animated/` full wave, `out_lowres/` 16x16 wave. Install one set into the
+`python3 build_theme.py` (needs Pillow and numpy) writes four sets, each with `FOLDERS_8` (orange) and `FOLDERS_9` (blue):
+`out/` still wave picture (also works on stock openMenu), `out_animated/` full wave, `out_lowres/` 16x16 wave, `out_synthwave/` a neon synthwave landscape. Install one set into the
 card's theme folder. The logo and button icons are cut from the default Folders theme.
 
 ## To test
@@ -32,3 +32,22 @@ card's theme folder. The logo and button icons are cut from the default Folders 
 - Box art still loads everywhere (the overflow blocks use about 150 KB of video memory).
 - Other themes (LineDesc, Grid3, Scroll, the shipped Folders themes) are unchanged.
 This has not been built or run on a Dreamcast by the author of the change.
+
+## 3D backdrops are separate modules (`openMenu/src/openmenu/src/ui/backdrop*.c`)
+Each backdrop is its own source file with one function, and the theme picks it with `backdrop_scene=` in THEME.INI:
+
+| File | `backdrop_scene=` | What it is |
+|---|---|---|
+| `backdrop_waves.c` | `waves` (the default) | the DreamPi web page's wave plane and cloud cylinder |
+| `backdrop_synthwave.c` | `synthwave` | a neon grid floor coming towards the screen, mountains that rise and fall a little as they pass, a striped sun |
+| `backdrop.c` / `backdrop.h` | | the list of scenes and the settings a theme can pass them |
+
+The Dreamcast cannot load code from the SD card, so a new *kind* of scene still needs a `.c` file and a rebuild (the header says what to
+add). Everything about how an existing scene *looks* is in the theme folder: colours, speed and mountain height are THEME.INI keys, and
+the picture on top is the theme's BG_L/BG_R. Synthwave keys: `backdrop_scene=synthwave`, `backdrop_speed` and `backdrop_peaks` (percent,
+100 = normal), `scene_sky_top`, `scene_sky_bottom`, `scene_sun_top`, `scene_sun_bottom`, `scene_grid`, `scene_ground`, `scene_mountain`
+(r,g,b). `backdrop=2` uses fewer triangles for either scene. `build_theme.py` writes a fourth set, `out_synthwave/` (`WebOrangeSynth` =
+sunset, `WebBlueSynth` = ice), and `render_backdrop_frame.py [frame] [out.png] [waves|synthwave] [setting]` renders any scene on the build
+machine.
+
+`item_details_scale` (percent, default 100) makes the text of the disc-count box smaller; the themes use 75.
