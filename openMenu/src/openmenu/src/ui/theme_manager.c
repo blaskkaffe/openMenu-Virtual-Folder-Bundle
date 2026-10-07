@@ -19,7 +19,6 @@
 #include "ui/draw_prototypes.h"
 
 #include "ui/theme_manager.h"
-#include "ui/backdrop.h"
 
 /* Missing on sh-elf-gcc 9.1 ? */
 char* strdup(const char* s);
@@ -212,6 +211,19 @@ read_scroll_theme_ini(void* user, const char* section, const char* name, const c
     return 1;
 }
 
+/* Index of a synthwave scene color from its THEME.INI name (SCENE_SKY, SCENE_HORIZON, SCENE_SUN, SCENE_GRID), or -1 */
+static int
+scene_color_index(const char* name) {
+    static const char* const names[BACKDROP_SCENE_COLORS] = {"SKY", "HORIZON", "SUN", "GRID"};
+
+    for (int i = 0; i < BACKDROP_SCENE_COLORS; i++) {
+        if (strcasecmp(name, names[i]) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 static int
 read_folder_theme_ini(void* user, const char* section, const char* name, const char* value) {
     theme_scroll* new_theme = (theme_scroll*)user;
@@ -245,79 +257,28 @@ read_folder_theme_ini(void* user, const char* section, const char* name, const c
         } else if (strcasecmp(name, "ITEM_DETAILS_Y") == 0) {
             new_theme->item_details_y = atoi(value);
             return 1;
-        } else if (strcasecmp(name, "ITEM_DETAILS_SCALE") == 0) {
-            new_theme->item_details_scale = atoi(value);
-            return 1;
         } else if (strcasecmp(name, "ITEM_DETAILS_TEXT_COLOR") == 0) {
             new_theme->item_details_text_color = str2argb(value);
             return 1;
-        } else if (strncasecmp(name, "PANEL_", 6) == 0 && name[6] >= '0' && name[6] <= '5' && name[7] == '\0') {
-            const int slot = name[6] - '0';
-            int x, y, w, h;
-
-            if (sscanf(value, "%d,%d,%d,%d", &x, &y, &w, &h) == 4) {
-                new_theme->panel_rect[slot][0] = x;
-                new_theme->panel_rect[slot][1] = y;
-                new_theme->panel_rect[slot][2] = w;
-                new_theme->panel_rect[slot][3] = h;
-                if (slot + 1 > new_theme->panel_count) {
-                    new_theme->panel_count = slot + 1;
-                }
-            }
-            return 1;
-        } else if (strcasecmp(name, "PANEL_BORDER_COLOR") == 0) {
-            new_theme->panel_border_color = str2argb(value) & 0x00FFFFFF;
-            return 1;
-        } else if (strcasecmp(name, "PANEL_FILL_COLOR") == 0) {
-            new_theme->panel_fill_color = str2argb(value) & 0x00FFFFFF;
-            return 1;
-        } else if (strcasecmp(name, "PANEL_ALPHA") == 0) {
-            new_theme->panel_alpha = atoi(value);
-            return 1;
-        } else if (strcasecmp(name, "PANEL_RADIUS") == 0) {
-            new_theme->panel_radius = atoi(value);
-            return 1;
-        } else if (strcasecmp(name, "PANEL_BORDER_WIDTH") == 0) {
-            new_theme->panel_border_width = atoi(value);
+        } else if (strcasecmp(name, "ITEM_DETAILS_SCALE") == 0) {
+            new_theme->item_details_scale = atoi(value);
             return 1;
         } else if (strcasecmp(name, "BACKDROP") == 0) {
-            new_theme->backdrop = atoi(value);
+            new_theme->backdrop = !strcasecmp(value, "waves")       ? BACKDROP_WAVES
+                                  : !strcasecmp(value, "waves_low") ? BACKDROP_WAVES_LOW
+                                  : !strcasecmp(value, "synthwave") ? BACKDROP_SYNTHWAVE
+                                                                    : BACKDROP_NONE;
             return 1;
-        } else if (strcasecmp(name, "BACKDROP_SCENE") == 0) {
-            new_theme->backdrop_scene = (int)backdrop_scene_from_name(value);
+        } else if (strncasecmp(name, "SCENE_", 6) == 0 && scene_color_index(name + 6) >= 0) {
+            new_theme->scene_color[scene_color_index(name + 6)] = str2argb(value) & 0x00FFFFFF;
             return 1;
-        } else if (strcasecmp(name, "BACKDROP_SPEED") == 0) {
-            new_theme->backdrop_speed = atoi(value);
-            return 1;
-        } else if (strcasecmp(name, "BACKDROP_PEAKS") == 0) {
-            new_theme->backdrop_peaks = atoi(value);
-            return 1;
-        } else if (strcasecmp(name, "SCENE_SKY_TOP") == 0) {
-            new_theme->scene_sky_top = str2argb(value) & 0x00FFFFFF;
-            return 1;
-        } else if (strcasecmp(name, "SCENE_SKY_BOTTOM") == 0) {
-            new_theme->scene_sky_bottom = str2argb(value) & 0x00FFFFFF;
-            return 1;
-        } else if (strcasecmp(name, "SCENE_SUN_TOP") == 0) {
-            new_theme->scene_sun_top = str2argb(value) & 0x00FFFFFF;
-            return 1;
-        } else if (strcasecmp(name, "SCENE_SUN_BOTTOM") == 0) {
-            new_theme->scene_sun_bottom = str2argb(value) & 0x00FFFFFF;
-            return 1;
-        } else if (strcasecmp(name, "SCENE_GRID") == 0) {
-            new_theme->scene_grid = str2argb(value) & 0x00FFFFFF;
-            return 1;
-        } else if (strcasecmp(name, "SCENE_GROUND") == 0) {
-            new_theme->scene_ground = str2argb(value) & 0x00FFFFFF;
-            return 1;
-        } else if (strcasecmp(name, "SCENE_MOUNTAIN") == 0) {
-            new_theme->scene_mountain = str2argb(value) & 0x00FFFFFF;
-            return 1;
-        } else if (strcasecmp(name, "BACKDROP_CLOUDS") == 0) {
-            new_theme->backdrop_clouds = atoi(value);
-            return 1;
-        } else if (strcasecmp(name, "BACKDROP_COLOR") == 0) {
-            new_theme->backdrop_color = str2argb(value);
+        } else if (strncasecmp(name, "PANEL_", 6) == 0 && name[6] >= '0' && name[6] <= '3' && name[7] == '\0') {
+            const int i = name[6] - '0';
+
+            if (sscanf(value, "%d,%d,%d,%d", &new_theme->panel_rect[i][0], &new_theme->panel_rect[i][1], &new_theme->panel_rect[i][2],
+                       &new_theme->panel_rect[i][3]) == 4 && i >= new_theme->panel_count) {
+                new_theme->panel_count = i + 1;
+            }
             return 1;
         } else if (strcasecmp(name, "CLOCK_X") == 0) {
             new_theme->clock_x = atoi(value);

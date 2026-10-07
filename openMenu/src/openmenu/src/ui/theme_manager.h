@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "ui/backdrop.h"
+
 #include <stdint.h>
 #include <string.h>
 
@@ -25,7 +27,7 @@ typedef struct theme_color {
     uint32_t menu_bkg_color;
     uint32_t menu_bkg_border_color;
     uint32_t icon_color;
-    int menu_corner_radius; /* popups: 0 = square corners */
+    int menu_corner_radius; /* popups, 0 = square */
 } theme_color;
 
 typedef struct theme_region {
@@ -72,25 +74,14 @@ typedef struct theme_scroll {
     int item_details_x;
     int item_details_y;
     uint32_t item_details_text_color;
-    int item_details_scale; /* the details text's size in percent of the font's own (0 = 100) */
+    int item_details_scale; /* text size in percent, 0 = 100 */
     int clock_x;
     int clock_y;
     uint32_t clock_text_color;
-    int backdrop;            /* Folders: draw the animated backdrop under a see-through background (1), or a low-res one (2) */
-    int backdrop_scene;      /* which 3D scene: 0 waves (the default), 1 synthwave (backdrop_scene=synthwave) */
-    int backdrop_speed;      /* synthwave: percent of the normal speed (0 = 100) */
-    int backdrop_peaks;      /* synthwave: percent of the normal mountain height (0 = 100) */
-    uint32_t scene_sky_top, scene_sky_bottom, scene_sun_top, scene_sun_bottom, scene_grid, scene_ground, scene_mountain; /* synthwave colours, 0xRRGGBB, 0 = the default */
-    int backdrop_clouds;     /* the cloud cylinder's opacity in percent of the page's own (0 = 100); 200 shows twice as much */
-    uint32_t backdrop_color; /* a colour the backdrop is multiplied by, zero = none (the web page's own colours) */
-    /* Folders with a backdrop: glass panels drawn in code under the background picture (THEME.INI panel_0 .. panel_5 = x,y,w,h) */
-    int panel_count;
-    int panel_rect[6][4];
-    uint32_t panel_border_color; /* 0xRRGGBB */
-    uint32_t panel_fill_color;   /* 0xRRGGBB */
-    int panel_alpha;             /* opacity of the fill at the top, 0..255 */
-    int panel_radius;
-    int panel_border_width;
+    int backdrop;                                    /* enum backdrop: animated 3D scene behind the background */
+    uint32_t scene_color[BACKDROP_SCENE_COLORS];     /* colors of the synthwave scene, 0xRRGGBB */
+    int panel_count;                                 /* glass panels drawn over the backdrop */
+    int panel_rect[4][4];                             /* x, y, width, height */
 } theme_scroll;
 
 int theme_manager_load(void);

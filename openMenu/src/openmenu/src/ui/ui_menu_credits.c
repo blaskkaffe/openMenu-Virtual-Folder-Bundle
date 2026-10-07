@@ -513,6 +513,7 @@ static uint32_t text_color;
 static uint32_t highlight_color;
 static uint32_t menu_bkg_color;
 static uint32_t menu_bkg_border_color;
+static int menu_corner_radius;
 static uint32_t menu_title_color;
 
 static theme_color* cur_colors = NULL;
@@ -550,7 +551,7 @@ common_setup(enum draw_state* state, theme_color* _colors, int* timeout_ptr) {
     highlight_color = _colors->menu_highlight_color;
     menu_bkg_color = _colors->menu_bkg_color;
     menu_bkg_border_color = _colors->menu_bkg_border_color;
-    draw_set_corner_radius(_colors->menu_corner_radius);
+    menu_corner_radius = _colors->menu_corner_radius;
     cur_colors = _colors;
 
     /* So we can modify the shared state and input timeout */
@@ -1417,11 +1418,8 @@ string_outer_concat(char* out, const char* left, const char* right, int len) {
 void
 draw_popup_menu_ex(int x, int y, int width, int height, int ui_mode) {
     menu_mouse_surface(x, y, width, height);
-    if (ui_mode != UI_FOLDERS) {
-        draw_set_corner_radius(0);
-    }
-    draw_draw_popup_frame(x, y, width, height, (ui_mode == UI_SCROLL || ui_mode == UI_FOLDERS) ? 20 : 0, menu_bkg_border_color,
-                          menu_bkg_color);
+    draw_draw_popup_frame(x, y, width, height, (ui_mode == UI_SCROLL || ui_mode == UI_FOLDERS) ? 20 : 0,
+                          ui_mode == UI_FOLDERS ? menu_corner_radius : 0, menu_bkg_border_color, menu_bkg_color);
 }
 
 static void
@@ -1596,7 +1594,7 @@ draw_device_warnings(theme_color* colors, uint32_t title_color, int ui_mode) {
     text_color = colors->menu_text_color;
     menu_bkg_color = colors->menu_bkg_color;
     menu_bkg_border_color = colors->menu_bkg_border_color;
-    draw_set_corner_radius(colors->menu_corner_radius);
+    menu_corner_radius = colors->menu_corner_radius;
     z_set_cond(220.0f);
     draw_popup_menu_ex(x, y, width, height, ui_mode);
 
@@ -1782,7 +1780,7 @@ draw_hangup_overlay(theme_color* colors, uint32_t title_color) {
     text_color = colors->menu_text_color;
     menu_bkg_color = colors->menu_bkg_color;
     menu_bkg_border_color = colors->menu_bkg_border_color;
-    draw_set_corner_radius(colors->menu_corner_radius);
+    menu_corner_radius = colors->menu_corner_radius;
     menu_title_color = title_color;
     z_set_cond(215.0f);
 

@@ -33,7 +33,6 @@
 #include "ui/menu_mouse.h"
 #include "ui/theme_manager.h"
 #include "ui/ui_common.h"
-#include "ui/backdrop.h"
 #include "ui/ui_dcnow.h"
 #include "ui/ui_menu_credits.h"
 
@@ -263,19 +262,18 @@ draw_bg_layers(void) {
     }
 }
 
-/* The picture of a backdrop theme has only a logo, the Controls text and an empty disc on it, the rest is see-through. Drawn whole it would
- * add an entry to every tile's polygon list in the translucent pass (the text fills those lists), so only the three pieces are drawn. */
+/* The picture of a backdrop theme is mostly see-through, so only the logo, the legend and the empty disc are drawn,
+ * and the last two not under a popup */
 static void
 draw_bg_overlay(void) {
     const dimen_RECT logo = {.x = 8, .y = 12, .w = 200, .h = 52};
-    const dimen_RECT right_left = {.x = 414, .y = 66, .w = 98, .h = 358};
-    const dimen_RECT right_right = {.x = 0, .y = 66, .w = 116, .h = 358};
+    const dimen_RECT legend_left = {.x = 414, .y = 66, .w = 98, .h = 358};
+    const dimen_RECT legend_right = {.x = 0, .y = 66, .w = 116, .h = 358};
 
     draw_draw_sub_image(8, 12, 200, 52, COLOR_WHITE, &txr_bg_left, &logo);
-    /* With a popup open the legend and disc picture are hidden behind it anyway; drawn there they showed as a blank box through it. */
     if (draw_current == DRAW_UI) {
-        draw_draw_sub_image(414, 66, 98, 358, COLOR_WHITE, &txr_bg_left, &right_left);
-        draw_draw_sub_image(512, 66, 116, 358, COLOR_WHITE, &txr_bg_right, &right_right);
+        draw_draw_sub_image(414, 66, 98, 358, COLOR_WHITE, &txr_bg_left, &legend_left);
+        draw_draw_sub_image(512, 66, 116, 358, COLOR_WHITE, &txr_bg_right, &legend_right);
     }
 }
 
@@ -581,8 +579,8 @@ draw_item_details(void) {
 #endif
     }
 
-    const float scale = cur_theme->item_details_scale > 0 ? (float)cur_theme->item_details_scale * 0.01f : 1.0f;
-    int text_width = (int)((float)strlen(details_line) * FONT_CHAR_WIDTH * scale);
+    float scale = cur_theme->item_details_scale ? cur_theme->item_details_scale / 100.0f : 1.0f;
+    int text_width = strlen(details_line) * FONT_CHAR_WIDTH * scale;
     int centered_x = details_x - (text_width / 2);
 
     uint32_t text_color =
@@ -590,8 +588,7 @@ draw_item_details(void) {
     font_bmp_begin_draw();
     font_bmp_set_color(text_color);
     font_bmp_set_scale(scale);
-    /* a smaller font sits in the middle of the line the full size one has (the font is 16 px high) */
-    font_bmp_draw_main(centered_x, details_y + (int)(16.0f * (1.0f - scale) * 0.5f), details_line);
+    font_bmp_draw_main(centered_x, details_y + (int)(8 * (1.0f - scale)), details_line); /* the font is 16 px high */
     font_bmp_set_scale(1.0f);
 }
 
@@ -1179,8 +1176,7 @@ draw_disc_options(void) {
     int width = disc_options.width;
     int height = disc_options.height;
     z_set_cond(205.0f);
-    draw_set_corner_radius(cur_theme->colors.menu_corner_radius);
-    draw_draw_popup_frame(x, y, width, height, 20, cur_theme->colors.menu_bkg_border_color,
+    draw_draw_popup_frame(x, y, width, height, 20, cur_theme->colors.menu_corner_radius, cur_theme->colors.menu_bkg_border_color,
                           cur_theme->colors.menu_bkg_color);
     font_bmp_begin_draw();
     font_bmp_set_color(cur_theme->menu_title_color);
@@ -1377,23 +1373,10 @@ FUNCTION(UI_NAME, setup) {
 }
 
 FUNCTION(UI_NAME, drawOP) {
-    if (cur_theme->backdrop) {
-        /* The background picture has see-through areas and is drawn in the translucent pass, over this. */
-        const backdrop_params_t params = {.scene = (backdrop_scene_t)cur_theme->backdrop_scene,
-                                          .low_res = cur_theme->backdrop >= 2,
-                                          .clouds_percent = cur_theme->backdrop_clouds,
-                                          .tint = cur_theme->backdrop_color,
-                                          .speed_percent = cur_theme->backdrop_speed,
-                                          .peaks_percent = cur_theme->backdrop_peaks,
-                                          .sky_top = cur_theme->scene_sky_top,
-                                          .sky_bottom = cur_theme->scene_sky_bottom,
-                                          .sun_top = cur_theme->scene_sun_top,
-                                          .sun_bottom = cur_theme->scene_sun_bottom,
-                                          .grid = cur_theme->scene_grid,
-                                          .ground = cur_theme->scene_ground,
-                                          .mountain = cur_theme->scene_mountain};
-
-        backdrop_draw(&params);
+    if (cur_theme->backdrop == BACKDROP_SYNTHWAVE) {
+        backdrop_synthwave_draw(cur_theme->scene_color);
+    } else if (cur_theme->backdrop) {
+        backdrop_waves_draw(cur_theme->backdrop == BACKDROP_WAVES_LOW);
     } else {
         draw_bg_layers();
     }
@@ -1401,16 +1384,12 @@ FUNCTION(UI_NAME, drawOP) {
 
 FUNCTION(UI_NAME, drawTR) {
     if (cur_theme->backdrop) {
-        /* Glass panels over the background scene (drawn in the opaque pass), then the background picture (logo, legend) over them. */
-        uint32_t panel_border = cur_theme->panel_border_color ? cur_theme->panel_border_color : 0xF6B27A;
-
+        /* Glass panels over the backdrop, then the logo and legend over them */
         for (int i = 0; i < cur_theme->panel_count; i++) {
             const int* r = cur_theme->panel_rect[i];
 
-            if (r[2] > 0 && r[3] > 0) {
-                draw_draw_panel(r[0], r[1], r[2], r[3], cur_theme->panel_radius, cur_theme->panel_border_width ? cur_theme->panel_border_width : 3,
-                                panel_border, cur_theme->panel_fill_color, cur_theme->panel_alpha ? cur_theme->panel_alpha : 150);
-            }
+            draw_draw_panel(r[0], r[1], r[2], r[3], cur_theme->colors.menu_corner_radius, cur_theme->colors.menu_bkg_border_color,
+                            0xC8000000 | (cur_theme->colors.menu_bkg_color & 0x00FFFFFF));
         }
         draw_bg_overlay();
     }

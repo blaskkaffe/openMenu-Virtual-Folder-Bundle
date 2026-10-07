@@ -32,7 +32,6 @@ set(OPENMENU_SOURCES
         src/ui/dc/pvr_texture.c
         src/ui/animation.c
         src/ui/draw_kos.c
-        src/ui/backdrop.c
         src/ui/backdrop_waves.c
         src/ui/backdrop_synthwave.c
         src/ui/marquee.c

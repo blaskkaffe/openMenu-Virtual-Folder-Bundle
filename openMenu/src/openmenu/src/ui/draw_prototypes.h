@@ -58,10 +58,8 @@ void draw_draw_sub_image(int x, int y, float width, float height, uint32_t color
 
 /* Draws untextured quad at coords with size and color(rgba) */
 void draw_draw_quad(int x, int y, float width, float height, uint32_t color);
-void draw_draw_panel(int x, int y, int width, int height, int radius, int border_width, uint32_t border_rgb,
-                     uint32_t fill_rgb, int alpha);
-void draw_set_corner_radius(int radius);
-void draw_draw_popup_frame(int x, int y, int width, int height, int header_height, uint32_t border_color,
+void draw_draw_panel(int x, int y, int width, int height, int radius, uint32_t border_color, uint32_t fill_color);
+void draw_draw_popup_frame(int x, int y, int width, int height, int header_height, int radius, uint32_t border_color,
                            uint32_t fill_color);
 
 /* exec proto */

@@ -5,7 +5,7 @@ frames and draws the strips it submitted with a small software rasteriser: a dep
 perspective-correct texture, Gouraud colour and the offset colour (the scenes are opaque).
 
   python3 render_backdrop_frame.py [frame] [out.png] [scene] [setting]
-      scene: waves (default) or synthwave.  setting: waves = clouds percent (default 100); synthwave = palette, sunset (default) or ice.
+      scene: waves (default) or synthwave.  setting: the synthwave palette, sunset (default) or ice.
       default: frame 82, backdrop_frame.png (the still themes' background; the previews use it)
 
 Compared with a screenshot of the web page's scene (Chromium, 640x480) the waves differed by about 1.4 levels out of 255."""
@@ -21,10 +21,10 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 UI = os.path.join(HERE, "..", "..", "openMenu", "src", "openmenu", "src", "ui")
 
-# palettes the themes give the synthwave scene (THEME.INI scene_*): sky top, sky bottom, sun top, sun bottom, grid, ground, mountain
+# the synthwave colors the themes give (THEME.INI scene_*): sky, horizon, sun, grid
 PALETTES = {
-    "sunset": (0x14042E, 0xFF5AA0, 0xFFE23C, 0xFF2A8C, 0xFF46C8, 0x12062A, 0x2A0C4A),
-    "ice": (0x04061E, 0x4A78F0, 0xC8FFFF, 0x3C9CFF, 0x3CDCFF, 0x050A24, 0x101450),
+    "sunset": (0x14042E, 0xFF5AA0, 0xFFE23C, 0xFF46C8),
+    "ice": (0x04061E, 0x4A78F0, 0xC8FFFF, 0x3CDCFF),
 }
 
 HEAD = r"""#pragma once
@@ -57,18 +57,17 @@ static void pvr_prim(void* p,int n){ if(n==(int)sizeof(pvr_vertex_t)){pvr_vertex
 MAIN = r"""#include "ui/draw_prototypes.h"
 #include "ui/backdrop.h"
 FILE* g_out;
-__attribute__((weak)) void backdrop_waves_draw(const backdrop_params_t* p){(void)p;}
-__attribute__((weak)) void backdrop_synthwave_draw(const backdrop_params_t* p){(void)p;}
+__attribute__((weak)) void backdrop_waves_draw(int low_res){(void)low_res;}
+__attribute__((weak)) void backdrop_synthwave_draw(const uint32_t* c){(void)c;}
 int main(int argc,char**argv){
- g_out=fopen(argv[1],"w"); int frames=atoi(argv[2]); int scene=atoi(argv[3]);
- backdrop_params_t p; memset(&p,0,sizeof(p)); p.scene=(backdrop_scene_t)scene; p.clouds_percent=atoi(argv[4]);
- if(argc>=12){ p.sky_top=strtoul(argv[5],0,16); p.sky_bottom=strtoul(argv[6],0,16); p.sun_top=strtoul(argv[7],0,16); p.sun_bottom=strtoul(argv[8],0,16); p.grid=strtoul(argv[9],0,16); p.ground=strtoul(argv[10],0,16); p.mountain=strtoul(argv[11],0,16); }
- for(int f=0;f<frames;f++){ fprintf(g_out,"F\n"); if(scene==1) backdrop_synthwave_draw(&p); else backdrop_waves_draw(&p); }
+ g_out=fopen(argv[1],"w"); int frames=atoi(argv[2]); int synth=atoi(argv[3]);
+ uint32_t c[4]; for(int i=0;i<4;i++) c[i]=argc>4+i?strtoul(argv[4+i],0,16):0;
+ for(int f=0;f<frames;f++){ fprintf(g_out,"F\n"); if(synth) backdrop_synthwave_draw(c); else backdrop_waves_draw(0); }
  fclose(g_out); return 0;}"""
 
 
 SCENE = "waves"
-SETTING = "100"
+SETTING = "sunset"
 
 
 def build_and_run(frame, work):
@@ -79,13 +78,11 @@ def build_and_run(frame, work):
         shutil.copy(os.path.join(UI, name), os.path.join(work, "ui", name))
     with open(os.path.join(work, "main.c"), "w") as f:
         f.write(MAIN)
-    scene_id = 1 if SCENE == "synthwave" else 0
+    synth = SCENE == "synthwave"
     subprocess.check_call(["gcc", "-w", "-I", work, "-o", os.path.join(work, "scene"), os.path.join(work, "main.c"),
                            os.path.join(UI, "backdrop_%s.c" % SCENE), "-lm"])
-    args = [os.path.join(work, "scene"), os.path.join(work, "frame.txt"), str(frame), str(scene_id), SETTING if SCENE == "waves" else "100"]
-    if SCENE == "synthwave":
-        args += ["%06x" % c for c in PALETTES[SETTING]]
-    subprocess.check_call(args)
+    args = [os.path.join(work, "scene"), os.path.join(work, "frame.txt"), str(frame), str(int(synth))]
+    subprocess.check_call(args + (["%06x" % c for c in PALETTES[SETTING]] if synth else []))
     return os.path.join(work, "frame.txt")
 
 
@@ -172,7 +169,7 @@ if __name__ == "__main__":
     frame = int(sys.argv[1]) if len(sys.argv) > 1 else 82
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "backdrop_frame.png")
     SCENE = sys.argv[3] if len(sys.argv) > 3 else "waves"
-    SETTING = sys.argv[4] if len(sys.argv) > 4 else ("100" if SCENE == "waves" else "sunset")
+    SETTING = sys.argv[4] if len(sys.argv) > 4 else "sunset"
     with tempfile.TemporaryDirectory() as work:
         render(build_and_run(frame, work)).save(out)
     print("wrote", out)

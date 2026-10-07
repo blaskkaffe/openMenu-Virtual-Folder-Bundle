@@ -367,185 +367,82 @@ draw_draw_quad(int x, int y, float width, float height, uint32_t color) {
 #endif
 }
 
-/* The animated 3D backdrops of Folders themes are in backdrop.c, backdrop_waves.c and backdrop_synthwave.c. */
-
-/* Rounded rectangles for popups (THEME.INI menu_corner_radius; zero keeps the square frame) and, with a backdrop, glass panels
- * (draw_draw_panel). They are built from plain axis-aligned quads, one per run of pixel rows that share the same left and right end,
- * so a corner is a small staircase. (Triangle strips along an arc showed notches and holes on the console.) All quads of one shape
- * share one depth value: they never overlap. */
-static int popup_corner_radius = 0;
-
-void
-draw_set_corner_radius(int radius) {
-    popup_corner_radius = radius < 0 ? 0 : (radius > 16 ? 16 : radius);
-}
-
-typedef struct {
-    float top, bottom;
-    uint32_t color_top, color_bottom;
-} rr_fill_t;
-
-static uint32_t
-rr_color_at(const rr_fill_t* g, float y) {
-    const float span = g->bottom - g->top > 1.0f ? g->bottom - g->top : 1.0f;
-    float f = (y - g->top) / span;
-    uint32_t out = 0;
-
-    f = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
-    for (int shift = 24; shift >= 0; shift -= 8) {
-        const int c0 = (int)((g->color_top >> shift) & 0xFF), c1 = (int)((g->color_bottom >> shift) & 0xFF);
-
-        out |= (uint32_t)(c0 + (int)((float)(c1 - c0) * f)) << shift;
-    }
-    return out;
-}
+/* Rounded rectangles for popups and panels, drawn as quads: one for each row of a corner and one for the rest.
+ * All quads of a shape get the same depth, as they do not overlap */
+static float rounded_z;
 
 static void
-rr_quad(float x0, float x1, float y0, float y1, float z, const rr_fill_t* g) {
-    pvr_vertex_t vert = {.argb = 0, .oargb = 0, .flags = PVR_CMD_VERTEX, .z = z, .u = 0, .v = 0};
-    const float xs[4] = {x0, x1, x0, x1};
-    const float ys[4] = {y0, y0, y1, y1};
-
-    for (int k = 0; k < 4; k++) {
-        vert.flags = k == 3 ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
-        vert.x = xs[k];
-        vert.y = ys[k];
-        vert.argb = rr_color_at(g, ys[k]);
-        pvr_prim(&vert, sizeof(vert));
+rounded_quad(int x, int y, int width, int height, uint32_t color) {
+    if (width > 0 && height > 0) {
+        z_set(rounded_z);
+        draw_draw_quad(x, y, width, height, color);
     }
 }
 
-/* How far the shape's left end is moved in at the middle of a pixel row, for a rectangle (y .. y+h) with corner radii rt (top) and rb. */
-static float
-rr_inset(float yc, float y, float h, float rt, float rb) {
-    float r = 0.0f, dy = 0.0f;
+/* How far in a corner of radius r is at row i, counted from the outside */
+static int
+corner_inset(int r, int i) {
+    const float dy = (float)(r - i) - 0.5f;
 
-    if (yc < y + rt) {
-        r = rt;
-        dy = y + rt - yc;
-    } else if (yc > y + h - rb) {
-        r = rb;
-        dy = yc - (y + h - rb);
-    }
-    if (r <= 0.5f || dy >= r) {
-        return r > 0.5f ? r : 0.0f;
-    }
-    return (float)(int)(r - sqrtf(r * r - dy * dy) + 0.5f);
+    return (int)((float)r - sqrtf((float)(r * r) - dy * dy) + 0.5f);
 }
 
-/* A rounded rectangle filled with the gradient g; with bw above zero only the border band of that width. rt and rb are the radii of
- * the top and the bottom corners. */
+/* Rounded rectangle with a radius for the top corners and one for the bottom corners */
 static void
-rr_shape(float x, float y, float w, float h, float rt, float rb, float bw, const rr_fill_t* g) {
-    pvr_poly_cxt_t context;
-    pvr_poly_hdr_t header;
-    const float z = z_inc();
-    const float rmax = (w < h ? w : h) * 0.5f;
-    float run_y = 0.0f, a0 = 0.0f, a1 = 0.0f, b0 = 0.0f, b1 = 0.0f;
-    int run_pieces = 0;
+draw_rounded_rect(int x, int y, int width, int height, int top, int bottom, uint32_t color) {
+    rounded_z = z_get();
+    for (int i = 0; i < top; i++) {
+        rounded_quad(x + corner_inset(top, i), y + i, width - 2 * corner_inset(top, i), 1, color);
+    }
+    for (int i = 0; i < bottom; i++) {
+        rounded_quad(x + corner_inset(bottom, i), y + height - 1 - i, width - 2 * corner_inset(bottom, i), 1, color);
+    }
+    rounded_quad(x, y + top, width, height - top - bottom, color);
+}
 
-    rt = rt > rmax ? rmax : rt;
-    rb = rb > rmax ? rmax : rb;
-    pvr_poly_cxt_col(&context, draw_get_list());
-    context.gen.culling = PVR_CULLING_NONE;
-    pvr_poly_compile(&header, &context);
-    pvr_prim(&header, sizeof(header));
+/* Only the border of a rounded rectangle */
+static void
+draw_rounded_border(int x, int y, int width, int height, int r, int border, uint32_t color) {
+    rounded_z = z_get();
+    for (int i = 0; i < r; i++) {
+        const int out = corner_inset(r, i);
+        const int in = i < border ? width : border + corner_inset(r - border, i - border);
 
-    for (int row = 0; row <= (int)h; row++) {
-        const float yc = y + (float)row + 0.5f;
-        float n0 = 0.0f, n1 = 0.0f, m0 = 0.0f, m1 = 0.0f;
-        int pieces = 0;
+        for (int bottom = 0; bottom < 2; bottom++) {
+            const int row = bottom ? y + height - 1 - i : y + i;
 
-        if (row < (int)h) {
-            const float o = rr_inset(yc, y, h, rt, rb);
-            const float ox0 = x + o, ox1 = x + w - o;
-
-            if (bw <= 0.0f) {
-                n0 = ox0;
-                n1 = ox1;
-                pieces = 1;
-            } else if (yc < y + bw || yc > y + h - bw) {
-                n0 = ox0;
-                n1 = ox1;
-                pieces = 1;
+            if (in >= width / 2) {
+                rounded_quad(x + out, row, width - 2 * out, 1, color);
             } else {
-                const float irt = rt > bw ? rt - bw : 0.0f, irb = rb > bw ? rb - bw : 0.0f;
-                const float i = rr_inset(yc, y + bw, h - 2.0f * bw, irt, irb);
-
-                n0 = ox0;
-                n1 = x + bw + i;
-                m0 = x + w - bw - i;
-                m1 = ox1;
-                pieces = 2;
+                rounded_quad(x + out, row, in - out, 1, color);
+                rounded_quad(x + width - in, row, in - out, 1, color);
             }
         }
-        if (pieces == run_pieces && (pieces == 0 || (n0 == a0 && n1 == a1 && (pieces == 1 || (m0 == b0 && m1 == b1))))) {
-            continue;
-        }
-        if (run_pieces > 0) {
-            const float y1 = y + (float)row;
-
-            rr_quad(a0, a1, run_y, y1, z, g);
-            if (run_pieces == 2) {
-                rr_quad(b0, b1, run_y, y1, z, g);
-            }
-        }
-        run_y = y + (float)row;
-        run_pieces = pieces;
-        a0 = n0;
-        a1 = n1;
-        b0 = m0;
-        b1 = m1;
     }
+    rounded_quad(x, y + r, border, height - 2 * r, color);
+    rounded_quad(x + width - border, y + r, border, height - 2 * r, color);
 }
 
-/* A popup's frame: a 2 px border, the fill, and with header_height above zero a header bar in the border colour. */
+/* Popup with a 2 px border, optionally with a header in the border color, and rounded corners when radius is not 0 */
 void
-draw_draw_popup_frame(int x, int y, int width, int height, int header_height, uint32_t border_color, uint32_t fill_color) {
-    float r = (float)popup_corner_radius;
-
-    if (header_height > 0 && r > (float)header_height * 0.5f) {
-        r = (float)header_height * 0.5f; /* the header's corners must match the fill's */
-    }
-
-    if (popup_corner_radius == 0) {
-        draw_draw_quad(x - 2, y - 2, (float)(width + 4), (float)(height + 4), border_color);
-        draw_draw_quad(x, y, (float)width, (float)height, fill_color);
+draw_draw_popup_frame(int x, int y, int width, int height, int header_height, int radius, uint32_t border_color, uint32_t fill_color) {
+    if (radius == 0) {
+        draw_draw_quad(x - 2, y - 2, width + 4, height + 4, border_color);
+        draw_draw_quad(x, y, width, height, fill_color);
         if (header_height > 0) {
-            draw_draw_quad(x, y, (float)width, (float)header_height, border_color);
+            draw_draw_quad(x, y, width, header_height, border_color);
         }
         return;
     }
-    {
-        const rr_fill_t border = {(float)y, (float)(y + height), border_color, border_color};
-        const rr_fill_t fill = {(float)y, (float)(y + height), fill_color, fill_color};
-
-        rr_shape((float)(x - 2), (float)(y - 2), (float)(width + 4), (float)(height + 4), r + 2.0f, r + 2.0f, 0.0f, &border);
-        rr_shape((float)x, (float)y, (float)width, (float)height, r, r, 0.0f, &fill);
-        if (header_height > 0) {
-            rr_shape((float)x, (float)y, (float)width, (float)header_height, r, 0.0f, 0.0f, &border);
-        }
-    }
+    draw_rounded_rect(x - 2, y - 2, width + 4, height + 4, radius + 2, radius + 2, border_color);
+    draw_rounded_rect(x, y + header_height, width, height - header_height, header_height ? 0 : radius, radius, fill_color);
 }
 
-/* A glass panel for backdrop themes: a translucent fill that is a little lighter at the top, and a border. Colours are 0xRRGGBB;
- * alpha (0..255) is the fill's opacity at the top, the bottom is a third more transparent. */
+/* Glass panel for themes with a backdrop: a 3 px border around a translucent fill */
 void
-draw_draw_panel(int x, int y, int width, int height, int radius, int border_width, uint32_t border_rgb, uint32_t fill_rgb, int alpha) {
-    const float r = (float)radius;
-    const uint32_t rgb = fill_rgb & 0x00FFFFFFu;
-    const uint32_t light = (((rgb >> 16) & 0xFF) * 3 / 2 > 255 ? 255 : ((rgb >> 16) & 0xFF) * 3 / 2) << 16
-                           | (((rgb >> 8) & 0xFF) * 3 / 2 > 255 ? 255 : ((rgb >> 8) & 0xFF) * 3 / 2) << 8
-                           | (((rgb & 0xFF) * 3 / 2 > 255 ? 255 : (rgb & 0xFF) * 3 / 2));
-    const float bw = (float)border_width;
-    /* The fill only inside the border: the translucent fill is not drawn twice where the border is. */
-    const rr_fill_t fill = {(float)y, (float)(y + height), ((uint32_t)alpha << 24) | light,
-                            ((uint32_t)(alpha * 17 / 20) << 24) | rgb};
-    const rr_fill_t border = {(float)y, (float)(y + height), 0xFF000000u | border_rgb, 0xFF000000u | border_rgb};
-    const float ri = r > bw ? r - bw : 0.0f;
-
-    rr_shape((float)x + bw, (float)y + bw, (float)width - 2.0f * bw, (float)height - 2.0f * bw, ri, ri, 0.0f, &fill);
-    rr_shape((float)x, (float)y, (float)width, (float)height, r, r, bw, &border);
+draw_draw_panel(int x, int y, int width, int height, int radius, uint32_t border_color, uint32_t fill_color) {
+    draw_rounded_border(x, y, width, height, radius, 3, border_color);
+    draw_rounded_rect(x + 3, y + 3, width - 6, height - 6, radius - 3, radius - 3, fill_color);
 }
 
 /* draws an image at coords as a square */
