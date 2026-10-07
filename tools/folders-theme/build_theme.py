@@ -279,7 +279,7 @@ clock_x=623
 clock_y=36
 clock_text_color=%s
 %s""" % (theme["name"] + ("Low" if lowres else "Anim" if animated else ""), rgb(TEXT), rgb(light), rgb(sel), rgb(light), rgb(PAGE), rgb(TEXT), rgb(light), rgb(CARD), rgb(light),
-       rgb(TEXT), rgb(light), ("backdrop=%d\nbackdrop_clouds=%d\n%s" % (2 if lowres else 1, CLOUDS, panel_keys(theme))) if animated else "")
+       rgb(TEXT), "255,255,255", ("backdrop=%d\nbackdrop_clouds=%d\n%s" % (2 if lowres else 1, CLOUDS, panel_keys(theme))) if animated else "")
 
 
 def panel_keys(theme):
