@@ -86,16 +86,14 @@ strip_vertex(const vertex_t* v, int last) {
 }
 
 static void
-texture_header(int clamp) {
+texture_header(void) {
     pvr_poly_cxt_t context;
     pvr_poly_hdr_t header;
 
     pvr_poly_cxt_txr(&context, draw_get_list(), PVR_TXRFMT_RGB565 | PVR_TXRFMT_TWIDDLED, 64, 64, texture, PVR_FILTER_BILINEAR);
     context.gen.culling = PVR_CULLING_NONE;
     context.gen.specular = PVR_SPECULAR_ENABLE;
-    if (clamp) {
-        context.txr.uv_clamp = PVR_UVCLAMP_UV;
-    }
+    context.txr.uv_clamp = PVR_UVCLAMP_UV;
     pvr_poly_compile(&header, &context);
     pvr_prim(&header, sizeof(header));
 }
@@ -174,7 +172,7 @@ draw_plane(float t) {
         }
     }
 
-    texture_header(1);
+    texture_header();
     for (int j = 0; j < PLANE_ROWS; j++) {
         for (int i = 0; i <= PLANE_COLS; i++) {
             strip_vertex(&grid[j + 1][i], 0);
@@ -206,13 +204,13 @@ draw_cylinder(uint32_t spin_frame) {
 
             opacity = opacity > 1.0f ? 1.0f : opacity;
             project(xs, yl * tilt_c - zs * tilt_s, 65.0f + yl * tilt_s + zs * tilt_c, v);
-            v->u = (float)k / CYL_SEGMENTS; /* the picture goes once around */
+            v->u = 0.5f - fabsf(0.5f - (float)k / CYL_SEGMENTS); /* half the picture, mirrored on the other half, so there is no seam */
             v->v = 1.0f - yl / CYL_HEIGHT;
             set_color(v, opacity, 1.0f);
         }
     }
 
-    texture_header(0);
+    texture_header();
     for (int k = 0; k < CYL_SEGMENTS; k++) {
         const float mid = ((float)k + 0.5f) * (6.2831853f / CYL_SEGMENTS);
 
