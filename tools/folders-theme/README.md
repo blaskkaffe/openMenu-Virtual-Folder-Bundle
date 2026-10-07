@@ -96,3 +96,23 @@ window; with it Off, the list is only as fresh as your last manual refresh. The 
   rim of the old orange.
 - The list, artwork and details positions in `THEME.INI` are moved to sit inside the rounded boxes (17 rows, a 202 px cover).
 - Not looked at on a real Dreamcast or a TV yet: the previews are the picture only (no list text or cover art on top).
+
+
+## 3D backdrops are separate modules (`openMenu/src/openmenu/src/ui/backdrop*.c`)
+Each backdrop is its own source file with one function, and the theme picks it with `backdrop_scene=` in THEME.INI:
+
+| File | `backdrop_scene=` | What it is |
+|---|---|---|
+| `backdrop_waves.c` | `waves` (the default) | the DreamPi web page's wave plane and cloud cylinder |
+| `backdrop_synthwave.c` | `synthwave` | a neon grid floor coming towards the screen, mountains that rise and fall a little as they pass, a striped sun |
+| `backdrop.c` / `backdrop.h` | | the list of scenes and the settings a theme can pass them |
+
+The Dreamcast cannot load code from the SD card, so a new *kind* of scene still needs a `.c` file and a rebuild (the header says what to
+add). Everything about how an existing scene *looks* is in the theme folder: colours, speed and mountain height are THEME.INI keys, and
+the picture on top is the theme's BG_L/BG_R. Synthwave keys: `backdrop_scene=synthwave`, `backdrop_speed` and `backdrop_peaks` (percent,
+100 = normal), `scene_sky_top`, `scene_sky_bottom`, `scene_sun_top`, `scene_sun_bottom`, `scene_grid`, `scene_ground`, `scene_mountain`
+(r,g,b). `backdrop=2` uses fewer triangles for either scene. `build_theme.py` writes a fourth set, `out_synthwave/` (`WebOrangeSynth` =
+sunset, `WebBlueSynth` = ice), and `render_backdrop_frame.py [frame] [out.png] [waves|synthwave] [setting]` renders any scene on the build
+machine.
+
+`item_details_scale` (percent, default 100) makes the text of the disc-count box smaller; the themes use 75.

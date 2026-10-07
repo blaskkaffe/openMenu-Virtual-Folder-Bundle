@@ -24,6 +24,7 @@ typedef struct bitmap_font {
 
 static bitmap_font font;
 static uint32_t font_color;
+static float font_scale = 1.0f; /* font_bmp_set_scale: 1 = the font's own size */
 
 #define FONT_PERROW(font) (font.texture.width / font.cell_pitch)
 #define BUFFER_MAX_CHARS  (128)
@@ -104,6 +105,11 @@ font_bmp_begin_draw() {
                      font.texture.texture, PVR_FILTER_BILINEAR);
     pvr_poly_compile(&font_header, &tmp);
 #endif
+}
+
+void
+font_bmp_set_scale(float scale) {
+    font_scale = scale > 0.0f ? scale : 1.0f;
 }
 
 void
@@ -215,21 +221,23 @@ font_bmp_draw_char(int x, int y, unsigned char ch) {
     const int ix = (index % FONT_PERROW(font)) * font.cell_pitch;
     const int iy = (index / FONT_PERROW(font)) * font.char_height;
 
-    font_bmp_emit((float)x, (float)y, (float)(x + font.char_width), (float)(y + font.char_height),
+    font_bmp_emit((float)x, (float)y, (float)x + (float)font.char_width * font_scale, (float)y + (float)font.char_height * font_scale,
                   ix * 1.0f / font.texture.width, iy * 1.0f / font.texture.height,
                   (ix + font.char_width) * 1.0f / font.texture.width,
                   (iy + font.char_height) * 1.0f / font.texture.height);
 }
 
 static void
-_font_bmp_draw_string(int x1, int y1, const char* str) {
+_font_bmp_draw_string(int x_start, int y1, const char* str) {
+    float x1 = (float)x_start;
+
     z_inc();
     charbuffered = 0;
 
     do {
         unsigned char chr = (*str);
-        font_bmp_draw_char(x1, y1, chr);
-        x1 += (int)(font.char_width);
+        font_bmp_draw_char((int)(x1 + 0.5f), y1, chr);
+        x1 += (float)font.char_width * font_scale;
     } while (*++str);
     pvr_prim(charbuf, charbuffered * sizeof(charbuf[0]));
 }

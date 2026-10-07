@@ -35,6 +35,7 @@
 #include "ui/theme_manager.h"
 #include "ui/ui_common.h"
 #include "backend/dreampi_link.h"
+#include "ui/backdrop.h"
 #include "ui/ui_dcnow.h"
 #include "ui/ui_menu_credits.h"
 
@@ -625,14 +626,18 @@ draw_item_details(void) {
 #endif
     }
 
-    int text_width = strlen(details_line) * FONT_CHAR_WIDTH;
+    const float scale = cur_theme->item_details_scale > 0 ? (float)cur_theme->item_details_scale * 0.01f : 1.0f;
+    int text_width = (int)((float)strlen(details_line) * FONT_CHAR_WIDTH * scale);
     int centered_x = details_x - (text_width / 2);
 
     uint32_t text_color =
         cur_theme->item_details_text_color ? cur_theme->item_details_text_color : cur_theme->colors.text_color;
     font_bmp_begin_draw();
     font_bmp_set_color(text_color);
-    font_bmp_draw_main(centered_x, details_y, details_line);
+    font_bmp_set_scale(scale);
+    /* a smaller font sits in the middle of the line the full size one has (the font is 16 px high) */
+    font_bmp_draw_main(centered_x, details_y + (int)(16.0f * (1.0f - scale) * 0.5f), details_line);
+    font_bmp_set_scale(1.0f);
 }
 
 static void
@@ -1419,8 +1424,21 @@ FUNCTION(UI_NAME, setup) {
 FUNCTION(UI_NAME, drawOP) {
     if (cur_theme->backdrop) {
         /* The background picture has see-through areas and is drawn in the translucent pass, over this. */
-        draw_backdrop(cur_theme->backdrop_color);
-        draw_backdrop_scene(cur_theme->backdrop >= 2, cur_theme->backdrop_clouds);
+        const backdrop_params_t params = {.scene = (backdrop_scene_t)cur_theme->backdrop_scene,
+                                          .low_res = cur_theme->backdrop >= 2,
+                                          .clouds_percent = cur_theme->backdrop_clouds,
+                                          .tint = cur_theme->backdrop_color,
+                                          .speed_percent = cur_theme->backdrop_speed,
+                                          .peaks_percent = cur_theme->backdrop_peaks,
+                                          .sky_top = cur_theme->scene_sky_top,
+                                          .sky_bottom = cur_theme->scene_sky_bottom,
+                                          .sun_top = cur_theme->scene_sun_top,
+                                          .sun_bottom = cur_theme->scene_sun_bottom,
+                                          .grid = cur_theme->scene_grid,
+                                          .ground = cur_theme->scene_ground,
+                                          .mountain = cur_theme->scene_mountain};
+
+        backdrop_draw(&params);
     } else {
         draw_bg_layers();
     }

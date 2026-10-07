@@ -72,10 +72,15 @@ typedef struct theme_scroll {
     int item_details_x;
     int item_details_y;
     uint32_t item_details_text_color;
+    int item_details_scale; /* the details text's size in percent of the font's own (0 = 100) */
     int clock_x;
     int clock_y;
     uint32_t clock_text_color;
     int backdrop;            /* Folders: draw the animated backdrop under a see-through background (1), or a low-res one (2) */
+    int backdrop_scene;      /* which 3D scene: 0 waves (the default), 1 synthwave (backdrop_scene=synthwave) */
+    int backdrop_speed;      /* synthwave: percent of the normal speed (0 = 100) */
+    int backdrop_peaks;      /* synthwave: percent of the normal mountain height (0 = 100) */
+    uint32_t scene_sky_top, scene_sky_bottom, scene_sun_top, scene_sun_bottom, scene_grid, scene_ground, scene_mountain; /* synthwave colours, 0xRRGGBB, 0 = the default */
     int backdrop_clouds;     /* the cloud cylinder's opacity in percent of the page's own (0 = 100); 200 shows twice as much */
     uint32_t backdrop_color; /* a colour the backdrop is multiplied by, zero = none (the web page's own colours) */
     uint32_t online_color;   /* Folders: text colour of a game somebody is playing online, zero = the built-in green */

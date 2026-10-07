@@ -52,3 +52,9 @@ Install `out_animated/` OR `out/` into `theme/FOLDERS_8` and `FOLDERS_9` on the 
 
 ## 8. Low-res wave (`out_lowres/`)
 - [ ] Install `out_lowres/FOLDERS_8` / `FOLDERS_9` instead of the animated ones: it is named `WebOrangeLow` / `WebBlueLow`. The wave still moves, a little coarser, and it runs at least as smoothly as the full one.
+
+## 9. Synthwave set (`out_synthwave/`) and the small details text
+- [ ] Install `out_synthwave/FOLDERS_8` / `FOLDERS_9` (`WebOrangeSynth` sunset, `WebBlueSynth` ice): the floor grid comes towards the screen,
+      the mountains on both sides slowly rise and fall, the sun stays on the horizon. No missing text or holes in Settings and other popups.
+- [ ] The text in the disc-count box ("SINGLE DISC") is smaller, with room around it, in all sets.
+- [ ] Switching between a waves theme and a synthwave theme in Settings changes the backdrop (and back).

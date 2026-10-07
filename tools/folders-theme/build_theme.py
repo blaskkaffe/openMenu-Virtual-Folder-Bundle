@@ -32,8 +32,8 @@ TEXT = (238, 238, 238)                  # its text colour (#eee)
 
 # the web page's palette (page kit): normal colour and the lighter one used for borders
 THEMES = [
-    {"folder": "FOLDERS_8", "name": "WebOrange", "base": (232, 118, 28), "light": (246, 178, 122), "tint": (24, 16, 8), "tint4": (34, 17, 0), "fill": (20, 20, 20)},   # DCNow!
-    {"folder": "FOLDERS_9", "name": "WebBlue", "base": (28, 111, 232), "light": (128, 177, 246), "tint": (8, 16, 24), "tint4": (0, 17, 34), "fill": (20, 20, 20)},    # DCNET
+    {"folder": "FOLDERS_8", "name": "WebOrange", "base": (232, 118, 28), "light": (246, 178, 122), "tint": (24, 16, 8), "tint4": (34, 17, 0), "fill": (20, 20, 20), "palette": "sunset"},   # DCNow!
+    {"folder": "FOLDERS_9", "name": "WebBlue", "base": (28, 111, 232), "light": (128, 177, 246), "tint": (8, 16, 24), "tint4": (0, 17, 34), "fill": (20, 20, 20), "palette": "ice"},    # DCNET
 ]
 
 # where things sit (640x480). The list text and the artwork are drawn by openMenu on top of this picture at the THEME.INI positions.
@@ -249,7 +249,7 @@ def snap(c):
     return (c[0] & ~7, c[1] & ~3, c[2] & ~7)
 
 
-def ini(theme, animated=False, lowres=False):
+def ini(theme, animated=False, lowres=False, scene="waves"):
     base, light = theme["base"], theme["light"]
     sel = mix(CARD, base, 0.38)                        # the cursor bar: the box colour, dimmed
     rgb = lambda c: "%d,%d,%d" % snap(c)
@@ -274,13 +274,30 @@ artwork_x=420
 artwork_y=216
 artwork_size=202
 item_details_x=521
+item_details_scale=75
 item_details_y=430
 item_details_text_color=%s
 clock_x=623
 clock_y=36
 clock_text_color=%s
-%s""" % (theme["name"] + ("Low" if lowres else "Anim" if animated else ""), rgb(TEXT), rgb(light), rgb(sel), rgb(light), rgb(PAGE), rgb(TEXT), rgb(light), rgb(CARD), rgb(light),
-       rgb(TEXT), "255,255,255", ("backdrop=%d\nbackdrop_clouds=%d\n%s" % (2 if lowres else 1, CLOUDS, panel_keys(theme))) if animated else "")
+%s""" % (theme_name(theme, animated, lowres, scene), rgb(TEXT), rgb(light), rgb(sel), rgb(light), rgb(PAGE), rgb(TEXT), rgb(light), rgb(CARD), rgb(light),
+       rgb(TEXT), "255,255,255", scene_keys(theme, animated, lowres, scene))
+
+
+def theme_name(theme, animated, lowres, scene):
+    return theme["name"] + ("Synth" if scene == "synthwave" else "Low" if lowres else "Anim" if animated else "")
+
+
+def scene_keys(theme, animated, lowres, scene):
+    """THEME.INI lines for the 3D backdrop (animated sets only): which scene and its settings, then the glass panels."""
+    if not animated:
+        return ""
+    if scene == "synthwave":
+        from render_backdrop_frame import PALETTES
+        names = ("sky_top", "sky_bottom", "sun_top", "sun_bottom", "grid", "ground", "mountain")
+        colours = "".join("scene_%s=%d,%d,%d\n" % ((n,) + ((c >> 16) & 255, (c >> 8) & 255, c & 255)) for n, c in zip(names, PALETTES[theme["palette"]]))
+        return "backdrop=%d\nbackdrop_scene=synthwave\nbackdrop_speed=100\nbackdrop_peaks=100\n%s%s" % (2 if lowres else 1, colours, panel_keys(theme))
+    return "backdrop=%d\nbackdrop_clouds=%d\n%s" % (2 if lowres else 1, CLOUDS, panel_keys(theme))
 
 
 def panel_keys(theme):
@@ -291,7 +308,7 @@ def panel_keys(theme):
         rgb(theme["light"]), rgb(theme["fill"]), PANEL_ALPHA, RADIUS, BORDER)
 
 
-def write(theme, out_dir, animated=False, lowres=False):
+def write(theme, out_dir, animated=False, lowres=False, scene="waves"):
     import numpy as np
     folder = os.path.join(out_dir, theme["folder"])
     os.makedirs(folder, exist_ok=True)
@@ -305,11 +322,11 @@ def write(theme, out_dir, animated=False, lowres=False):
     with open(os.path.join(folder, "BG_R.PVR"), "wb") as f:
         f.write(pvr.encode(np.array(right), 1026, twiddled=False, argb4444=animated))
     with open(os.path.join(folder, "THEME.INI"), "w") as f:
-        f.write(ini(theme, animated, lowres))
-    name = theme["name"] + ("Low" if lowres else "Anim" if animated else "")
+        f.write(ini(theme, animated, lowres, scene))
+    name = theme_name(theme, animated, lowres, scene)
     if animated:      # what it looks like over one frame of the backdrop
-        scene = os.path.join(HERE, "backdrop_frame.png")        # from render_backdrop_frame.py
-        base_frame = Image.open(scene).convert("RGB") if os.path.exists(scene) else backdrop_frame(theme, 2.0).convert("RGB")
+        frame_file = os.path.join(HERE, "backdrop_frame.png" if scene == "waves" else "backdrop_frame_%s_%s.png" % (scene, theme["palette"]))   # from render_backdrop_frame.py
+        base_frame = Image.open(frame_file).convert("RGB") if os.path.exists(frame_file) else backdrop_frame(theme, 2.0).convert("RGB")
         frame = panels_preview(base_frame, theme, PANEL_ALPHA).convert("RGBA")
         frame.alpha_composite(img.crop((0, 0, 640, 480)))
         frame.convert("RGB").save(os.path.join(out_dir, name + "_preview.png"))
@@ -325,3 +342,4 @@ if __name__ == "__main__":
         print("wrote", write(t, os.path.join(base_out, "out")))
         print("wrote", write(t, os.path.join(base_out, "out_animated"), animated=True))
         print("wrote", write(t, os.path.join(base_out, "out_lowres"), animated=True, lowres=True))   # same, with the 16 x 16 wave (backdrop=2)
+        print("wrote", write(t, os.path.join(base_out, "out_synthwave"), animated=True, scene="synthwave"))   # the neon landscape instead of the waves
