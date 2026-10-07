@@ -265,7 +265,6 @@ read_folder_theme_ini(void* user, const char* section, const char* name, const c
             return 1;
         } else if (strcasecmp(name, "BACKDROP") == 0) {
             new_theme->backdrop = !strcasecmp(value, "waves")       ? BACKDROP_WAVES
-                                  : !strcasecmp(value, "waves_low") ? BACKDROP_WAVES_LOW
                                   : !strcasecmp(value, "synthwave") ? BACKDROP_SYNTHWAVE
                                                                     : BACKDROP_NONE;
             return 1;

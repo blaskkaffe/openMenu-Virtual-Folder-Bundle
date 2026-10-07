@@ -276,6 +276,5 @@ if __name__ == "__main__":
     # The sets: the still themes, and the same two slots with an animated backdrop. Install one set at a time.
     base_out = sys.argv[1] if len(sys.argv) > 1 else HERE
     for t in THEMES:
-        for out, backdrop, suffix in (("out", None, ""), ("out_animated", "waves", "Anim"), ("out_lowres", "waves_low", "Low"),
-                                      ("out_synthwave", "synthwave", "Synth")):
+        for out, backdrop, suffix in (("out", None, ""), ("out_animated", "waves", "Anim"), ("out_synthwave", "synthwave", "Synth")):
             print("wrote", write(t, os.path.join(base_out, out), backdrop, suffix))

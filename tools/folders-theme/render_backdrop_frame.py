@@ -57,12 +57,12 @@ static void pvr_prim(void* p,int n){ if(n==(int)sizeof(pvr_vertex_t)){pvr_vertex
 MAIN = r"""#include "ui/draw_prototypes.h"
 #include "ui/backdrop.h"
 FILE* g_out;
-__attribute__((weak)) void backdrop_waves_draw(int low_res){(void)low_res;}
+__attribute__((weak)) void backdrop_waves_draw(void){}
 __attribute__((weak)) void backdrop_synthwave_draw(const uint32_t* c){(void)c;}
 int main(int argc,char**argv){
  g_out=fopen(argv[1],"w"); int frames=atoi(argv[2]); int synth=atoi(argv[3]);
  uint32_t c[4]; for(int i=0;i<4;i++) c[i]=argc>4+i?strtoul(argv[4+i],0,16):0;
- for(int f=0;f<frames;f++){ fprintf(g_out,"F\n"); if(synth) backdrop_synthwave_draw(c); else backdrop_waves_draw(0); }
+ for(int f=0;f<frames;f++){ fprintf(g_out,"F\n"); if(synth) backdrop_synthwave_draw(c); else backdrop_waves_draw(); }
  fclose(g_out); return 0;}"""
 
 

@@ -1376,7 +1376,7 @@ FUNCTION(UI_NAME, drawOP) {
     if (cur_theme->backdrop == BACKDROP_SYNTHWAVE) {
         backdrop_synthwave_draw(cur_theme->scene_color);
     } else if (cur_theme->backdrop) {
-        backdrop_waves_draw(cur_theme->backdrop == BACKDROP_WAVES_LOW);
+        backdrop_waves_draw();
     } else {
         draw_bg_layers();
     }

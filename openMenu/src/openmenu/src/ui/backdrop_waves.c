@@ -20,8 +20,8 @@
 #define FWD_Z        (-0.058232f)
 #define UP_Y         0.058232f
 #define UP_Z         0.998305f
-#define PLANE_COLS   24
-#define PLANE_ROWS   22
+#define PLANE_COLS   16
+#define PLANE_ROWS   16
 #define CYL_SEGMENTS 16
 #define CYL_ROWS     5
 #define CYL_FIRST    26.0f /* the part of the cylinder that reaches the screen */
@@ -152,16 +152,16 @@ plane_y_at_row(float sy) {
 
 /* The rows of the plane are spaced evenly on the screen and its width follows the screen's, so no polygon is far off it */
 static void
-draw_plane(float t, int cols, int rows) {
+draw_plane(float t) {
     static vertex_t grid[PLANE_ROWS + 1][PLANE_COLS + 1];
 
-    for (int j = 0; j <= rows; j++) {
-        const float row_y = j == 0 ? 15.0f : plane_y_at_row(300.0f + 215.0f * (float)(j - 1) / (rows - 1));
+    for (int j = 0; j <= PLANE_ROWS; j++) {
+        const float row_y = j == 0 ? 15.0f : plane_y_at_row(300.0f + 215.0f * (float)(j - 1) / (PLANE_ROWS - 1));
         const float depth = FWD_Y * (row_y - CAM_Y) - FWD_Z * CAM_Z;
         const float half = 400.0f * depth / FOCAL > 20.0f ? 20.0f : 400.0f * depth / FOCAL;
 
-        for (int i = 0; i <= cols; i++) {
-            const float s = -1.0f + 2.0f * (float)i / cols;
+        for (int i = 0; i <= PLANE_COLS; i++) {
+            const float s = -1.0f + 2.0f * (float)i / PLANE_COLS;
             const float x = (s < 0.0f ? -half : half) * powf(fabsf(s), 1.4f);
             float opacity;
             const float h = plane_height(x, row_y, t, &opacity);
@@ -175,10 +175,10 @@ draw_plane(float t, int cols, int rows) {
     }
 
     texture_header(1);
-    for (int j = 0; j < rows; j++) {
-        for (int i = 0; i <= cols; i++) {
+    for (int j = 0; j < PLANE_ROWS; j++) {
+        for (int i = 0; i <= PLANE_COLS; i++) {
             strip_vertex(&grid[j + 1][i], 0);
-            strip_vertex(&grid[j][i], i == cols);
+            strip_vertex(&grid[j][i], i == PLANE_COLS);
         }
     }
 }
@@ -227,10 +227,10 @@ draw_cylinder(uint32_t spin_frame) {
 }
 
 void
-backdrop_waves_draw(int low_res) {
+backdrop_waves_draw(void) {
     draw_sky();
     if (load_texture()) {
         draw_cylinder(++frame);
-        draw_plane((float)frame * 0.016f, low_res ? 16 : PLANE_COLS, low_res ? 16 : PLANE_ROWS);
+        draw_plane((float)frame * 0.016f);
     }
 }
