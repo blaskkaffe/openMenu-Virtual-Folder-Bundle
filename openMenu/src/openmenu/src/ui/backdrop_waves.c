@@ -279,14 +279,14 @@ draw_scene_cylinder(uint32_t frame, float clouds) {
             if (scene_project(xs, wy, wz, v)) {
                 /* The page's shader uses the raw texture coordinates (its repeat and offset settings do not reach a shader), so the
                  * picture goes once around the cylinder, and its top is the top of the column. */
-                v->u = (float)k * (1.0f / CYL_SEGMENTS);
+                v->u = 0.5f - fabsf(0.5f - (float)k / CYL_SEGMENTS); /* half the picture, mirrored on the other half: no seam */
                 v->v = 1.0f - yl * (1.0f / CYL_HEIGHT);
                 scene_colour(v, opacity, 1.0f);
             }
         }
     }
 
-    scene_header(0);
+    scene_header(1);
     for (int k = 0; k < CYL_SEGMENTS; k++) {
         /* Only the half of the wall in front of the camera. */
         const float mid = ((float)k + 0.5f) * (6.2831853f / CYL_SEGMENTS);
