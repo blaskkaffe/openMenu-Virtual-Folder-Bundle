@@ -24,6 +24,17 @@ static const char* const icon_names[BMENU_ICONS] = {"Game", "Files", "Music", "S
 
 #define NOTICE_FRAMES 150
 
+/* Layout in the safe area (about 5% of the picture is cropped by many TVs and scalers) */
+#define PANEL_X 48.0f
+#define PANEL_Y 56.0f
+#define PANEL_W 544.0f
+#define TITLE_Y 60.0f
+#define ROWS_Y 96.0f
+#define TEXT_X 64.0f
+#define STATUS_Y 432.0f
+#define NOTICE_Y_MAIN 404.0f
+#define NOTICE_Y_PANEL 424.0f
+
 static bmenu menu;
 static screen_t screen;
 static int notice_frames;
@@ -42,11 +53,11 @@ draw_games(void) {
     char line[64];
     int count = uil_count();
 
-    gfx_rect(40.0f, 56.0f, 560.0f, 40.0f + UIL_VISIBLE * GFX_LINE_H + 52.0f, 0.4f, 0x90000000u);
-    gfx_text("Game", 56.0f, 62.0f, 0.5f, 0xFFFFFFFFu, 1);
+    gfx_rect(PANEL_X, PANEL_Y, PANEL_W, (ROWS_Y - PANEL_Y) + UIL_VISIBLE * GFX_LINE_H + 40.0f, 0.4f, 0x90000000u);
+    gfx_text("Game", TEXT_X, TITLE_Y, 0.5f, 0xFFFFFFFFu, 1);
 
     if (count <= 0) {
-        gfx_text("No games found.", 56.0f, 108.0f, 0.5f, 0xFFC0C0C0u, 0);
+        gfx_text("No games found.", TEXT_X, ROWS_Y + 4.0f, 0.5f, 0xFFC0C0C0u, 0);
         return;
     }
     for (int row = 0; row < UIL_VISIBLE && uil_top() + row < count; row++) {
@@ -54,15 +65,15 @@ draw_games(void) {
         if (!item) {
             continue;
         }
-        float y = 104.0f + (float)row * GFX_LINE_H;
+        float y = ROWS_Y + (float)row * GFX_LINE_H;
         int selected = (uil_top() + row == uil_cursor());
         if (selected) {
-            gfx_rect(48.0f, y, 544.0f, (float)GFX_LINE_H, 0.45f, 0x50FFFFFFu);
+            gfx_rect(PANEL_X + 8.0f, y, PANEL_W - 16.0f, (float)GFX_LINE_H, 0.45f, 0x50FFFFFFu);
         }
         snprintf(line, sizeof(line), "%s%.40s", uil_is_folder(item) ? "> " : "", item->name);
-        gfx_text(line, 56.0f, y, 0.5f, selected ? 0xFFFFFFFFu : 0xFFC0C0C0u, selected);
+        gfx_text(line, TEXT_X, y, 0.5f, selected ? 0xFFFFFFFFu : 0xFFC0C0C0u, selected);
     }
-    gfx_text("A: start   B: back", 56.0f, 104.0f + UIL_VISIBLE * GFX_LINE_H + 8.0f, 0.5f, 0xFFA0A0A0u, 0);
+    gfx_text("A: start   B: back", TEXT_X, ROWS_Y + UIL_VISIBLE * GFX_LINE_H + 4.0f, 0.5f, 0xFFA0A0A0u, 0);
 }
 
 static void
@@ -79,7 +90,7 @@ draw_frame(void) {
     }
     gfx_text(status_line, 8.0f, 450.0f, 0.5f, 0x80FFFFFFu, 0);
     if (notice_frames > 0 && notice_text) {
-        gfx_text(notice_text, 32.0f, 430.0f, 0.5f, 0xFFFFFFFFu, 1);
+        gfx_text(notice_text, TEXT_X, screen == SCREEN_MAIN ? NOTICE_Y_MAIN : NOTICE_Y_PANEL, 0.5f, 0xFFFFFFFFu, 1);
     }
     gfx_end_frame();
 }
