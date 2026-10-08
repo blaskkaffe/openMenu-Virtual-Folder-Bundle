@@ -8,6 +8,7 @@
 #define RECORD_SIZE 32u
 #define DIRECTORY_LIMIT 0x400u /* the directory is a few hundred bytes; never scan further */
 #define SOUND_RAM_SIZE 0x200000u
+#define NO_DATA 0xFFFFFFFFu
 
 static const char* const known_tags[] = {"SMPB", "SMSB", "SOSB", "SFOB", "SFPB", "SFPW", "SPSR"};
 
@@ -34,10 +35,11 @@ match_tag(const uint8_t* p) {
 int
 baudio_parse_banks(const uint8_t* c, size_t size, baudio_block* out, int max) {
     int n = 0;
+    size_t dir_end = DIRECTORY_LIMIT; /* the first bank's data starts right behind the directory */
     if (!c || !out) {
         return 0;
     }
-    for (size_t at = 0; at + RECORD_SIZE <= size && at < DIRECTORY_LIMIT && n < max; at += RECORD_SIZE) {
+    for (size_t at = 0; at + RECORD_SIZE <= size && at < dir_end && n < max; at += RECORD_SIZE) {
         const char* tag = match_tag(c + at);
         if (!tag) {
             continue; /* header record or padding */
@@ -53,8 +55,15 @@ baudio_parse_banks(const uint8_t* c, size_t size, baudio_block* out, int max) {
         if (b.ram_addr >= SOUND_RAM_SIZE || b.unit > 15) {
             continue;
         }
+        if (b.offset == NO_DATA || b.size == NO_DATA) {
+            b.offset = 0; /* work areas (DSP work RAM, stream buffers) carry no data in the ROM */
+            b.size = 0;
+        }
         if (b.size && ((size_t)b.offset + b.size > size)) {
             continue; /* data would lie outside the container: not the layout we think */
+        }
+        if (b.size && b.offset < dir_end) {
+            dir_end = b.offset;
         }
         out[n++] = b;
     }

@@ -33,9 +33,11 @@ typedef struct {
     uint32_t size;
 } sound_span;
 
-/* ROM sound directory of 1.01d: driver, SMLT banks, jingle L, jingle R */
+/* ROM sound directory of 1.01d: driver, SMLT banks, jingle L, jingle R.
+ * The driver entry is 0x20 header bytes plus 0x79E0 bytes of ARM code, up to the next entry
+ * (the ROM's own table says 0x79F4: the length of what is actually used). */
 static const sound_span sound_dir[] = {
-    {0x1A0040u, 0x79F4u},
+    {0x1A0040u, 0x7A00u},
     {0x1A7A40u, 0x1B80u},
     {0x1A95C0u, 0x2B175u},
     {0x1D4740u, 0x2B175u},

@@ -199,6 +199,32 @@ build_scripts(void) {
 #define MODEL_AT 0x80000
 #define MOTION_AT 0x82000
 
+/* The 18 textures of the menu image: bios_rom_init uses them to recognise the layout. */
+static void
+build_textures(void) {
+    static const struct {
+        uint32_t off;
+        uint32_t gbix;
+        uint16_t w, h;
+    } tex[] = {
+        {0x0728B0, 18, 32, 32},  {0x0730D0, 17, 32, 32},  {0x0738F0, 32, 64, 64},   {0x075910, 12, 64, 64},
+        {0x077930, 0, 256, 256}, {0x07C150, 11, 32, 32},  {0x07C970, 114, 128, 32}, {0x07E990, 2, 32, 32},
+        {0x07F1B0, 3, 32, 32},   {0x07F9D0, 5, 32, 32},   {0x0801F0, 6, 32, 32},    {0x080A10, 7, 64, 64},
+        {0x082A30, 8, 32, 32},   {0x083250, 9, 128, 16},  {0x084270, 10, 128, 16},  {0x085290, 1, 8, 8},
+        {0x085330, 0, 256, 256}, {0x089B50, 114, 128, 32},
+    };
+    for (unsigned i = 0; i < sizeof(tex) / sizeof(tex[0]); i++) {
+        uint32_t o = tex[i].off;
+        memcpy(image + o, "GBIX", 4);
+        put32(o + 8, tex[i].gbix);
+        memcpy(image + o + 16, "PVRT", 4);
+        image[o + 24] = BIOS_PVR_ARGB4444;
+        image[o + 25] = tex[i].w == 256 ? BIOS_PVR_VQ : (tex[i].w == tex[i].h ? BIOS_PVR_TWIDDLED : BIOS_PVR_RECTANGLE);
+        put16(o + 28, tex[i].w);
+        put16(o + 30, tex[i].h);
+    }
+}
+
 static void
 build_model(void) {
     uint32_t base = 0x8C000000u;
@@ -451,7 +477,7 @@ test_audio(void) {
     r += 32;
     memcpy(r, "BSMS", 4); put32_at(r + 4, 2); put32_at(r + 8, 0x1F520); put32_at(r + 12, 0x460); put32_at(r + 16, 0x240); put32_at(r + 20, 0x100);
     r += 32;
-    memcpy(r, "SFPW", 4); put32_at(r + 8, 0x22000); put32_at(r + 12, 0x1000);
+    memcpy(r, "SFPW", 4); put32_at(r + 8, 0x22000); put32_at(r + 12, 0x1000); put32_at(r + 16, 0xFFFFFFFFu); put32_at(r + 20, 0xFFFFFFFFu);
     r += 32;
     memcpy(r, "SMSB", 4); put32_at(r + 8, 0x1F520); put32_at(r + 16, 0x3000); put32_at(r + 20, 0x10); /* data outside the container */
 
@@ -654,6 +680,19 @@ test_real_rom(const char* path) {
         }
     }
     CHECK(script_errors == 0);
+
+    /* the real sound container: 9 blocks, the three data banks with their known addresses */
+    const uint8_t *drv, *banks;
+    size_t dsz, bsz;
+    CHECK(bios_sound_get(&rom, BIOS_SOUND_DRIVER, &drv, &dsz) == 0 && !memcmp(drv, "SDRV", 4));
+    CHECK(bios_sound_get(&rom, BIOS_SOUND_BANKS, &banks, &bsz) == 0 && !memcmp(banks, "SMLT", 4));
+    CHECK(dsz >= BAUDIO_DRIVER_CODE_OFFSET + BAUDIO_DRIVER_CODE_SIZE);
+    baudio_block blk[BAUDIO_MAX_BLOCKS];
+    int nb = baudio_parse_banks(banks, bsz, blk, BAUDIO_MAX_BLOCKS);
+    CHECK(nb == 9);
+    CHECK(nb == 9 && !strcmp(blk[0].tag, "SMPB") && blk[0].ram_addr == 0x18000 && blk[0].offset == 0x140 && blk[0].size == 0x940);
+    CHECK(nb == 9 && !strcmp(blk[1].tag, "SMSB") && blk[1].ram_addr == 0x1F520 && blk[1].offset == 0xA80 && blk[1].size == 0x460);
+    CHECK(nb == 9 && !strcmp(blk[4].tag, "SFPW") && blk[4].size == 0 && blk[4].reserved == 0x10040);
     printf("real ROM: %d models, %d motions, %d texlist textures resolved\n", models, motions, tex_ok);
     free(data);
 }
@@ -663,6 +702,7 @@ main(void) {
     image = calloc(1, BIOS_ROM_SIZE);
     memcpy(image + 0x100, "SEGA SEGAKATANA KABUTO Ver.1.01d", 32);
     build_scripts();
+    build_textures();
     build_model();
 
     const char* dump = getenv("BIOS_TEST_DUMP"); /* write the synthetic ROM out, e.g. for bios_preview */

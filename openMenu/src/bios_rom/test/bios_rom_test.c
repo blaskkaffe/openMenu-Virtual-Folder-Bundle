@@ -147,7 +147,7 @@ test_good_rom(void) {
     /* sound */
     const uint8_t* d;
     size_t n;
-    CHECK(bios_sound_get(&rom, BIOS_SOUND_DRIVER, &d, &n) == 0 && d == image + 0x1A0040 && n == 0x79F4);
+    CHECK(bios_sound_get(&rom, BIOS_SOUND_DRIVER, &d, &n) == 0 && d == image + 0x1A0040 && n == 0x7A00);
     CHECK(bios_sound_get(&rom, BIOS_SOUND_JINGLE_R, &d, &n) == 0 && d == image + 0x1D4740 && n == 0x2B175);
     CHECK(bios_sound_get(&rom, (bios_sound_entry)4, &d, &n) != 0);
 
