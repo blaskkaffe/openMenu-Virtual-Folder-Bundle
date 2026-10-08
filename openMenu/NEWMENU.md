@@ -63,6 +63,15 @@ mode and saves them. Files and Music show "Not available yet".
 
 Still open: date/time and language settings, Files (memory card manager), Music (online).
 
+## Custom header logo
+
+The "Dreamcast" logo in the header bar comes from the console's ROM. To use your own, put a
+`LOGO.PVR` next to `OPENMENU.INI` (root of the openMenu disc image); if it is not there the BIOS
+logo is used. `tools/bios-logo/biologo.py` makes the file: `convert logo.png LOGO.PVR`
+(any PNG, scaled to 128x32, transparency kept) and `extract dc_boot.bin logo.png` saves the
+BIOS logo as a starting point. `BIOS_PREVIEW_LOGO=LOGO.PVR bios_preview ...` shows it on a PC.
+A fully transparent picture hides the logo.
+
 ## Tested against real ROMs
 
 The host tests and the preview tool were run against the retail boot ROMs 1.01c, 1.01d, 1.022,

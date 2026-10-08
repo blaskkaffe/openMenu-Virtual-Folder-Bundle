@@ -162,6 +162,36 @@ test_good_rom(void) {
 }
 
 static void
+test_parse_buffer(void) {
+    /* a .PVR file: GBIX header + PVRT, 128x32 ARGB4444 rectangle */
+    static uint8_t file[0x30 + 128 * 32 * 2];
+    memset(file, 0, sizeof(file));
+    memcpy(file, "GBIX", 4);
+    put32(file, 4, 8);
+    put32(file, 8, 777);
+    memcpy(file + 16, "PVRT", 4);
+    file[24] = BIOS_PVR_ARGB4444;
+    file[25] = BIOS_PVR_RECTANGLE;
+    put16(file, 28, 128);
+    put16(file, 30, 32);
+    bios_texture t;
+    CHECK(bios_texture_parse(file, sizeof(file), &t) == 0);
+    CHECK(t.gbix == 777 && t.width == 128 && t.height == 32 && t.data == file + 32 && t.data_size == 128 * 32 * 2);
+
+    /* without the GBIX header the PVRT chunk comes first */
+    CHECK(bios_texture_parse(file + 16, sizeof(file) - 16, &t) == 0 && t.gbix == 0 && t.data == file + 32);
+
+    CHECK(bios_texture_parse(file, 32 + 128 * 32 * 2 - 1, &t) != 0); /* truncated payload */
+    file[25] = BIOS_PVR_TWIDDLED_MIPMAP;
+    CHECK(bios_texture_parse(file, sizeof(file), &t) != 0);     /* unsupported type */
+    file[25] = BIOS_PVR_RECTANGLE;
+    file[24] = 7;
+    CHECK(bios_texture_parse(file, sizeof(file), &t) != 0);     /* palette formats */
+    CHECK(bios_texture_parse((const uint8_t*)"nonsense nonsense nonsense nonsense nonsense!!", 48, &t) != 0);
+    CHECK(bios_texture_parse(NULL, 0, &t) != 0);
+}
+
+static void
 test_rejections(void) {
     bios_rom rom;
     /* the version string is informational: another revision with the same layout is fine */
@@ -232,6 +262,7 @@ int
 main(void) {
     test_good_rom();
     test_rejections();
+    test_parse_buffer();
     const char* real = getenv("BIOS_ROM_FILE");
     if (real && *real) {
         test_real_rom(real);

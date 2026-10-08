@@ -22,6 +22,10 @@ typedef enum bmenu_dir { BMENU_UP, BMENU_DOWN, BMENU_LEFT, BMENU_RIGHT } bmenu_d
 #define BMENU_ID_CAPTION(i) (0x300 + (i))
 #define BMENU_ID_HEADER 0x1FF
 
+/* The header bar is model 7; its texture slot 0 is the "Dreamcast" logo (a 128x32 picture). */
+#define BMENU_HEADER_MODEL 7
+#define BMENU_LOGO_SLOT 0
+
 typedef struct bmenu {
     const bios_rom* rom;
     bvm vm;

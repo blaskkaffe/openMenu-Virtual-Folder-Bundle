@@ -73,6 +73,11 @@ typedef struct bios_texture {
     uint32_t offset;        /* ROM offset of the GBIX header */
 } bios_texture;
 
+/* Parse a .PVR file image (optional GBIX header, then PVRT) held in `buf`, e.g. a texture
+ * read from the SD card. The result points into `buf`. Returns 0, -1 if it is not a
+ * supported texture (mipmapped and palette formats are refused). */
+int bios_texture_parse(const uint8_t* buf, size_t len, bios_texture* out);
+
 /* Number of textures found in the menu image. */
 int bios_texture_count(const bios_rom* rom);
 

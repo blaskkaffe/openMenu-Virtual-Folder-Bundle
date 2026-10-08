@@ -5,6 +5,8 @@
  *
  *   bios_preview dc_boot.bin out.ppm [frames=120] [selected=0] [script=-1]
  *
+ * Set BIOS_PREVIEW_LOGO=LOGO.PVR to see a replacement header logo.
+ *
  * With script >= 0 only that single script is run as an object (useful to look
  * at one model); otherwise the full main menu is shown.
  * Text surfaces are shown as outlines: the console draws them with the BIOS font.
@@ -37,8 +39,13 @@ static cached_tex cache[256];
 static int cache_n;
 static const bios_rom* g_rom;
 
+static bitmap logo_bmp; /* optional replacement of the header logo, see biologo.py */
+
 static const bitmap*
 lookup(bscene_texref ref) {
+    if (logo_bmp.px && ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
+        return &logo_bmp;
+    }
     for (int i = 0; i < cache_n; i++) {
         if (cache[i].ref.kind == ref.kind && cache[i].ref.a == ref.a && cache[i].ref.b == ref.b) {
             return cache[i].valid ? &cache[i].bmp : NULL;
@@ -148,6 +155,28 @@ main(int argc, char** argv) {
         return 1;
     }
     g_rom = &rom;
+
+    const char* logo_path = getenv("BIOS_PREVIEW_LOGO");
+    if (logo_path && *logo_path) {
+        FILE* lf = fopen(logo_path, "rb");
+        static uint8_t logo_file[256 * 1024];
+        size_t n = lf ? fread(logo_file, 1, sizeof(logo_file), lf) : 0;
+        if (lf) {
+            fclose(lf);
+        }
+        bios_texture lt;
+        if (bios_texture_parse(logo_file, n, &lt) == 0) {
+            logo_bmp.w = lt.width;
+            logo_bmp.h = lt.height;
+            logo_bmp.px = malloc(sizeof(uint32_t) * lt.width * lt.height);
+            if (!logo_bmp.px || bios_texture_decode(&lt, logo_bmp.px) != 0) {
+                logo_bmp.px = NULL;
+            }
+        }
+        if (!logo_bmp.px) {
+            fprintf(stderr, "could not use %s as logo\n", logo_path);
+        }
+    }
 
     static bmenu menu;
     bmenu_init(&menu, &rom, NULL);

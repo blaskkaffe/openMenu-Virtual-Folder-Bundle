@@ -203,6 +203,7 @@ ui_bios_run(const bios_rom* rom) {
         return -1;
     }
 
+    gfx_load_logo("/cd/LOGO.PVR"); /* optional replacement of the Dreamcast logo */
     sound_init(rom);
     snprintf(status_line, sizeof(status_line), "BIOS %s  %s", rom->revision, sound_status());
 

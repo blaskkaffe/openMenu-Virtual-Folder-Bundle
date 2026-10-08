@@ -7,9 +7,14 @@
 
 #include <dc/biosfont.h>
 #include <dc/pvr.h>
+#include <fcntl.h>
+#include <kos/fs.h>
+
+#include <bios_menu.h>
 
 #include "gfx.h"
 
+#define MAX_LOGO_FILE (256 * 1024)
 #define MAX_TEXTURES 96
 #define MAX_TEXT_ENTRIES 48
 #define MAX_TEXT_CHARS 42
@@ -35,6 +40,7 @@ typedef struct {
 static const bios_rom* g_rom;
 static rom_tex rom_texes[MAX_TEXTURES];
 static int num_rom_texes;
+static rom_tex logo_tex;
 static text_tex text_texes[MAX_TEXT_ENTRIES];
 static uint32_t frame_no;
 
@@ -88,8 +94,33 @@ pvr_format(const bios_texture* t) {
     return fmt;
 }
 
+/* Copy a texture payload to video memory and fill in `g`. */
+static void
+upload_texture(const bios_texture* t, rom_tex* g) {
+    size_t size = (t->data_size + 31) & ~(size_t)31;
+    void* staging = memalign(32, size);
+    if (!staging) {
+        return;
+    }
+    memset(staging, 0, size);
+    memcpy(staging, t->data, t->data_size);
+
+    g->ptr = pvr_mem_malloc(size);
+    if (g->ptr) {
+        pvr_txr_load(staging, g->ptr, size);
+        g->w = t->width;
+        g->h = t->height;
+        g->fmt = pvr_format(t);
+        g->valid = 1;
+    }
+    free(staging);
+}
+
 static rom_tex*
 get_rom_texture(bscene_texref ref) {
+    if (logo_tex.valid && ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
+        return &logo_tex;
+    }
     for (int i = 0; i < num_rom_texes; i++) {
         if (rom_texes[i].kind == ref.kind && rom_texes[i].a == ref.a && rom_texes[i].b == ref.b) {
             return rom_texes[i].valid ? &rom_texes[i] : NULL;
@@ -112,24 +143,36 @@ get_rom_texture(bscene_texref ref) {
         return NULL;
     }
 
-    size_t size = (t.data_size + 31) & ~(size_t)31;
-    void* staging = memalign(32, size);
-    if (!staging) {
-        return NULL;
-    }
-    memset(staging, 0, size);
-    memcpy(staging, t.data, t.data_size);
-
-    g->ptr = pvr_mem_malloc(size);
-    if (g->ptr) {
-        pvr_txr_load(staging, g->ptr, size);
-        g->w = t.width;
-        g->h = t.height;
-        g->fmt = pvr_format(&t);
-        g->valid = 1;
-    }
-    free(staging);
+    upload_texture(&t, g);
     return g->valid ? g : NULL;
+}
+
+int
+gfx_load_logo(const char* path) {
+    if (logo_tex.valid) {
+        return 0;
+    }
+    file_t fd = fs_open(path, O_RDONLY);
+    if (fd == FILEHND_INVALID) {
+        return -1;
+    }
+    ssize_t size = fs_total(fd);
+    uint8_t* buf = (size > 0 && size <= MAX_LOGO_FILE) ? (uint8_t*)malloc((size_t)size) : NULL;
+    if (buf && fs_read(fd, buf, (size_t)size) != size) {
+        free(buf);
+        buf = NULL;
+    }
+    fs_close(fd);
+    if (!buf) {
+        return -1;
+    }
+
+    bios_texture t;
+    if (bios_texture_parse(buf, (size_t)size, &t) == 0) {
+        upload_texture(&t, &logo_tex);
+    }
+    free(buf);
+    return logo_tex.valid ? 0 : -1;
 }
 
 /* ---- Submission --------------------------------------------------------------------- */
