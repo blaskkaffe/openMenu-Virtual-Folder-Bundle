@@ -36,6 +36,35 @@ bytecode bank, message tables and the sound directory straight from the boot ROM
 (no Sega data), and also checks a real dump when `BIOS_ROM_FILE` is set.
 The app shows the result on the bottom line of the screen.
 
-## Next
+## Phase 2 (BIOS-style visuals)
 
-Phase 2: PVR texture upload, ROM background, Ninja chunk-model renderer, script VM.
+- `src/bios_engine/`: portable engine. `nj_model` parses the ROM's Ninja chunk models and
+  motions, `bios_vm` runs the menu's bytecode scripts and tweens, `dcbg` is the animated cloud
+  background, `bios_scene` turns all of it into screen triangles for any backend, `bios_menu`
+  creates the four icons and handles the 2x2 cursor, `tex_decode` is for host tools.
+- `src/openmenu/src/gfx.c`: PVR backend (ROM textures uploaded on demand, BIOS-font text
+  rendered into small textures). `ui_bios.c` is the menu, `ui_list.c` the game list logic.
+- `src/bios_engine/tools/bios_preview.c`: renders the menu on a PC from a ROM dump
+  (`bios_preview dc_boot.bin out.ppm [frames] [selected] [script]`) with a software
+  rasteriser, to check models/scripts/projection without hardware.
+- Unknown or unreadable ROM: falls back to the plain text list (`ui_fallback.c`).
+
+## Phase 3 (sound)
+
+`bios_audio` (portable, host tested) parses the sound bank container and builds the data map and
+command bytes; `sound.c` loads the ARM7 driver and banks from the ROM into the sound chip and
+plays the UI effects (cursor, confirm, back, enter, error). Sound is silently disabled if the
+container does not look as expected. The status line at the bottom shows the result.
+
+## Phase 4 (menu wired to the launcher)
+
+Game opens the game browser (with a detail line), Settings edits boot animation and the exit
+mode and saves them. Files and Music show "Not available yet".
+
+Still open: date/time and language settings, Files (memory card manager), Music (online).
+
+## Not verified on hardware
+
+Phases 0 and 1 build in CI. Everything from Phase 2 on has only been syntax checked against the
+KOS API and tested on a PC with a synthetic ROM; texture placement, camera constants, the text
+anchor of the icon captions, and the sound driver start-up are the likely places to need tuning.

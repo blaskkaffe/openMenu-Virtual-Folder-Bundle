@@ -15,8 +15,9 @@
 #include "sound.h"
 #include "ui_bios.h"
 #include "ui_list.h"
+#include "ui_settings.h"
 
-typedef enum { SCREEN_MAIN, SCREEN_GAMES } screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS } screen_t;
 
 enum { ICON_GAME, ICON_FILES, ICON_MUSIC, ICON_SETTINGS };
 
@@ -26,6 +27,7 @@ static const char* const icon_names[BMENU_ICONS] = {"Game", "Files", "Music", "S
 
 static bmenu menu;
 static screen_t screen;
+static int settings_row;
 static int notice_frames;
 static const char* notice_text;
 
@@ -62,7 +64,29 @@ draw_games(void) {
         snprintf(line, sizeof(line), "%s%.40s", uil_is_folder(item) ? "> " : "", item->name);
         gfx_text(line, 56.0f, y, 0.5f, selected ? 0xFFFFFFFFu : 0xFFC0C0C0u, selected);
     }
-    gfx_text("A: start   B: back", 56.0f, 104.0f + UIL_VISIBLE * GFX_LINE_H + 8.0f, 0.5f, 0xFFA0A0A0u, 0);
+    const gd_item* cur = uil_item(uil_cursor());
+    if (cur && !uil_is_folder(cur)) {
+        snprintf(line, sizeof(line), "%s  %s  disc %s", cur->product, cur->region, cur->disc);
+        gfx_text(line, 56.0f, 104.0f + UIL_VISIBLE * GFX_LINE_H + 8.0f, 0.5f, 0xFFA0A0A0u, 0);
+    } else {
+        gfx_text("A: open / start   B: back", 56.0f, 104.0f + UIL_VISIBLE * GFX_LINE_H + 8.0f, 0.5f, 0xFFA0A0A0u, 0);
+    }
+}
+
+static void
+draw_settings(void) {
+    char line[64];
+    gfx_rect(40.0f, 56.0f, 560.0f, 40.0f + 6 * GFX_LINE_H + 52.0f, 0.4f, 0x90000000u);
+    gfx_text("Settings", 56.0f, 62.0f, 0.5f, 0xFFFFFFFFu, 1);
+    for (int i = 0; i < uis_count(); i++) {
+        float y = 104.0f + (float)i * GFX_LINE_H;
+        if (i == settings_row) {
+            gfx_rect(48.0f, y, 544.0f, (float)GFX_LINE_H, 0.45f, 0x50FFFFFFu);
+        }
+        uis_text(i, line, sizeof(line));
+        gfx_text(line, 56.0f, y, 0.5f, i == settings_row ? 0xFFFFFFFFu : 0xFFC0C0C0u, i == settings_row);
+    }
+    gfx_text("Left/Right: change   B: back", 56.0f, 104.0f + 6 * GFX_LINE_H + 8.0f, 0.5f, 0xFFA0A0A0u, 0);
 }
 
 static void
@@ -75,7 +99,11 @@ draw_frame(void) {
         bmenu_draw(&menu, gfx_sink());
     } else {
         bscene_draw_background(&menu.bg, gfx_sink());
-        draw_games();
+        if (screen == SCREEN_GAMES) {
+            draw_games();
+        } else {
+            draw_settings();
+        }
     }
     gfx_text(status_line, 8.0f, 450.0f, 0.5f, 0x80FFFFFFu, 0);
     if (notice_frames > 0 && notice_text) {
@@ -105,6 +133,10 @@ handle_main(button_t b) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 uil_reset();
                 screen = SCREEN_GAMES;
+            } else if (menu.selected == ICON_SETTINGS) {
+                sound_sfx(BAUDIO_SFX_ENTER);
+                settings_row = 0;
+                screen = SCREEN_SETTINGS;
             } else {
                 sound_sfx(BAUDIO_SFX_ERROR);
                 show_notice("Not available yet");
@@ -130,6 +162,41 @@ handle_games(button_t b) {
     }
 }
 
+static void
+handle_settings(button_t b) {
+    switch (b) {
+        case BTN_UP:
+            if (settings_row > 0) {
+                settings_row--;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_DOWN:
+            if (settings_row < uis_count() - 1) {
+                settings_row++;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_LEFT:
+        case BTN_RIGHT:
+        case BTN_A:
+            uis_change(settings_row, b == BTN_LEFT ? -1 : 1);
+            sound_sfx(BAUDIO_SFX_CONFIRM);
+            break;
+        case BTN_B:
+        case BTN_START:
+            if (uis_commit() != 0) {
+                sound_sfx(BAUDIO_SFX_ERROR);
+                show_notice("Could not save settings");
+            } else {
+                sound_sfx(BAUDIO_SFX_CANCEL);
+            }
+            screen = SCREEN_MAIN;
+            break;
+        default: break;
+    }
+}
+
 int
 ui_bios_run(const bios_rom* rom) {
     if (gfx_init(rom) != 0) {
@@ -150,8 +217,10 @@ ui_bios_run(const bios_rom* rom) {
         button_t b = input_poll();
         if (screen == SCREEN_MAIN) {
             handle_main(b);
-        } else {
+        } else if (screen == SCREEN_GAMES) {
             handle_games(b);
+        } else {
+            handle_settings(b);
         }
         if (notice_frames > 0) {
             notice_frames--;
