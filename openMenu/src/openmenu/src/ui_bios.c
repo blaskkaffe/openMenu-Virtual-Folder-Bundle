@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include <arch/timer.h>
+#include <dc/maple/controller.h>
 #include <dc/video.h>
 
 #include <bios_audio.h>
@@ -22,6 +23,10 @@ typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
  * longer; the animations were written for that rate. */
+/* Temporary performance aids: the frame rate readout, and while holding X the cloud layers
+ * are skipped, while holding Y the icons are skipped. */
+#define UI_DEBUG 1
+
 #define STEPS_PER_SECOND 60
 #define MAX_STEPS_PER_FRAME 4
 
@@ -41,12 +46,14 @@ static const char* const icon_names[BMENU_ICONS] = {"Game", "Files", "Music", "S
 #define STATUS_Y 432.0f
 #define NOTICE_Y_MAIN 404.0f
 #define NOTICE_Y_PANEL 424.0f
+#define FPS_Y 376.0f
 
 static bmenu menu;
 static screen_t screen;
 static int settings_row;
 static int notice_frames;
-static char fps_text[16];
+static char fps_text[40];
+static uint64_t build_us_sum;
 static const char* notice_text;
 
 static char status_line[64];
@@ -111,11 +118,18 @@ draw_settings(void) {
 static void
 draw_frame(void) {
     uint32_t top, bottom;
+    uint64_t t0 = timer_us_gettime64();
+    uint32_t held = UI_DEBUG ? input_buttons() : 0;
     dcbg_gradient(&menu.bg, &top, &bottom);
     gfx_begin_frame(top, bottom);
 
     if (screen == SCREEN_MAIN) {
-        bmenu_draw(&menu, gfx_sink());
+        if (!(held & CONT_X)) {
+            bscene_draw_background(&menu.bg, gfx_sink());
+        }
+        if (!(held & CONT_Y)) {
+            bscene_draw_objects(&menu.scene, &menu.vm, gfx_sink());
+        }
     } else {
         bscene_draw_background(&menu.bg, gfx_sink());
         if (screen == SCREEN_GAMES) {
@@ -127,10 +141,11 @@ draw_frame(void) {
     if (screen == SCREEN_MAIN) {
         gfx_text(status_line, TEXT_X, STATUS_Y, 0.5f, 0x80FFFFFFu, 0);
     }
-    gfx_text(fps_text, 500.0f, STATUS_Y, 0.5f, 0x60FFFFFFu, 0);
+    gfx_text(fps_text, TEXT_X, FPS_Y, 0.5f, 0x80FFFFFFu, 0);
     if (notice_frames > 0 && notice_text) {
         gfx_text(notice_text, TEXT_X, screen == SCREEN_MAIN ? NOTICE_Y_MAIN : NOTICE_Y_PANEL, 0.5f, 0xFFFFFFFFu, 1);
     }
+    build_us_sum += timer_us_gettime64() - t0;
     gfx_end_frame();
 }
 
@@ -272,7 +287,9 @@ ui_bios_run(const bios_rom* rom) {
 
         frames_this_second++;
         if (now - fps_since >= 1000) {
-            snprintf(fps_text, sizeof(fps_text), "%d fps", frames_this_second);
+            snprintf(fps_text, sizeof(fps_text), "%d fps %u tri b%u ms", frames_this_second, gfx_triangles(),
+                     frames_this_second ? (unsigned)(build_us_sum / 1000 / (uint64_t)frames_this_second) : 0u);
+            build_us_sum = 0;
             frames_this_second = 0;
             fps_since = now;
         }

@@ -6,6 +6,11 @@
 #include <string.h>
 
 #define NEAR_Z (-1.0f) /* anything closer than this to the camera plane is dropped */
+#define MAX_MESH_VERTS 4096 /* nj_model never produces more */
+
+/* Per-object scratch for projected vertices (the engine is single threaded). */
+static float scratch_x[MAX_MESH_VERTS], scratch_y[MAX_MESH_VERTS], scratch_w[MAX_MESH_VERTS];
+static uint8_t scratch_ok[MAX_MESH_VERTS];
 
 void
 bscene_init(bscene* s, const bios_rom* rom) {
@@ -114,6 +119,17 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                 }
                 nj_mat4 m;
                 nj_mat_mul(&m, &obj_m, &world[n]);
+
+                /* Transform and project every vertex once; triangles only index into this. */
+                for (int i = 0; i < mesh->nverts; i++) {
+                    const nj_vertex* vx = &mesh->verts[i];
+                    scratch_ok[i] = 0;
+                    if (vx->valid) {
+                        nj_vec3 w = nj_mat_apply(&m, vx->pos);
+                        scratch_ok[i] = (uint8_t)bscene_project(w, &scratch_x[i], &scratch_y[i], &scratch_w[i]);
+                    }
+                }
+
                 for (int p = 0; p < mesh->npolys; p++) {
                     const nj_poly* poly = &mesh->polys[p];
                     bscene_texref tex = {BSCENE_TEX_NONE, 0, 0};
@@ -122,18 +138,24 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         tex.a = o->texlist;
                         tex.b = poly->tex;
                     }
+                    uint32_t poly_argb = poly->has_diffuse ? shade(poly->diffuse, offs) : 0;
                     for (int t = 0; t < poly->ntris; t++) {
                         bscene_vtx v[3];
                         int ok = 1;
                         for (int k = 0; k < 3 && ok; k++) {
                             const nj_corner* c = &poly->corners[t * 3 + k];
-                            const nj_vertex* vx = &mesh->verts[c->idx];
-                            nj_vec3 w = nj_mat_apply(&m, vx->pos);
-                            ok = bscene_project(w, &v[k].x, &v[k].y, &v[k].invw);
+                            ok = scratch_ok[c->idx];
+                            v[k].x = scratch_x[c->idx];
+                            v[k].y = scratch_y[c->idx];
+                            v[k].invw = scratch_w[c->idx];
                             v[k].u = c->u;
                             v[k].v = c->v;
-                            uint32_t base = poly->has_diffuse ? poly->diffuse : (vx->has_col ? vx->col : 0xFFFFFFFFu);
-                            v[k].argb = shade(base, offs);
+                            if (poly->has_diffuse) {
+                                v[k].argb = poly_argb;
+                            } else {
+                                const nj_vertex* vx = &mesh->verts[c->idx];
+                                v[k].argb = shade(vx->has_col ? vx->col : 0xFFFFFFFFu, offs);
+                            }
                         }
                         if (ok) {
                             sink->triangle(sink->user, v, tex);

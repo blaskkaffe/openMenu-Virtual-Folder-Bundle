@@ -20,6 +20,9 @@ void gfx_end_frame(void);
 
 const bscene_sink* gfx_sink(void);
 
+/* Triangles submitted since gfx_begin_frame(). */
+unsigned gfx_triangles(void);
+
 /* Text of the label objects (icon names, header...) by script object id. */
 void gfx_set_label(uint16_t obj_id, const char* text);
 
