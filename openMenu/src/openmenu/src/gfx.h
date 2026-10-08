@@ -26,6 +26,9 @@ const bscene_sink* gfx_sink(void);
  * otherwise the BIOS logo stays. */
 int gfx_load_logo(const char* path);
 
+/* Triangles submitted since gfx_begin_frame(). */
+unsigned gfx_triangles(void);
+
 /* Text of the label objects (icon names, header...) by script object id. */
 void gfx_set_label(uint16_t obj_id, const char* text);
 
