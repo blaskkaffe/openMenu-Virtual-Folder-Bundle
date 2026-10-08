@@ -7,7 +7,7 @@
 
 #include <string.h>
 
-#define SUPPORTED_REVISION "1.01d"
+#define EXPECTED_TEXTURES 18 /* GBIX/PVRT blobs in the menu image */
 
 /* Menu image layout (ROM offset == RAM address - 0x8C000000) */
 #define SCRIPT_BANK_OFFSET 0x6F5BCu
@@ -106,17 +106,16 @@ bios_rom_init(bios_rom* rom, const void* data, size_t size) {
         rom->revision[n] = (char)p[n];
         n++;
     }
-    rom->revision[n] = '\0';
-    if (strcmp(rom->revision, SUPPORTED_REVISION) != 0) {
-        return BIOS_ROM_ERR_REVISION;
-    }
+    rom->revision[n] = '\0'; /* informational: the layout check below decides */
 
     rom->data = bytes;
     rom->size = BIOS_ROM_SIZE;
 
-    /* The script bank starts with the offset of its first script, which is the
-     * size of the offset table itself: one 32-bit entry per script. */
-    if (bios_rom_u32(rom, SCRIPT_BANK_OFFSET) != SCRIPT_BANK_COUNT * 4u) {
+    /* The menu image is identical in 1.01c, 1.01d, 1.022, 1.032 and the 1.011 dev ROM, but
+     * not in 1.004 or the early dev ROMs, so the structure is checked rather than the version.
+     * The script bank starts with the offset of its first script, which is the size of the
+     * offset table itself: one 32-bit entry per script. */
+    if (bios_rom_u32(rom, SCRIPT_BANK_OFFSET) != SCRIPT_BANK_COUNT * 4u || bios_texture_count(rom) != EXPECTED_TEXTURES) {
         rom->data = NULL;
         rom->size = 0;
         return BIOS_ROM_ERR_LAYOUT;

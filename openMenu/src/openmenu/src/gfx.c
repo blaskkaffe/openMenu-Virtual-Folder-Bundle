@@ -215,7 +215,10 @@ sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
     (void)user;
     const char* label = find_label(obj->id);
     if (label) {
-        gfx_text(label, x, y, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, 1);
+        /* The anchor of a text surface is its centre (checked against the BIOS layout:
+         * the caption pills line up with it), so centre the string on it. */
+        float w = (float)strlen(label) * GFX_CHAR_W;
+        gfx_text(label, x - w / 2.0f, y - (float)GFX_LINE_H / 2.0f, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, 1);
     }
 }
 
