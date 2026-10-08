@@ -1,0 +1,44 @@
+name: Build NewOpenMenu
+
+on:
+  push:
+    branches: [NewOpenMenu]
+    paths:
+      - 'openMenu/**'
+      - '.github/workflows/build-newopenmenu.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The KOS toolchain build takes the better part of an hour, so cache it.
+      - name: Build dev image (KOS toolchain)
+        uses: docker/build-push-action@v6
+        with:
+          context: openMenu/docker
+          platforms: linux/amd64
+          load: true
+          tags: openmenu-build:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build openMenu
+        run: |
+          docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+            -v "$PWD/openMenu:/workspaces/openmenu" -w /workspaces/openmenu \
+            openmenu-build:ci bash -c '
+              source /opt/toolchains/dc/kos/environ.sh &&
+              cmake --preset dc-release &&
+              cmake --build --preset dc-release'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 1ST_READ.BIN
+          path: openMenu/cmake-build-dc-release/bin/1ST_READ.BIN
+          if-no-files-found: error
