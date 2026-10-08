@@ -147,7 +147,7 @@ test_good_rom(void) {
     /* sound */
     const uint8_t* d;
     size_t n;
-    CHECK(bios_sound_get(&rom, BIOS_SOUND_DRIVER, &d, &n) == 0 && d == image + 0x1A0040 && n == 0x79F4);
+    CHECK(bios_sound_get(&rom, BIOS_SOUND_DRIVER, &d, &n) == 0 && d == image + 0x1A0040 && n == 0x7A00);
     CHECK(bios_sound_get(&rom, BIOS_SOUND_JINGLE_R, &d, &n) == 0 && d == image + 0x1D4740 && n == 0x2B175);
     CHECK(bios_sound_get(&rom, (bios_sound_entry)4, &d, &n) != 0);
 
@@ -164,9 +164,22 @@ test_good_rom(void) {
 static void
 test_rejections(void) {
     bios_rom rom;
-    uint8_t* image = build_rom("1.004");
-    CHECK(bios_rom_init(&rom, image, BIOS_ROM_SIZE) == BIOS_ROM_ERR_REVISION);
+    /* the version string is informational: another revision with the same layout is fine */
+    uint8_t* image = build_rom("1.022");
+    CHECK(bios_rom_init(&rom, image, BIOS_ROM_SIZE) == BIOS_ROM_OK && !strcmp(rom.revision, "1.022"));
+    free(image);
+
+    /* a ROM with the tag but a different layout (as 1.004 has) is refused */
+    image = build_rom("1.004");
+    put32(image, 0x6F5BC, 0);
+    CHECK(bios_rom_init(&rom, image, BIOS_ROM_SIZE) == BIOS_ROM_ERR_LAYOUT);
     CHECK(bios_texture_count(&rom) == 0); /* a failed init leaves a rom nothing can read from */
+    free(image);
+
+    /* right bank, but the textures are missing */
+    image = build_rom("1.01d");
+    memset(image + 0x70000, 0, 0x20000);
+    CHECK(bios_rom_init(&rom, image, BIOS_ROM_SIZE) == BIOS_ROM_ERR_LAYOUT);
     free(image);
 
     image = build_rom("1.01d");

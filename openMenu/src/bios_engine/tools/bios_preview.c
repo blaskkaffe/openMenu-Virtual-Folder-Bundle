@@ -110,7 +110,7 @@ tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
 static void
 text(void* user, const bvm_obj* o, float x, float y, float invw) {
     (void)user; (void)invw;
-    int x0 = (int)x, y0 = (int)y, x1 = x0 + o->text_w, y1 = y0 + o->text_h;
+    int x0 = (int)(x - o->text_w / 2.0f), y0 = (int)(y - o->text_h / 2.0f), x1 = x0 + o->text_w, y1 = y0 + o->text_h; /* anchor = centre */
     for (int i = x0; i < x1; i++) {
         for (int k = 0; k < 2; k++) {
             int yy = k ? y1 - 1 : y0;
