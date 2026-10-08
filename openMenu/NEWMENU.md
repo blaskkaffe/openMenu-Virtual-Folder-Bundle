@@ -27,7 +27,15 @@ Build: unchanged, see `BUILD_INSTRUCTIONS.md`.
 Not yet verified on a real build: this was written without a KOS toolchain
 available, only syntax-checked against the KOS API signatures.
 
+## Phase 1 (bios_rom)
+
+`src/bios_rom`: portable C module that reads textures (GBIX/PVRT), the script
+bytecode bank, message tables and the sound directory straight from the boot ROM
+(`0xA0000000` on the console). Revision is detected from the ROM header; only
+1.01d is accepted for now. Host test: `test/bios_rom_test.c` builds a synthetic ROM
+(no Sega data), and also checks a real dump when `BIOS_ROM_FILE` is set.
+The app shows the result on the bottom line of the screen.
+
 ## Next
 
-Phase 1: `bios_rom` module reading models, textures, scripts and sounds from the
-BIOS ROM (mapped at 0xA0000000), with BIOS revision detection.
+Phase 2: PVR texture upload, ROM background, Ninja chunk-model renderer, script VM.

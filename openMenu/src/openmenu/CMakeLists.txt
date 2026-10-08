@@ -27,6 +27,7 @@ target_include_directories(openmenu
 
 target_link_libraries(openmenu
         PRIVATE
+        bios_rom
         crayon_savefile
         ini
         openmenu_settings

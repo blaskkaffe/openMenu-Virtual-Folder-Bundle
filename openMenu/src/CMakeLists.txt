@@ -1,5 +1,6 @@
 add_subdirectory(openmenu_settings)
 add_subdirectory(openmenu_shared)
+add_subdirectory(bios_rom)
 
 # --- Conditional Target Builds ---
 if (BUILD_DREAMCAST)

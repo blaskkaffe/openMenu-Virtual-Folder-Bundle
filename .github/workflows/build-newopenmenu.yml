@@ -15,6 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: bios_rom host test
+        run: |
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -IopenMenu/src/bios_rom/include \
+            openMenu/src/bios_rom/src/bios_rom.c openMenu/src/bios_rom/test/bios_rom_test.c -o bios_rom_test
+          ./bios_rom_test
+
       - uses: docker/setup-buildx-action@v3
 
       # The KOS toolchain build takes the better part of an hour, so cache it.

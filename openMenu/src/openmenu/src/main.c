@@ -23,6 +23,8 @@
 #include <openmenu_savefile.h>
 #include <openmenu_settings.h>
 
+#include <bios_rom.h>
+
 #include "launch.h"
 
 #define SCREEN_W    640
@@ -37,6 +39,7 @@
 
 typedef enum { BTN_NONE, BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT, BTN_A, BTN_B } button_t;
 
+static char bios_status[64] = "";
 static int cursor = 0;
 static int top = 0;
 
@@ -57,6 +60,7 @@ draw_menu(void) {
 
     vid_clear(0, 0, 0);
     draw_text(MARGIN_X, 8, COL_FG, COL_BG, "openMenu");
+    draw_text(MARGIN_X, 480 - LINE_H - 8, COL_DIM, COL_BG, bios_status);
 
     if (count <= 0) {
         draw_text(MARGIN_X, MARGIN_Y, COL_DIM, COL_BG, "No games found. Run GD MENU Card Manager.");
@@ -176,6 +180,17 @@ main(int argc, char* argv[]) {
 
     vid_set_mode(DM_640x480_NTSC_IL, PM_RGB565);
     bfont_set_encoding(BFONT_CODE_ISO8859_1);
+
+    /* The boot ROM is memory mapped (uncached) at 0xA0000000. Phase 1 only checks
+     * that it can be read; the UI does not use it yet. */
+    bios_rom rom;
+    int rom_err = bios_rom_init(&rom, (const void*)0xA0000000, BIOS_ROM_SIZE);
+    if (rom_err == BIOS_ROM_OK) {
+        snprintf(bios_status, sizeof(bios_status), "BIOS %s: %d textures, %d scripts", rom.revision,
+                 bios_texture_count(&rom), bios_script_count(&rom));
+    } else {
+        snprintf(bios_status, sizeof(bios_status), "BIOS ROM not usable (error %d)", rom_err);
+    }
 
     savefile_init();
 
