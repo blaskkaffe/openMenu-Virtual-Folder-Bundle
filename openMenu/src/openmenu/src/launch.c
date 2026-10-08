@@ -20,6 +20,7 @@
 #include "backend/gdmenu_binary.h"
 #include "bloader.h"
 #include "launch.h"
+#include "sound.h"
 
 /* Wait for the GDEMU to present the newly selected image. */
 static void
@@ -66,6 +67,8 @@ launch_disc(const gd_item* disc) {
     if (!disc) {
         return;
     }
+
+    sound_shutdown(); /* the next program must not inherit a running sound driver */
 
     if (!strcmp(disc->type, "other")) {
         launch_other(disc);

@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bios_audio.h"
 #include "bios_rom.h"
 #include "bios_vm.h"
 #include "dcbg.h"
@@ -27,6 +28,14 @@ static int failures;
     } while (0)
 
 #define NEAR(a, b) (fabsf((float)(a) - (float)(b)) < 1e-3f)
+
+static void
+put32_at(uint8_t* p, uint32_t v) {
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+}
 
 static uint8_t* image;
 static uint32_t emit_at; /* ROM offset where the next emitted byte goes */
@@ -431,6 +440,50 @@ test_scene(const bios_rom* rom) {
     bscene_free(&sc);
 }
 
+static void
+test_audio(void) {
+    /* container with a 32-byte header and three records: SMPB, SMSB (reversed tag order), a work area */
+    static uint8_t c[0x2000];
+    memset(c, 0, sizeof(c));
+    memcpy(c, "SMLT", 4);
+    uint8_t* r = c + 0x20;
+    memcpy(r, "SMPB", 4); put32_at(r + 4, 0); put32_at(r + 8, 0x18000); put32_at(r + 12, 0x7520); put32_at(r + 16, 0x140); put32_at(r + 20, 0x940);
+    r += 32;
+    memcpy(r, "BSMS", 4); put32_at(r + 4, 2); put32_at(r + 8, 0x1F520); put32_at(r + 12, 0x460); put32_at(r + 16, 0x240); put32_at(r + 20, 0x100);
+    r += 32;
+    memcpy(r, "SFPW", 4); put32_at(r + 8, 0x22000); put32_at(r + 12, 0x1000);
+    r += 32;
+    memcpy(r, "SMSB", 4); put32_at(r + 8, 0x1F520); put32_at(r + 16, 0x3000); put32_at(r + 20, 0x10); /* data outside the container */
+
+    baudio_block b[BAUDIO_MAX_BLOCKS];
+    int n = baudio_parse_banks(c, sizeof(c), b, BAUDIO_MAX_BLOCKS);
+    CHECK(n == 3);
+    CHECK(!strcmp(b[0].tag, "SMPB") && b[0].ram_addr == 0x18000 && b[0].offset == 0x140 && b[0].size == 0x940);
+    CHECK(!strcmp(b[1].tag, "SMSB") && b[1].unit == 2);
+    CHECK(!strcmp(b[2].tag, "SFPW") && b[2].size == 0);
+    CHECK(baudio_parse_banks(c, 0x20, b, BAUDIO_MAX_BLOCKS) == 0);
+    CHECK(baudio_parse_banks(NULL, 0, b, BAUDIO_MAX_BLOCKS) == 0);
+
+    CHECK(baudio_datamap_addr(&b[0]) == 0x14000 + 0x080);
+    CHECK(baudio_datamap_addr(&b[1]) == 0x14000 + 0x000 + 16);
+    CHECK(baudio_datamap_addr(&b[2]) == 0x14000 + 0x288);
+    uint32_t w[2];
+    baudio_datamap_entry(&b[0], w);
+    CHECK(w[0] == 0x18000 && w[1] == 0x940);
+    baudio_datamap_entry(&b[2], w);
+    CHECK(w[1] == 0x1000); /* work area: reserved size */
+
+    uint8_t slot[16];
+    baudio_cmd_play(slot, 1, 0, 3, 4);
+    CHECK(slot[0] == 0x01 && slot[1] == 0 && slot[2] == 1 && slot[3] == 0 && slot[4] == 3 && slot[5] == 0x20);
+    baudio_cmd_master_volume(slot, 15);
+    CHECK(slot[0] == 0x81 && slot[2] == 0xF0);
+    baudio_cmd_stereo(slot, 1);
+    CHECK(slot[0] == 0x8A && slot[2] == 0xFF);
+    baudio_cmd_stereo(slot, 0);
+    CHECK(slot[2] == 0x00);
+}
+
 static int idle_input;
 
 static int
@@ -627,6 +680,7 @@ main(void) {
     test_vm(&rom);
     test_dcbg();
     test_tex_decode();
+    test_audio();
     test_scene(&rom);
 
     const char* real = getenv("BIOS_ROM_FILE");

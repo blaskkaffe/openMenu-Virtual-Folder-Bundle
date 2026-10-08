@@ -14,6 +14,7 @@ set(OPENMENU_SOURCES
         src/gfx.c
         src/input.c
         src/launch.c
+        src/sound.c
         src/ui_bios.c
         src/ui_fallback.c
         src/ui_list.c

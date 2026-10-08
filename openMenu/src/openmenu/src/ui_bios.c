@@ -6,11 +6,13 @@
 
 #include <dc/video.h>
 
+#include <bios_audio.h>
 #include <bios_menu.h>
 
 #include "gfx.h"
 #include "input.h"
 #include "launch.h"
+#include "sound.h"
 #include "ui_bios.h"
 #include "ui_list.h"
 
@@ -26,6 +28,8 @@ static bmenu menu;
 static screen_t screen;
 static int notice_frames;
 static const char* notice_text;
+
+static char status_line[64];
 
 static void
 show_notice(const char* text) {
@@ -73,6 +77,7 @@ draw_frame(void) {
         bscene_draw_background(&menu.bg, gfx_sink());
         draw_games();
     }
+    gfx_text(status_line, 8.0f, 450.0f, 0.5f, 0x80FFFFFFu, 0);
     if (notice_frames > 0 && notice_text) {
         gfx_text(notice_text, 32.0f, 430.0f, 0.5f, 0xFFFFFFFFu, 1);
     }
@@ -82,16 +87,26 @@ draw_frame(void) {
 static void
 handle_main(button_t b) {
     switch (b) {
-        case BTN_UP: bmenu_move(&menu, BMENU_UP); break;
-        case BTN_DOWN: bmenu_move(&menu, BMENU_DOWN); break;
-        case BTN_LEFT: bmenu_move(&menu, BMENU_LEFT); break;
-        case BTN_RIGHT: bmenu_move(&menu, BMENU_RIGHT); break;
+        case BTN_UP:
+            if (bmenu_move(&menu, BMENU_UP)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        case BTN_DOWN:
+            if (bmenu_move(&menu, BMENU_DOWN)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        case BTN_LEFT:
+            if (bmenu_move(&menu, BMENU_LEFT)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        case BTN_RIGHT:
+            if (bmenu_move(&menu, BMENU_RIGHT)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
         case BTN_A:
         case BTN_START:
             if (menu.selected == ICON_GAME) {
+                sound_sfx(BAUDIO_SFX_ENTER);
                 uil_reset();
                 screen = SCREEN_GAMES;
             } else {
+                sound_sfx(BAUDIO_SFX_ERROR);
                 show_notice("Not available yet");
             }
             break;
@@ -105,9 +120,13 @@ handle_games(button_t b) {
     uil_result r = uil_button(b, &game);
     if (r == UIL_LAUNCH) {
         launch_disc(game); /* only returns if the launch failed */
+        sound_sfx(BAUDIO_SFX_ERROR);
         show_notice("Could not start the game");
     } else if (r == UIL_EXIT) {
+        sound_sfx(BAUDIO_SFX_CANCEL);
         screen = SCREEN_MAIN;
+    } else if (r == UIL_REDRAW) {
+        sound_sfx(b == BTN_A || b == BTN_START ? BAUDIO_SFX_CONFIRM : (b == BTN_B ? BAUDIO_SFX_CANCEL : BAUDIO_SFX_CURSOR));
     }
 }
 
@@ -116,6 +135,9 @@ ui_bios_run(const bios_rom* rom) {
     if (gfx_init(rom) != 0) {
         return -1;
     }
+
+    sound_init(rom);
+    snprintf(status_line, sizeof(status_line), "BIOS %s  %s", rom->revision, sound_status());
 
     bmenu_init(&menu, rom, NULL);
     bmenu_show_main(&menu, ICON_GAME);
