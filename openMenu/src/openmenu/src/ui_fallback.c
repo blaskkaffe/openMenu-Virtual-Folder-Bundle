@@ -15,8 +15,10 @@
 
 #define SCREEN_W 640
 #define LINE_H (BFONT_HEIGHT + 4)
-#define MARGIN_X 32
-#define MARGIN_Y 48
+#define MARGIN_X 48 /* stay inside the safe area: PAL consoles and scalers crop the edges */
+#define MARGIN_Y 72
+#define TITLE_Y 32
+#define STATUS_Y (480 - 64)
 #define COL_FG 0xFFFF
 #define COL_DIM 0x8410
 #define COL_BG 0x0000
@@ -33,8 +35,8 @@ draw_menu(const char* status) {
     int count = uil_count();
 
     vid_clear(0, 0, 0);
-    draw_text(MARGIN_X, 8, COL_FG, COL_BG, "openMenu");
-    draw_text(MARGIN_X, 480 - LINE_H - 8, COL_DIM, COL_BG, status);
+    draw_text(MARGIN_X, TITLE_Y, COL_FG, COL_BG, "openMenu");
+    draw_text(MARGIN_X, STATUS_Y, COL_DIM, COL_BG, status);
 
     if (count <= 0) {
         draw_text(MARGIN_X, MARGIN_Y, COL_DIM, COL_BG, "No games found. Run GD MENU Card Manager.");
@@ -46,8 +48,8 @@ draw_menu(const char* status) {
         if (!item) {
             continue;
         }
-        /* The BIOS font is 12 px wide: 640 - 2 * 32 leaves room for 48 characters. */
-        snprintf(line, sizeof(line), "%s%.46s", uil_is_folder(item) ? "> " : "  ", item->name);
+        /* The BIOS font is 12 px wide: 640 - 2 * 48 leaves room for 45 characters. */
+        snprintf(line, sizeof(line), "%s%.42s", uil_is_folder(item) ? "> " : "  ", item->name);
         draw_text(MARGIN_X, MARGIN_Y + row * LINE_H, COL_FG, (uil_top() + row == uil_cursor()) ? COL_SEL : COL_BG, line);
     }
 }

@@ -8,7 +8,7 @@
 
 #include "input.h"
 
-#define UIL_VISIBLE 10
+#define UIL_VISIBLE 9
 
 typedef enum {
     UIL_NONE,    /* nothing changed */
