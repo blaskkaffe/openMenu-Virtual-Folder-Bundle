@@ -88,7 +88,9 @@ draw_frame(void) {
         bscene_draw_background(&menu.bg, gfx_sink());
         draw_games();
     }
-    gfx_text(status_line, 8.0f, 450.0f, 0.5f, 0x80FFFFFFu, 0);
+    if (screen == SCREEN_MAIN) {
+        gfx_text(status_line, TEXT_X, STATUS_Y, 0.5f, 0x80FFFFFFu, 0);
+    }
     if (notice_frames > 0 && notice_text) {
         gfx_text(notice_text, TEXT_X, screen == SCREEN_MAIN ? NOTICE_Y_MAIN : NOTICE_Y_PANEL, 0.5f, 0xFFFFFFFFu, 1);
     }
