@@ -45,3 +45,10 @@ input_poll(void) {
     prev = now;
     return out;
 }
+
+uint32_t
+input_buttons(void) {
+    maple_device_t* dev = maple_enum_type(0, MAPLE_FUNC_CONTROLLER);
+    cont_state_t* st = dev ? (cont_state_t*)maple_dev_status(dev) : NULL;
+    return st ? st->buttons : 0;
+}

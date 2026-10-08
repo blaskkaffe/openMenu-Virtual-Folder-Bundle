@@ -37,6 +37,7 @@ static rom_tex rom_texes[MAX_TEXTURES];
 static int num_rom_texes;
 static text_tex text_texes[MAX_TEXT_ENTRIES];
 static uint32_t frame_no;
+static unsigned tri_count;
 
 static struct {
     uint16_t id;
@@ -194,6 +195,7 @@ sink_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
             return; /* texture missing from this ROM: draw nothing rather than garbage */
         }
     }
+    tri_count++;
     ensure_header(tex, NULL, 0);
     for (int i = 0; i < 3; i++) {
         send_vertex(v[i].x, v[i].y, v[i].invw, v[i].u, v[i].v, v[i].argb, i == 2);
@@ -227,6 +229,11 @@ static const bscene_sink the_sink = {NULL, sink_triangle, sink_text};
 const bscene_sink*
 gfx_sink(void) {
     return &the_sink;
+}
+
+unsigned
+gfx_triangles(void) {
+    return tri_count;
 }
 
 void
@@ -349,6 +356,7 @@ gfx_rect(float x, float y, float w, float h, float z, uint32_t argb) {
 void
 gfx_begin_frame(uint32_t top, uint32_t bottom) {
     frame_no++;
+    tri_count = 0;
     pvr_wait_ready();
     /* Where the gradient quad does not draw, show a mid blue instead of black. */
     pvr_set_bg_color(0.45f, 0.60f, 0.80f);
