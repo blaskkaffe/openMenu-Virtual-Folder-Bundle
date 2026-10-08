@@ -609,6 +609,26 @@ rot_z(nj_mat4* r, float t) {
 }
 
 void
+nj_mat_object(nj_mat4* out, const float pos[3], const float scl[3], const int32_t rot[3]) {
+    nj_mat4 t, s, rx, ry, rz;
+    nj_mat_identity(&t);
+    t.m[0][3] = pos[0];
+    t.m[1][3] = pos[1];
+    t.m[2][3] = pos[2];
+    nj_mat_identity(&s);
+    s.m[0][0] = scl[0];
+    s.m[1][1] = scl[1];
+    s.m[2][2] = scl[2];
+    rot_x(&rx, nj_ang_to_rad(rot[0]));
+    rot_y(&ry, nj_ang_to_rad(rot[1]));
+    rot_z(&rz, nj_ang_to_rad(rot[2]));
+    nj_mat_mul(out, &t, &s);
+    nj_mat_mul(out, out, &rx);
+    nj_mat_mul(out, out, &ry);
+    nj_mat_mul(out, out, &rz);
+}
+
+void
 nj_node_matrix(const nj_node* n, const float* pos_override, const float* ang_override, const float* scl_override,
                nj_mat4* out) {
     float pos[3] = {n->pos.x, n->pos.y, n->pos.z};

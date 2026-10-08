@@ -12,7 +12,9 @@
 #include "bios_rom.h"
 #include "bios_vm.h"
 #include "dcbg.h"
+#include "bios_scene.h"
 #include "nj_model.h"
+#include "tex_decode.h"
 
 static int failures;
 
@@ -322,6 +324,113 @@ test_model(const bios_rom* rom) {
     CHECK(nj_object_load(rom, 0x8D000000u, &obj) != 0); /* outside the ROM */
 }
 
+static void
+test_tex_decode(void) {
+    CHECK(bios_untwiddle(0, 0) == 0 && bios_untwiddle(1, 0) == 2 && bios_untwiddle(0, 1) == 1 && bios_untwiddle(1, 1) == 3);
+    CHECK(bios_untwiddle(2, 0) == 8 && bios_untwiddle(3, 3) == 15);
+
+    /* 4x4 twiddled RGB565: pixel (x, y) holds the value x + 4 * y in the red channel */
+    static uint8_t payload[32];
+    for (int y = 0; y < 4; y++) {
+        for (int x = 0; x < 4; x++) {
+            uint16_t v = (uint16_t)((x + 4 * y) << 11);
+            uint32_t at = bios_untwiddle((uint32_t)x, (uint32_t)y) * 2;
+            payload[at] = (uint8_t)v;
+            payload[at + 1] = (uint8_t)(v >> 8);
+        }
+    }
+    bios_texture t = {0, BIOS_PVR_RGB565, BIOS_PVR_TWIDDLED, 4, 4, payload, 32, 0};
+    uint32_t out[16];
+    CHECK(bios_texture_decode(&t, out) == 0);
+    for (int i = 0; i < 16; i++) {
+        CHECK(((out[i] >> 16) & 255) == (uint32_t)(i * 255 / 31) && (out[i] >> 24) == 255);
+    }
+
+    /* 4x4 VQ: codebook entry 1 = four ARGB4444 values, index grid all 1 */
+    static uint8_t vq[2048 + 4];
+    for (int k = 0; k < 4; k++) {
+        vq[8 + 2 * k] = (uint8_t)(0x0F | (k << 4)); /* blue 15, green k */
+        vq[8 + 2 * k + 1] = 0xF0;                   /* alpha 15, red 0 */
+    }
+    for (int i = 0; i < 4; i++) {
+        vq[2048 + i] = 1;
+    }
+    bios_texture q = {0, BIOS_PVR_ARGB4444, BIOS_PVR_VQ, 4, 4, vq, sizeof(vq), 0};
+    CHECK(bios_texture_decode(&q, out) == 0);
+    CHECK(out[0] == 0xFF0000FFu && ((out[4] >> 8) & 255) == 0x11); /* k=1 is the pixel below: (2x+0, 2y+1) -> row 1 */
+    CHECK(((out[1] >> 8) & 255) == 0x22);                           /* k=2 is the pixel to the right */
+    bios_texture bad = {0, 0, BIOS_PVR_TWIDDLED_MIPMAP, 4, 4, payload, 0, 0};
+    CHECK(bios_texture_decode(&bad, out) != 0);
+}
+
+typedef struct {
+    int tris, textured, texts;
+    float minx, maxx, miny, maxy;
+} tally;
+
+static void
+tally_tri(void* user, const bscene_vtx v[3], bscene_texref tex) {
+    tally* t = (tally*)user;
+    t->tris++;
+    t->textured += tex.kind != BSCENE_TEX_NONE;
+    for (int i = 0; i < 3; i++) {
+        if (v[i].x < t->minx) t->minx = v[i].x;
+        if (v[i].x > t->maxx) t->maxx = v[i].x;
+        if (v[i].y < t->miny) t->miny = v[i].y;
+        if (v[i].y > t->maxy) t->maxy = v[i].y;
+    }
+}
+
+static void
+tally_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
+    (void)obj; (void)x; (void)y; (void)invw;
+    ((tally*)user)->texts++;
+}
+
+static void
+test_scene(const bios_rom* rom) {
+    bscene sc;
+    bscene_init(&sc, rom);
+    bvm vm;
+    bvm_init(&vm, rom, NULL);
+    bvm_obj* o = bvm_create(&vm, 7, 0x70, 0); /* draws model 0 at the origin of its own space */
+    bvm_update(&vm);
+    o->pos[2] = -400.0f; /* in front of the camera */
+
+    tally t = {0, 0, 0, 1e9f, -1e9f, 1e9f, -1e9f};
+    bscene_sink sink = {&t, tally_tri, tally_text};
+    bscene_draw_objects(&sc, &vm, &sink);
+    CHECK(t.tris == 2 && t.textured == 2); /* the quad: two textured triangles */
+    CHECK(t.minx > 300.0f && t.maxx < 700.0f && t.miny > 0.0f && t.maxy < 480.0f);
+
+    o->pos[2] = 5.0f; /* behind the camera: dropped, not mirrored */
+    t.tris = 0;
+    bscene_draw_objects(&sc, &vm, &sink);
+    CHECK(t.tris == 0);
+
+    o->pos[2] = -400.0f;
+    o->flags |= BVM_F_HIDE;
+    bscene_draw_objects(&sc, &vm, &sink);
+    CHECK(t.tris == 0);
+
+    o->flags &= ~(uint32_t)BVM_F_HIDE;
+    o->flags |= BVM_F_COLOUR;
+    o->color[0] = -2.0f; /* alpha offset below zero: fully transparent, clamped */
+    bscene_draw_objects(&sc, &vm, &sink);
+    CHECK(t.tris == 2);
+
+    /* background layers produce a full grid of triangles */
+    static dcbg_state bg;
+    dcbg_init(&bg, 0, 0);
+    for (int i = 0; i < 30; i++) {
+        dcbg_step(&bg);
+    }
+    t.tris = 0;
+    bscene_draw_background(&bg, &sink);
+    CHECK(t.tris == 2 * (15 * 15 + 12 * 12));
+    bscene_free(&sc);
+}
+
 static int idle_input;
 
 static int
@@ -503,12 +612,22 @@ main(void) {
     build_scripts();
     build_model();
 
+    const char* dump = getenv("BIOS_TEST_DUMP"); /* write the synthetic ROM out, e.g. for bios_preview */
+    if (dump && *dump) {
+        FILE* d = fopen(dump, "wb");
+        if (d) {
+            fwrite(image, 1, BIOS_ROM_SIZE, d);
+            fclose(d);
+        }
+    }
     bios_rom rom;
     CHECK(bios_rom_init(&rom, image, BIOS_ROM_SIZE) == BIOS_ROM_OK);
     test_rom_tables(&rom);
     test_model(&rom);
     test_vm(&rom);
     test_dcbg();
+    test_tex_decode();
+    test_scene(&rom);
 
     const char* real = getenv("BIOS_ROM_FILE");
     if (real && *real) {

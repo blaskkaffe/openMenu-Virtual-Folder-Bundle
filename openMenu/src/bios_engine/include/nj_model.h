@@ -114,6 +114,9 @@ void nj_mat_identity(nj_mat4* r);
 void nj_mat_mul(nj_mat4* r, const nj_mat4* a, const nj_mat4* b); /* r = a * b, r may alias a or b */
 nj_vec3 nj_mat_apply(const nj_mat4* m, nj_vec3 p);
 
+/* Object transform as the BIOS builds it: T(pos) * S(scale) * Rx * Ry * Rz (angles in Ninja units). */
+void nj_mat_object(nj_mat4* out, const float pos[3], const float scl[3], const int32_t rot[3]);
+
 /* Ninja angle (0x10000 = 360 degrees) to radians */
 float nj_ang_to_rad(int32_t a);
 
