@@ -1,0 +1,13 @@
+# Portable engine pieces (no KOS dependency): built for the Dreamcast and for the host tests.
+add_library(bios_engine STATIC src/nj_model.c src/bios_vm.c src/dcbg.c)
+target_include_directories(bios_engine PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+target_link_libraries(bios_engine PUBLIC bios_rom)
+if (NOT CMAKE_CROSSCOMPILING)
+    target_link_libraries(bios_engine PUBLIC m)
+endif ()
+
+if (BUILD_PC)
+    add_executable(bios_engine_test test/bios_engine_test.c)
+    target_link_libraries(bios_engine_test PRIVATE bios_engine)
+    add_test(NAME bios_engine COMMAND bios_engine_test)
+endif ()

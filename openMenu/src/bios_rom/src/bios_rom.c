@@ -16,6 +16,12 @@
 #define TEXTURE_SCAN_END 0x90000u
 #define HEADER_SCAN_LEN 0x10000u
 
+#define MODEL_TABLE_OFFSET 0x6F3C0u
+#define TEXLIST_TABLE_OFFSET 0x6F25Cu
+#define MOTION_TABLE_OFFSET 0x6F524u
+#define DISC_LABEL_BUFFER 0x8C341368u   /* RAM buffer that receives the disc's 0GDTEX.PVR */
+#define DISC_LABEL_DEFAULT 0x8C077930u  /* default disc texture in the ROM */
+
 #define MESSAGE_STRIDE 20u
 #define MESSAGE_END_ID 0xFFFFu
 
@@ -242,6 +248,76 @@ bios_texture_find(const bios_rom* rom, uint32_t gbix, bios_texture* out) {
     tex_query q = {0, 0, gbix, 1, out};
     scan_textures(rom, visit_query, &q);
     return q.seen == -1 ? 0 : -1;
+}
+
+int
+bios_texture_at(const bios_rom* rom, uint32_t addr, bios_texture* out) {
+    if (!rom || !rom->data || !out) {
+        return -1;
+    }
+    if (addr == DISC_LABEL_BUFFER) {
+        addr = DISC_LABEL_DEFAULT;
+    }
+    if (addr < BIOS_ROM_RAM_BASE || addr - BIOS_ROM_RAM_BASE >= rom->size) {
+        return -1;
+    }
+    return parse_texture(rom, addr - BIOS_ROM_RAM_BASE, out);
+}
+
+/* ---- Models, motions, texlists --------------------------------------------- */
+
+static uint32_t
+table_entry(const bios_rom* rom, uint32_t table, int idx, int count) {
+    if (!rom || !rom->data || idx < 0 || idx >= count) {
+        return 0;
+    }
+    uint32_t addr = bios_rom_u32(rom, table + 4u * (uint32_t)idx);
+    return bios_rom_ptr(rom, addr, 1) ? addr : 0;
+}
+
+uint32_t
+bios_model_addr(const bios_rom* rom, int idx) {
+    return table_entry(rom, MODEL_TABLE_OFFSET, idx, BIOS_MODEL_COUNT);
+}
+
+uint32_t
+bios_motion_addr(const bios_rom* rom, int idx) {
+    return table_entry(rom, MOTION_TABLE_OFFSET, idx, BIOS_MOTION_COUNT);
+}
+
+uint32_t
+bios_texlist_addr(const bios_rom* rom, int idx) {
+    return table_entry(rom, TEXLIST_TABLE_OFFSET, idx, BIOS_MODEL_COUNT);
+}
+
+/* NJS_TEXLIST: { NJS_TEXNAME* textures; u32 count }, NJS_TEXNAME is 12 bytes and
+ * its first word points at a word holding the RAM address of the texture. */
+int
+bios_texlist_count(const bios_rom* rom, int idx) {
+    uint32_t t = bios_texlist_addr(rom, idx);
+    if (!t) {
+        return 0;
+    }
+    uint32_t n = bios_rom_u32(rom, t - BIOS_ROM_RAM_BASE + 4);
+    return n > 64 ? 0 : (int)n;
+}
+
+int
+bios_texlist_texture(const bios_rom* rom, int idx, int k, bios_texture* out) {
+    uint32_t t = bios_texlist_addr(rom, idx);
+    if (!t || k < 0 || k >= bios_texlist_count(rom, idx)) {
+        return -1;
+    }
+    uint32_t names = bios_rom_u32(rom, t - BIOS_ROM_RAM_BASE);
+    const uint8_t* name = bios_rom_ptr(rom, names + 12u * (uint32_t)k, 12);
+    if (!name) {
+        return -1;
+    }
+    uint32_t info = bios_rom_u32(rom, names + 12u * (uint32_t)k - BIOS_ROM_RAM_BASE);
+    if (!bios_rom_ptr(rom, info, 4)) {
+        return -1;
+    }
+    return bios_texture_at(rom, bios_rom_u32(rom, info - BIOS_ROM_RAM_BASE), out);
 }
 
 /* ---- Scripts ----------------------------------------------------------- */

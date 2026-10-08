@@ -84,6 +84,26 @@ int bios_texture_find(const bios_rom* rom, uint32_t gbix, bios_texture* out);
 /* Payload size in bytes for a texture, 0 for unsupported data types. */
 size_t bios_texture_payload_size(uint8_t data_type, uint16_t width, uint16_t height);
 
+/* Texture whose GBIX header is at RAM address `addr` (as stored in texlists).
+ * The disc-label buffer address used by the BIOS (0x8C341368) is mapped to the
+ * default disc texture inside the ROM. */
+int bios_texture_at(const bios_rom* rom, uint32_t addr, bios_texture* out);
+
+/* ---- Models, motions and texture lists --------------------------------------
+ * All three are tables of pointers (RAM addresses) in the menu image. */
+
+#define BIOS_MODEL_COUNT 83
+#define BIOS_MOTION_COUNT 20
+
+/* RAM address of the Ninja object tree / motion / texlist, 0 when empty or out of range. */
+uint32_t bios_model_addr(const bios_rom* rom, int idx);
+uint32_t bios_motion_addr(const bios_rom* rom, int idx);
+uint32_t bios_texlist_addr(const bios_rom* rom, int idx);
+
+/* Number of textures in texlist `idx`, and the k-th one resolved to its ROM texture. */
+int bios_texlist_count(const bios_rom* rom, int idx);
+int bios_texlist_texture(const bios_rom* rom, int idx, int k, bios_texture* out);
+
 /* ---- Menu scripts --------------------------------------------------------- */
 
 /* Number of entries in the script bytecode bank (88 on 1.01d). */
