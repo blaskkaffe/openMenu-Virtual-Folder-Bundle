@@ -11,7 +11,12 @@ endif()
 
 set(OPENMENU_SOURCES
         src/main.c
+        src/gfx.c
+        src/input.c
         src/launch.c
+        src/ui_bios.c
+        src/ui_fallback.c
+        src/ui_list.c
         src/backend/gdemu_sdk.c
 )
 
@@ -27,6 +32,7 @@ target_include_directories(openmenu
 
 target_link_libraries(openmenu
         PRIVATE
+        bios_engine
         bios_rom
         crayon_savefile
         ini
