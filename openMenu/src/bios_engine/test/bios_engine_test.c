@@ -190,6 +190,32 @@ build_scripts(void) {
 #define MODEL_AT 0x80000
 #define MOTION_AT 0x82000
 
+/* The 18 textures of the menu image: bios_rom_init uses them to recognise the layout. */
+static void
+build_textures(void) {
+    static const struct {
+        uint32_t off;
+        uint32_t gbix;
+        uint16_t w, h;
+    } tex[] = {
+        {0x0728B0, 18, 32, 32},  {0x0730D0, 17, 32, 32},  {0x0738F0, 32, 64, 64},   {0x075910, 12, 64, 64},
+        {0x077930, 0, 256, 256}, {0x07C150, 11, 32, 32},  {0x07C970, 114, 128, 32}, {0x07E990, 2, 32, 32},
+        {0x07F1B0, 3, 32, 32},   {0x07F9D0, 5, 32, 32},   {0x0801F0, 6, 32, 32},    {0x080A10, 7, 64, 64},
+        {0x082A30, 8, 32, 32},   {0x083250, 9, 128, 16},  {0x084270, 10, 128, 16},  {0x085290, 1, 8, 8},
+        {0x085330, 0, 256, 256}, {0x089B50, 114, 128, 32},
+    };
+    for (unsigned i = 0; i < sizeof(tex) / sizeof(tex[0]); i++) {
+        uint32_t o = tex[i].off;
+        memcpy(image + o, "GBIX", 4);
+        put32(o + 8, tex[i].gbix);
+        memcpy(image + o + 16, "PVRT", 4);
+        image[o + 24] = BIOS_PVR_ARGB4444;
+        image[o + 25] = tex[i].w == 256 ? BIOS_PVR_VQ : (tex[i].w == tex[i].h ? BIOS_PVR_TWIDDLED : BIOS_PVR_RECTANGLE);
+        put16(o + 28, tex[i].w);
+        put16(o + 30, tex[i].h);
+    }
+}
+
 static void
 build_model(void) {
     uint32_t base = 0x8C000000u;
@@ -610,6 +636,7 @@ main(void) {
     image = calloc(1, BIOS_ROM_SIZE);
     memcpy(image + 0x100, "SEGA SEGAKATANA KABUTO Ver.1.01d", 32);
     build_scripts();
+    build_textures();
     build_model();
 
     const char* dump = getenv("BIOS_TEST_DUMP"); /* write the synthetic ROM out, e.g. for bios_preview */
