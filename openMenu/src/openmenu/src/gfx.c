@@ -20,7 +20,7 @@
 #define MAX_TEXT_CHARS 42
 #define MAX_TEXT_W 512
 #define MAX_LABELS 16
-#define BG_Z 0.00001f
+#define BG_Z 0.001f /* 1/w of the gradient quad: behind everything (the clouds are at ~0.0026) */
 #define TEXT_Z_BIAS 0.00002f
 
 typedef struct {
@@ -393,6 +393,8 @@ void
 gfx_begin_frame(uint32_t top, uint32_t bottom) {
     frame_no++;
     pvr_wait_ready();
+    /* Where the gradient quad does not draw, show a mid blue instead of black. */
+    pvr_set_bg_color(0.45f, 0.60f, 0.80f);
     pvr_scene_begin();
 
     pvr_poly_cxt_t cxt;

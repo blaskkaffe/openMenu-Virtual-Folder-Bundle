@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <arch/timer.h>
 #include <dc/video.h>
 
 #include <bios_audio.h>
@@ -18,6 +19,11 @@
 #include "ui_settings.h"
 
 typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS } screen_t;
+
+/* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
+ * longer; the animations were written for that rate. */
+#define STEPS_PER_SECOND 60
+#define MAX_STEPS_PER_FRAME 4
 
 enum { ICON_GAME, ICON_FILES, ICON_MUSIC, ICON_SETTINGS };
 
@@ -40,6 +46,7 @@ static bmenu menu;
 static screen_t screen;
 static int settings_row;
 static int notice_frames;
+static char fps_text[16];
 static const char* notice_text;
 
 static char status_line[64];
@@ -120,6 +127,7 @@ draw_frame(void) {
     if (screen == SCREEN_MAIN) {
         gfx_text(status_line, TEXT_X, STATUS_Y, 0.5f, 0x80FFFFFFu, 0);
     }
+    gfx_text(fps_text, 500.0f, STATUS_Y, 0.5f, 0x60FFFFFFu, 0);
     if (notice_frames > 0 && notice_text) {
         gfx_text(notice_text, TEXT_X, screen == SCREEN_MAIN ? NOTICE_Y_MAIN : NOTICE_Y_PANEL, 0.5f, 0xFFFFFFFFu, 1);
     }
@@ -228,6 +236,11 @@ ui_bios_run(const bios_rom* rom) {
     }
     gfx_set_label(BMENU_ID_HEADER, "openMenu");
 
+    uint64_t last_ms = timer_ms_gettime64();
+    uint64_t fps_since = last_ms;
+    uint32_t step_credit = 0;
+    int frames_this_second = 0;
+
     for (;;) {
         button_t b = input_poll();
         if (screen == SCREEN_MAIN) {
@@ -240,7 +253,30 @@ ui_bios_run(const bios_rom* rom) {
         if (notice_frames > 0) {
             notice_frames--;
         }
-        bmenu_update(&menu);
+
+        /* Real-time logic steps: as many as the elapsed time asks for. */
+        uint64_t now = timer_ms_gettime64();
+        uint64_t elapsed = now - last_ms;
+        last_ms = now;
+        if (elapsed > 100) {
+            elapsed = 100; /* after a stall do not fast-forward */
+        }
+        step_credit += (uint32_t)elapsed * STEPS_PER_SECOND;
+        int steps = (int)(step_credit / 1000);
+        step_credit %= 1000;
+        if (steps > MAX_STEPS_PER_FRAME) {
+            steps = MAX_STEPS_PER_FRAME;
+        }
+        for (int i = 0; i < steps; i++) {
+            bmenu_update(&menu);
+        }
+
+        frames_this_second++;
+        if (now - fps_since >= 1000) {
+            snprintf(fps_text, sizeof(fps_text), "%d fps", frames_this_second);
+            frames_this_second = 0;
+            fps_since = now;
+        }
         draw_frame(); /* pvr_wait_ready() inside paces this to the display */
     }
     return 0;
