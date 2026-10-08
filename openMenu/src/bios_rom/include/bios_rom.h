@@ -6,9 +6,10 @@
  * everything is read from there in place. The module is plain C with no KOS
  * dependency so it can also be tested on a PC against a ROM dump.
  *
- * Offsets and layouts are those of boot ROM "KATANA KABUTO Ver.1.01d". Any
- * other revision is rejected by bios_rom_init() and the caller is expected to
- * fall back to something that does not need the ROM.
+ * Offsets and layouts are those of boot ROM "KATANA KABUTO Ver.1.01d". The menu image is
+ * byte-identical in 1.01c, 1.01d, 1.022 and 1.032, so bios_rom_init() accepts a ROM by its
+ * structure, not by its version. Anything else (1.004, early dev ROMs) is rejected and the
+ * caller is expected to fall back to something that does not need the ROM.
  */
 #ifndef BIOS_ROM_H
 #define BIOS_ROM_H
@@ -27,14 +28,14 @@ typedef enum bios_rom_status {
     BIOS_ROM_OK = 0,
     BIOS_ROM_ERR_ARGS = -1,
     BIOS_ROM_ERR_SIZE = -2,       /* smaller than 2 MiB */
-    BIOS_ROM_ERR_REVISION = -3,   /* not a supported boot ROM revision */
-    BIOS_ROM_ERR_LAYOUT = -4      /* version string matched but the known structures did not */
+    BIOS_ROM_ERR_REVISION = -3,   /* no boot ROM version tag in the image */
+    BIOS_ROM_ERR_LAYOUT = -4      /* a boot ROM, but not with the menu image layout we know (e.g. 1.004) */
 } bios_rom_status;
 
 typedef struct bios_rom {
     const uint8_t* data;
     size_t size;
-    char revision[8]; /* e.g. "1.01d", NUL terminated */
+    char revision[8]; /* from the ROM header, e.g. "1.01d", NUL terminated; informational */
 } bios_rom;
 
 /* Validate `data` (a ROM image or the memory-mapped ROM) and fill `rom`. */

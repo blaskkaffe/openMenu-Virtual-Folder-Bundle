@@ -47,7 +47,7 @@ typedef struct bscene_sink {
     void* user;
     /* One alpha blended triangle. */
     void (*triangle)(void* user, const bscene_vtx v[3], bscene_texref tex);
-    /* A text surface of object `obj`, w x h pixels with its top-left corner at (x, y). */
+    /* A text surface of object `obj` (text_w x text_h pixels) centred on (x, y). */
     void (*text)(void* user, const bvm_obj* obj, float x, float y, float invw);
 } bscene_sink;
 
