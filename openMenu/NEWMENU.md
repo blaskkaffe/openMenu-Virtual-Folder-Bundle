@@ -63,6 +63,14 @@ mode and saves them. Files and Music show "Not available yet".
 
 Still open: date/time and language settings, Files (memory card manager), Music (online).
 
+## Tested against real ROMs
+
+The host tests and the preview tool were run against the retail boot ROMs 1.01c, 1.01d, 1.022,
+1.032 (region-free build) and the 1.011 dev ROM: all 62 models, 18 motions, 18 textures, 88 scripts
+and the sound container load, and every script runs for 120 frames without error. Their menu image
+is byte-identical, so `bios_rom_init` accepts a ROM by structure, not version. 1.004 and the early
+dev ROMs (0.976, 1.001) have a different layout and fall back to the plain list.
+
 ## Not verified on hardware
 
 Phases 0 and 1 build in CI. Everything from Phase 2 on has only been syntax checked against the
