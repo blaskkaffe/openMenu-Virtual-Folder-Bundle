@@ -65,10 +65,8 @@ int bmenu_back_hit(float x, float y, float px, float py);
 void bmenu_update(bmenu* m);                          /* one 60 Hz frame */
 void bmenu_draw(bmenu* m, const bscene_sink* sink);   /* background layers, then all objects */
 
-/* The objects only. Every icon is drawn by two objects with the same model (the icon, id 0x200+i,
- * and its caption, id 0x300+i, a hair behind it); drawing both costs twice the triangles and
- * translucent layers for the picture of one slightly more opaque icon. This draws the icon once
- * with the alpha of two stacked layers and skips the caption object. */
+/* The objects only, every one of them as the BIOS draws it: each icon twice (objects 0x200+i and 0x300+i, two layers of
+ * about 60% make the 84% seen on screen). */
 void bmenu_draw_objects(bmenu* m, const bscene_sink* sink);
 
 #ifdef __cplusplus
