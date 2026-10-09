@@ -47,6 +47,27 @@ static const bios_rom* g_rom;
 
 static bitmap logo_bmp; /* optional replacement of the header logo, see biologo.py */
 
+/* BIOS_PREVIEW_ART_<n> (disc label of row n) and BIOS_PREVIEW_ART_CASE (front of the case): P6 PPM files */
+static int
+load_ppm(const char* path, bitmap* b) {
+    FILE* f = fopen(path, "rb");
+    int w, h, mx;
+    if (!f || fscanf(f, "P6 %d %d %d", &w, &h, &mx) != 3) {
+        if (f) fclose(f);
+        return 0;
+    }
+    fgetc(f);
+    b->px = malloc(sizeof(uint32_t) * (size_t)w * (size_t)h);
+    for (int i = 0; i < w * h; i++) {
+        int r = fgetc(f), g = fgetc(f), bl = fgetc(f);
+        b->px[i] = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)bl;
+    }
+    fclose(f);
+    b->w = w;
+    b->h = h;
+    return 1;
+}
+
 static const bitmap*
 lookup(bscene_texref ref) {
     if (logo_bmp.px && ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
@@ -62,6 +83,18 @@ lookup(bscene_texref ref) {
     }
     cached_tex* c = &cache[cache_n++];
     c->ref = ref;
+    {
+        char name[40] = "";
+        if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= 0x1000 && ref.b == 0) {
+            snprintf(name, sizeof(name), "BIOS_PREVIEW_ART_%d", ref.a - 0x1000);
+        } else if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END && ref.b == BMODEL_TEX_FRONT) {
+            snprintf(name, sizeof(name), "BIOS_PREVIEW_ART_CASE");
+        }
+        if (name[0] && getenv(name) && load_ppm(getenv(name), &c->bmp)) {
+            c->valid = 1;
+            return &c->bmp;
+        }
+    }
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END) {
         /* built-in models: a test chart for the front picture, plain white for the back */
         c->bmp.w = c->bmp.h = 64;
