@@ -151,3 +151,8 @@ everything else the red one - the same pairing the BIOS uses (blue on European c
   digit jumps to the next game starting with it. Mouse: the pointer is model 35 turned 225 degrees
   so its tip points to the top left; moving over a row selects it, left click = A, right click = B,
   the wheel scrolls. Both are written against the KOS maple API and untested on hardware.
+
+Window panels: the BIOS draws its windows with model 39 (four corners moved apart to the wanted size,
+dark translucent body, rim in the screen's accent colour: Game orange, Settings magenta). The date
+editor, the About box and the popups use it now (`bscene_draw_panel`). In the editor the green ovals
+are drawn under the names of the buttons, which start over the right half of the oval.

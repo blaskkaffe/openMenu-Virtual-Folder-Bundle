@@ -53,10 +53,10 @@ void bdt_sync(bdt* d);
 void bdt_draw(bdt* d, const bscene_sink* sink);
 
 /* Layout (pixels) for the caller's panel and text. */
-#define BDT_PANEL_X 110.0f
-#define BDT_PANEL_Y 104.0f
-#define BDT_PANEL_W 420.0f
-#define BDT_PANEL_H 272.0f
+#define BDT_PANEL_X 82.0f
+#define BDT_PANEL_Y 97.0f
+#define BDT_PANEL_W 476.0f
+#define BDT_PANEL_H 286.0f
 #define BDT_TEXT_Y 283.0f   /* top of the date line */
 #define BDT_BUTTON_X 413.0f /* centres of the Select (y 268) and Cancel (y 321) buttons */
 #define BDT_SELECT_Y 268.0f

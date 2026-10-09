@@ -76,6 +76,10 @@ typedef struct bscene {
     int stretch_on;
     float stretch_a, stretch_b, stretch_f;
     int no_decals; /* skip the polygons of texture 0: the pictures on the CD buttons */
+    /* window panel mode (see bscene_draw_panel): the four corners of model 39 are moved apart */
+    int panel_on;
+    float panel_fx, panel_fy;
+    uint32_t panel_accent;
     int fullbright; /* no shading by the light (the gold reverse of a disc looks shinier) */
     int double_alpha;  /* draw objects as if two identical layers were stacked (see bmenu_draw) */
     unsigned parts;    /* BSCENE_PART_* drawn by bscene_draw_object() */
@@ -89,6 +93,15 @@ void bscene_draw_objects(bscene* s, const bvm* vm, const bscene_sink* sink);
 void bscene_draw_object(bscene* s, const bvm_obj* obj, const bscene_sink* sink);
 
 /* The animated cloud layers behind the menu. */
+/* The BIOS window panel: model 39 with its four corners moved apart to cover the pixel rectangle
+ * x, y, w, h (as it looks at `z`, usually BSCENE_PANEL_Z). The rim takes the accent colour
+ * (0xAARRGGBB; the screens use orange 0xFFE07000, green 0xFF00E070, blue 0xFF0070E0, magenta
+ * 0xFFE00070 and light grey 0xFFE0E0E0), the body is dark and translucent. Drawn like any object:
+ * what is submitted afterwards goes on top. */
+#define BSCENE_PANEL_Z (-335.9375f)
+#define BSCENE_PANEL_MODEL 39
+void bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent, const bscene_sink* sink);
+
 void bscene_draw_background(const dcbg_state* bg, const bscene_sink* sink);
 
 /* Screen position of a world point under the BIOS camera. Returns 0 if it is behind the camera. */

@@ -139,6 +139,30 @@ double_alpha(uint32_t argb) {
 }
 
 void
+bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent, const bscene_sink* sink) {
+    /* the model's corners sit at +-10 units; the panel is w/25 units half wide (decompile: panel_mesh_fit_rect) */
+    float units_per_px = -BSCENE_PANEL_Z / 4000.0f;
+    bvm_obj o;
+    memset(&o, 0, sizeof(o));
+    o.active = 1;
+    o.flags = BVM_F_MODEL;
+    o.model = BSCENE_PANEL_MODEL;
+    o.pos[0] = (x + w / 2.0f - 320.0f) * units_per_px;
+    o.pos[1] = (240.0f - (y + h / 2.0f)) * units_per_px;
+    o.pos[2] = BSCENE_PANEL_Z;
+    o.scale_tw[0].cur = o.scale_tw[1].cur = o.scale_tw[2].cur = 1.0f;
+    s->panel_on = 1;
+    s->panel_fx = w * units_per_px / 2.0f - 10.0f;
+    s->panel_fy = h * units_per_px / 2.0f - 10.0f;
+    s->panel_accent = accent;
+    unsigned saved = s->parts;
+    s->parts = BSCENE_PART_MODEL;
+    bscene_draw_object(s, &o, sink);
+    s->parts = saved;
+    s->panel_on = 0;
+}
+
+void
 bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
     if (!o->active || (o->flags & BVM_F_HIDE)) {
         return;
@@ -175,6 +199,11 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                     scratch_ok[i] = 0;
                     if (vx->valid) {
                         nj_vec3 src = vx->pos;
+                        if (s->panel_on) { /* 37 vertices per corner: 0 top left, 1 top right, 2 bottom right, 3 bottom left */
+                            int q = i / 37;
+                            src.x += (q == 1 || q == 2) ? s->panel_fx : -s->panel_fx;
+                            src.y += (q == 2 || q == 3) ? s->panel_fy : -s->panel_fy;
+                        }
                         if (s->stretch_on) {
                             if (src.x > s->stretch_b) {
                                 src.x = s->stretch_a + (s->stretch_b - s->stretch_a) * s->stretch_f + (src.x - s->stretch_b);
@@ -226,6 +255,9 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         tex.b = poly->tex;
                     }
                     uint32_t poly_argb = poly->has_diffuse ? shade(poly->diffuse, offs) : 0;
+                    if (s->panel_on && p == 0) {
+                        poly_argb = s->panel_accent; /* the rim */
+                    }
                     if (poly->has_diffuse && s->double_alpha) {
                         poly_argb = double_alpha(poly_argb);
                     }

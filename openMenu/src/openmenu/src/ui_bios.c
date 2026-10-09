@@ -288,6 +288,12 @@ draw_games(void) {
 #define POPUP_W 400.0f
 #define POPUP_ROWS 8
 
+/* The window panels take the colour of their screen, as in the BIOS: orange for Game, magenta for Settings. */
+static uint32_t
+screen_accent(void) {
+    return screen == SCREEN_GAMES ? 0xFFE07000u : (screen == SCREEN_MAIN ? 0xFFE0E0E0u : 0xFFE00070u);
+}
+
 typedef const char* (*popup_name_fn)(int index);
 
 /* A BIOS-style popup list: title, a few rows with the selected one highlighted, a hint line. */
@@ -297,7 +303,7 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
     int first = sel >= POPUP_ROWS ? sel - POPUP_ROWS + 1 : 0;
     int rows = count < POPUP_ROWS ? count : POPUP_ROWS;
     float h = (float)(rows + 2) * GFX_LINE_H + 16.0f;
-    gfx_rect(POPUP_X, ROWS_Y - 40.0f, POPUP_W, h, 0.6f, 0xE0102050u);
+    bscene_draw_panel(&menu.scene, POPUP_X - 10.0f, ROWS_Y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), gfx_sink());
     gfx_text(title, POPUP_X + 16.0f, ROWS_Y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
     for (int i = 0; i < rows; i++) {
         float y = ROWS_Y + (float)i * GFX_LINE_H;
@@ -352,7 +358,7 @@ settings_sync(void) {
 static void
 draw_about(void) {
     char line[48];
-    gfx_rrect(120.0f, 100.0f, 400.0f, 250.0f, 12.0f, 0.6f, 0xE0102050u);
+    bscene_draw_panel(&menu.scene, 110.0f, 90.0f, 420.0f, 270.0f, screen_accent(), gfx_sink());
     gfx_text("About", 144.0f, 108.0f, 0.7f, 0xFFFFFFFFu, 1);
 #ifdef OPENMENU_BUILD_VERSION
     snprintf(line, sizeof(line), "openMenu  %.24s", OPENMENU_BUILD_VERSION);
@@ -391,7 +397,7 @@ static void
 draw_datetime(void) {
     static const char* const help[4] = {"Set Date/Time. L/R on the", "controller moves the cursor.", "U/D on the controller", "changes the settings."};
     char text[24];
-    gfx_rrect(BDT_PANEL_X, BDT_PANEL_Y, BDT_PANEL_W, BDT_PANEL_H, 12.0f, 0.4f, 0xD0203060u);
+    bscene_draw_panel(&menu.scene, BDT_PANEL_X, BDT_PANEL_Y, BDT_PANEL_W, BDT_PANEL_H, screen_accent(), gfx_sink());
     for (int i = 0; i < 4; i++) {
         gfx_text(help[i], 320.0f - (float)strlen(help[i]) * GFX_CHAR_W / 2.0f, BDT_PANEL_Y + 12.0f + (float)i * 26.0f, 0.5f,
                  0xFFFFFFFFu, 1);
@@ -399,9 +405,9 @@ draw_datetime(void) {
     bdt_draw(&dtedit, gfx_sink());
     bdt_format(&dtedit, text, sizeof(text));
     gfx_text(text, bdt_text_x(&dtedit), BDT_TEXT_Y, 0.5f, 0xFFFFFFFFu, 1);
-    /* the green ovals mark the buttons; their names stand to the right */
-    gfx_text("Select", BDT_BUTTON_X + 30.0f, BDT_SELECT_Y - 16.0f, 0.5f, 0xFFFFFFFFu, 1);
-    gfx_text("Cancel", BDT_BUTTON_X + 30.0f, BDT_CANCEL_Y - 16.0f, 0.5f, 0xFFFFFFFFu, 1);
+    /* the names are written over the right half of the green ovals, a little lower (as in the BIOS) */
+    gfx_text("Select", BDT_BUTTON_X + 9.0f, BDT_SELECT_Y - 14.0f, 0.5f, 0xFFD0D0D0u, 0);
+    gfx_text("Cancel", BDT_BUTTON_X + 9.0f, BDT_CANCEL_Y - 14.0f, 0.5f, 0xFFD0D0D0u, 0);
 }
 
 /* The mouse pointer: the BIOS' green triangle (model 35) turned so its tip points to the top left
