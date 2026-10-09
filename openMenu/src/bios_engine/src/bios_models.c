@@ -149,7 +149,7 @@ box(builder* b, int poly, float x0, float y0, float z0, float x1, float y1, floa
 
 /* Rectangular frustum standing on y: bottom half sizes (w0, d0) at y0, top (w1, d1) at y1, centred on (cx, cz). */
 static void
-frustum(builder* b, int poly, float cx, float cz, float y0, float y1, float w0, float d0, float w1, float d1) {
+frustum(builder* b, int poly, float cx, float cz, float y0, float y1, float w0, float d0, float w1, float d1, int bottom) {
     v3 bt[4] = {v3m(cx - w0, y0, cz - d0), v3m(cx + w0, y0, cz - d0), v3m(cx + w0, y0, cz + d0), v3m(cx - w0, y0, cz + d0)};
     v3 tp[4] = {v3m(cx - w1, y1, cz - d1), v3m(cx + w1, y1, cz - d1), v3m(cx + w1, y1, cz + d1), v3m(cx - w1, y1, cz + d1)};
     v3 mid = v3m(cx, (y0 + y1) / 2, cz);
@@ -159,12 +159,17 @@ frustum(builder* b, int poly, float cx, float cz, float y0, float y1, float w0, 
         quad(b, poly, bt[i], bt[j], tp[j], tp[i], NULL, sub(fc, mid));
     }
     quad(b, poly, tp[0], tp[1], tp[2], tp[3], NULL, v3m(0, 1, 0));
-    quad(b, poly, bt[0], bt[1], bt[2], bt[3], NULL, v3m(0, -1, 0));
+    if (bottom) {
+        quad(b, poly, bt[0], bt[1], bt[2], bt[3], NULL, v3m(0, -1, 0));
+    }
 }
+
+#define CAP_BOTTOM 1
+#define CAP_TOP 2
 
 /* Cylinder (or cone frustum) from base centre `c` along `axis`; smooth radial normals on the side. */
 static void
-cylinder(builder* b, int side_poly, int cap_poly, int seg, v3 c, v3 axis, float r0, float r1, float len) {
+cylinder(builder* b, int side_poly, int cap_poly, int caps, int seg, v3 c, v3 axis, float r0, float r1, float len) {
     v3 a = norm(axis);
     v3 ref = fabsf(a.y) < 0.9f ? v3m(0, 1, 0) : v3m(1, 0, 0);
     v3 u = norm(cross(a, ref)), v = cross(a, u);
@@ -179,11 +184,11 @@ cylinder(builder* b, int side_poly, int cap_poly, int seg, v3 c, v3 axis, float 
         v3 out = add(d0, d1);
         tri(b, side_poly, q1, n1, NULL, out);
         tri(b, side_poly, q2, n2, NULL, out);
-        if (r1 > 0.0f) {
+        if ((caps & CAP_TOP) && r1 > 0.0f) {
             v3 f[3] = {top, t0p, t1p};
             tri(b, cap_poly, f, NULL, NULL, a);
         }
-        if (r0 > 0.0f) {
+        if ((caps & CAP_BOTTOM) && r0 > 0.0f) {
             v3 f[3] = {c, b0, b1};
             tri(b, cap_poly, f, NULL, NULL, mul(a, -1.0f));
         }
@@ -267,57 +272,48 @@ build_phone(builder* b) {
     int white = poly_new(b, -1, 0xFFFFFFFFu, 0);
     int hub = poly_new(b, -1, 0xFFD2D2E6u, 0);
 
-    /* base, wider at the foot */
-    frustum(b, body, 0.0f, 0.0f, 0.0f, 2.4f, 4.6f, 3.6f, 3.8f, 3.0f);
+    /* base, wider at the foot (the underside is never seen) */
+    frustum(b, body, 0.0f, 0.0f, 0.0f, 2.4f, 4.6f, 3.6f, 3.8f, 3.0f, 0);
     /* dial plate and the white dial disc, tilted toward the viewer */
     v3 tilt = norm(v3m(0.0f, cosf(0.55f), sinf(0.55f)));
     v3 centre = v3m(0.0f, 2.4f, 0.9f);
-    cylinder(b, dark, dark, 24, add(centre, mul(tilt, -0.05f)), tilt, 2.75f, 2.75f, 0.35f);
-    cylinder(b, white, white, 24, add(centre, mul(tilt, 0.3f)), tilt, 2.3f, 2.3f, 0.35f);
-    cylinder(b, hub, hub, 12, add(centre, mul(tilt, 0.65f)), tilt, 0.75f, 0.6f, 0.25f);
+    cylinder(b, dark, dark, 0, 12, add(centre, mul(tilt, -0.05f)), tilt, 2.75f, 2.75f, 0.35f);
+    cylinder(b, white, white, CAP_TOP, 12, add(centre, mul(tilt, 0.3f)), tilt, 2.3f, 2.3f, 0.35f);
+    cylinder(b, hub, hub, CAP_TOP, 8, add(centre, mul(tilt, 0.65f)), tilt, 0.75f, 0.6f, 0.25f);
     /* cradle posts under the handset cups */
-    cylinder(b, dark, dark, 8, v3m(-3.4f, 2.4f, -1.6f), v3m(0, 1, 0), 0.5f, 0.5f, 1.5f);
-    cylinder(b, dark, dark, 8, v3m(3.4f, 2.4f, -1.6f), v3m(0, 1, 0), 0.5f, 0.5f, 1.5f);
+    cylinder(b, dark, dark, 0, 6, v3m(-3.4f, 2.4f, -1.6f), v3m(0, 1, 0), 0.5f, 0.5f, 1.5f);
+    cylinder(b, dark, dark, 0, 6, v3m(3.4f, 2.4f, -1.6f), v3m(0, 1, 0), 0.5f, 0.5f, 1.5f);
     /* handset: grip bar and the two cups */
     box(b, light, -3.4f, 4.5f, -2.0f, 3.4f, 5.3f, -1.2f);
-    cylinder(b, light, body, 14, v3m(-3.4f, 3.9f, -1.6f), v3m(0, 1, 0), 1.05f, 1.15f, 1.5f);
-    cylinder(b, light, body, 14, v3m(3.4f, 3.9f, -1.6f), v3m(0, 1, 0), 1.05f, 1.15f, 1.5f);
+    cylinder(b, light, body, CAP_TOP, 10, v3m(-3.4f, 3.9f, -1.6f), v3m(0, 1, 0), 1.05f, 1.15f, 1.5f);
+    cylinder(b, light, body, CAP_TOP, 10, v3m(3.4f, 3.9f, -1.6f), v3m(0, 1, 0), 1.05f, 1.15f, 1.5f);
 }
 
-#define GLOBE_LON 24
-#define GLOBE_LAT 12
-#define GLOBE_R_SEA 3.9f
-#define GLOBE_R_LAND 4.1f
-/* Coarse map, 15 degree cells, north to south, west (180W) to east. '#' is land. */
+#define GLOBE_LON 14
+#define GLOBE_LAT 7
+#define GLOBE_R 4.0f
+/* Coarse map, cells of about 26 degrees, north to south, west (180W) to east. '#' is land. */
 static const char* const globe_map[GLOBE_LAT] = {
-    "........###.............", /* 90N - 75N */
-    ".##########.############", /* 75N - 60N */
-    ".#######...#############", /* 60N - 45N */
-    "...#####...##.########..", /* 45N - 30N */
-    "....###....#####.####...", /* 30N - 15N */
-    "......###..#####.#.###..", /* 15N - 0 */
-    ".......###..###....####.", /* 0 - 15S */
-    ".......##....##....####.", /* 15S - 30S */
-    ".......#.....#.....###.#", /* 30S - 45S */
-    ".......#................", /* 45S - 60S */
-    "......##..#####..######.", /* 60S - 75S */
-    "########################", /* 75S - 90S */
+    "....##........", /* 90N - 64N */
+    ".####.########", /* 64N - 39N */
+    "..###.#######.", /* 39N - 13N */
+    "....#####.###.", /* 13N - 13S */
+    "....##.##..##.", /* 13S - 39S */
+    "....#........#", /* 39S - 64S */
+    "##############", /* 64S - 90S */
 };
 
 static int
 globe_land(int lon, int lat) {
-    if (lat < 0 || lat >= GLOBE_LAT) {
-        return 0;
-    }
     lon = ((lon % GLOBE_LON) + GLOBE_LON) % GLOBE_LON;
     return globe_map[lat][lon] == '#';
 }
 
 static v3
-sphere_pt(int lon, int lat, float r) {
+sphere_pt(int lon, int lat) {
     float lam = (-PI_F) + 2 * PI_F * lon / GLOBE_LON; /* longitude, 0 faces +z */
     float phi = PI_F / 2 - PI_F * lat / GLOBE_LAT;
-    return v3m(r * cosf(phi) * sinf(lam), r * sinf(phi), r * cosf(phi) * cosf(lam));
+    return v3m(GLOBE_R * cosf(phi) * sinf(lam), GLOBE_R * sinf(phi), GLOBE_R * cosf(phi) * cosf(lam));
 }
 
 /* Rotate about z by `a` radians (the tilt of the earth's axis) */
@@ -330,76 +326,42 @@ static void
 build_globe(builder* b) {
     int sea = poly_new(b, -1, 0xFF2D6EDCu, 0);
     int land = poly_new(b, -1, 0xFF3CB43Cu, 0);
-    int cliff = poly_new(b, -1, 0xFF2A7F2Au, 0);
     int metal = poly_new(b, -1, 0xFFC8C8D2u, 0);
-    int dark = poly_new(b, -1, 0xFF5A5A6Eu, 0);
     const float tilt = 0.41f; /* 23.5 degrees */
-    const v3 gc = v3m(0.0f, 5.6f, 0.0f);
+    const v3 gc = v3m(0.0f, 5.4f, 0.0f);
 
     for (int lat = 0; lat < GLOBE_LAT; lat++) {
         for (int lon = 0; lon < GLOBE_LON; lon++) {
-            int is_land = globe_land(lon, lat);
-            float r = is_land ? GLOBE_R_LAND : GLOBE_R_SEA;
-            v3 p00 = add(gc, tilt_z(sphere_pt(lon, lat, r), tilt));
-            v3 p10 = add(gc, tilt_z(sphere_pt(lon + 1, lat, r), tilt));
-            v3 p01 = add(gc, tilt_z(sphere_pt(lon, lat + 1, r), tilt));
-            v3 p11 = add(gc, tilt_z(sphere_pt(lon + 1, lat + 1, r), tilt));
-            v3 mid = mul(add(add(p00, p10), add(p01, p11)), 0.25f);
-            v3 out = sub(mid, gc);
-            int pm = is_land ? land : sea;
-            if (lat == 0) {
-                v3 t[3] = {p00, p10, p01};
+            int pm = globe_land(lon, lat) ? land : sea;
+            v3 p00 = add(gc, tilt_z(sphere_pt(lon, lat), tilt));
+            v3 p10 = add(gc, tilt_z(sphere_pt(lon + 1, lat), tilt));
+            v3 p01 = add(gc, tilt_z(sphere_pt(lon, lat + 1), tilt));
+            v3 p11 = add(gc, tilt_z(sphere_pt(lon + 1, lat + 1), tilt));
+            v3 out = sub(mul(add(add(p00, p10), add(p01, p11)), 0.25f), gc);
+            if (lat == 0) { /* the quad collapses to a triangle at the pole */
+                v3 t[3] = {p00, p11, p01};
                 tri(b, pm, t, NULL, NULL, out);
-                v3 t2[3] = {p10, p11, p01};
-                tri(b, pm, t2, NULL, NULL, out);
             } else if (lat == GLOBE_LAT - 1) {
                 v3 t[3] = {p00, p10, p01};
                 tri(b, pm, t, NULL, NULL, out);
-                v3 t2[3] = {p10, p11, p01};
-                tri(b, pm, t2, NULL, NULL, out);
             } else {
                 quad(b, pm, p00, p10, p11, p01, NULL, out);
             }
-            if (is_land) {
-                /* cliffs toward neighbouring sea cells, from the sea level up to the land */
-                int nl[4][2] = {{lon - 1, lat}, {lon + 1, lat}, {lon, lat - 1}, {lon, lat + 1}};
-                for (int k = 0; k < 4; k++) {
-                    int nlat = nl[k][1];
-                    if (nlat < 0 || nlat >= GLOBE_LAT || globe_land(nl[k][0], nlat)) {
-                        continue;
-                    }
-                    int ea = (k < 2) ? lon + k : lon, la = (k < 2) ? lat : lat + (k - 2);
-                    int eb = (k < 2) ? lon + k : lon + 1, lb = (k < 2) ? lat + 1 : lat + (k - 2);
-                    v3 hi0 = add(gc, tilt_z(sphere_pt(ea, la, GLOBE_R_LAND), tilt));
-                    v3 hi1 = add(gc, tilt_z(sphere_pt(eb, lb, GLOBE_R_LAND), tilt));
-                    v3 lo0 = add(gc, tilt_z(sphere_pt(ea, la, GLOBE_R_SEA), tilt));
-                    v3 lo1 = add(gc, tilt_z(sphere_pt(eb, lb, GLOBE_R_SEA), tilt));
-                    v3 fc = mul(add(add(hi0, hi1), add(lo0, lo1)), 0.25f);
-                    v3 dir = sub(fc, mid); /* away from the land cell's own middle */
-                    quad(b, cliff, lo0, lo1, hi1, hi0, NULL, dir);
-                }
-            }
         }
     }
-    /* the stand: foot, stem and the half ring that holds the earth (in the x-y plane, under the globe) */
-    cylinder(b, metal, dark, 20, v3m(0, 0, 0), v3m(0, 1, 0), 2.4f, 2.0f, 0.5f);
-    cylinder(b, metal, metal, 10, v3m(0, 0.5f, 0), v3m(0, 1, 0), 0.4f, 0.4f, 1.0f);
-    const int steps = 14;
-    const float ring_r = 4.7f, th = 0.22f;
+    /* the stand: foot, stem and a half ring under the earth (in the x-y plane) */
+    cylinder(b, metal, metal, CAP_TOP, 10, v3m(0, 0, 0), v3m(0, 1, 0), 2.3f, 1.9f, 0.5f);
+    cylinder(b, metal, metal, 0, 6, v3m(0, 0.5f, 0), v3m(0, 1, 0), 0.4f, 0.4f, 0.9f);
+    const int steps = 6;
+    const float ring_r = 4.6f, th = 0.22f;
     for (int i = 0; i < steps; i++) {
         float a0 = PI_F * (1.15f + 0.7f * i / steps), a1 = PI_F * (1.15f + 0.7f * (i + 1) / steps);
         v3 q0 = add(gc, v3m(ring_r * cosf(a0), ring_r * sinf(a0), 0)), q1 = add(gc, v3m(ring_r * cosf(a1), ring_r * sinf(a1), 0));
         v3 s = v3m(0, 0, th);
-        v3 r0 = norm(sub(q0, gc)), r1 = norm(sub(q1, gc));
-        v3 in0 = mul(r0, th), in1 = mul(r1, th);
-        v3 o0f = add(q0, s), o1f = add(q1, s), o0b = sub(q0, s), o1b = sub(q1, s);
-        v3 i0f = sub(o0f, in0), i1f = sub(o1f, in1), i0b = sub(o0b, in0), i1b = sub(o1b, in1);
-        v3 oc = mul(add(q0, q1), 0.5f);
-        v3 outd = sub(oc, gc);
-        quad(b, metal, o0f, o1f, o1b, o0b, NULL, outd);           /* outside */
-        quad(b, metal, i0f, i1f, i1b, i0b, NULL, mul(outd, -1));  /* inside */
-        quad(b, metal, i0f, i1f, o1f, o0f, NULL, v3m(0, 0, 1));   /* front */
-        quad(b, metal, i0b, i1b, o1b, o0b, NULL, v3m(0, 0, -1));  /* back */
+        v3 outd = sub(mul(add(q0, q1), 0.5f), gc);
+        quad(b, metal, add(q0, s), add(q1, s), sub(q1, s), sub(q0, s), NULL, outd); /* outside */
+        quad(b, metal, add(q0, s), add(q1, s), add(q1, mul(norm(sub(q1, gc)), -2 * th)), add(q0, mul(norm(sub(q0, gc)), -2 * th)), NULL,
+             v3m(0, 0, 1)); /* front */
     }
 }
 
@@ -433,7 +395,7 @@ build_case(builder* b, uint32_t spine_c, uint32_t tray_c, uint32_t edge_c, int p
     if (pal) {
         /* white band and a small round mark on the blue spine, in the manner of the PAL cases */
         box(b, mark, -hw - 0.02f, hh - 2.2f * S, -hd + 0.1f * S, -hw + 0.02f, hh - 1.9f * S, hd - 0.1f * S);
-        cylinder(b, mark, mark, 16, v3m(-hw - 0.03f, 0.0f, 0.0f), v3m(1, 0, 0), 0.28f * S * 2, 0.28f * S * 2, 0.02f);
+        box(b, mark, -hw - 0.03f, -0.4f * S, -0.4f * S, -hw + 0.02f, 0.4f * S, 0.4f * S);
     } else {
         box(b, mark, -hw - 0.02f, -hh + 0.6f * S, -hd + 0.15f * S, -hw + 0.02f, hh - 0.6f * S, hd - 0.15f * S);
     }

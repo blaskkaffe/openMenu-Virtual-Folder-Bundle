@@ -802,6 +802,11 @@ test_models(const bios_rom* rom) {
             }
         }
         CHECK(bad_winding == 0);
+        int total = 0;
+        for (int p = 0; p < m->npolys; p++) {
+            total += m->polys[p].ntris;
+        }
+        CHECK(total <= 250); /* budget: about what the main screen icons use (the music note has 234) */
         if (id == BMODEL_CASE_WHITE || id == BMODEL_CASE_PAL) {
             CHECK(front_tris == 2 && back_tris == 2); /* one picture slot on the front, one on the back */
         } else {
