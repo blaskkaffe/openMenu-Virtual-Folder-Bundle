@@ -23,6 +23,10 @@ set(OPENMENU_SOURCES
 
 add_executable(openmenu ${OPENMENU_SOURCES})
 
+# Triangle submission: 0 = pvr_prim (default), 1 = direct rendering (store queues), see gfx.c
+set(GFX_USE_DR 0 CACHE STRING "Submit triangles with direct rendering (experimental)")
+target_compile_definitions(openmenu PRIVATE GFX_USE_DR=${GFX_USE_DR})
+
 # Pass version string as compile definition
 target_compile_definitions(openmenu PRIVATE OPENMENU_BUILD_VERSION="${OPENMENU_VERSION}")
 
