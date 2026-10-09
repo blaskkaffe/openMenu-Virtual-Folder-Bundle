@@ -12,6 +12,8 @@
 
 #include <bios_menu.h>
 
+#include <bios_menu.h>
+
 #include "gfx.h"
 
 #define MAX_LOGO_FILE (256 * 1024)
@@ -44,6 +46,24 @@ static rom_tex logo_tex;
 static text_tex text_texes[MAX_TEXT_ENTRIES];
 static uint32_t frame_no;
 static unsigned tri_count;
+static pvr_dr_state_t dr_state; /* direct rendering: writes go straight to the store queues */
+static int dr_active;
+
+/* pvr_txr_load() uses the store queues too, which direct rendering holds locked: give them
+ * back around texture uploads that happen while a frame is being built. */
+static void
+dr_suspend(void) {
+    if (dr_active) {
+        pvr_dr_finish();
+    }
+}
+
+static void
+dr_resume(void) {
+    if (dr_active) {
+        pvr_dr_init(&dr_state);
+    }
+}
 
 static struct {
     uint16_t id;
@@ -181,7 +201,7 @@ gfx_load_logo(const char* path) {
 static void
 send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
     pvr_poly_cxt_t cxt;
-    pvr_poly_hdr_t hdr;
+    pvr_poly_hdr_t hdr; /* unused: compiled in place in the store queue */
 
     if (tex) {
         pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY, tex->fmt, tex->w, tex->h, tex->ptr, PVR_FILTER_BILINEAR);
@@ -194,8 +214,10 @@ send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
     cxt.gen.culling = PVR_CULLING_NONE;
     cxt.blend.src = PVR_BLEND_SRCALPHA;
     cxt.blend.dst = PVR_BLEND_INVSRCALPHA;
-    pvr_poly_compile(&hdr, &cxt);
-    pvr_prim(&hdr, sizeof(hdr));
+    pvr_poly_hdr_t* target = (pvr_poly_hdr_t*)pvr_dr_target(dr_state);
+    pvr_poly_compile(target, &cxt);
+    pvr_dr_commit(target);
+    (void)hdr;
 }
 
 static void
@@ -213,16 +235,16 @@ ensure_header(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
 
 static void
 send_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last) {
-    pvr_vertex_t vert;
-    vert.flags = last ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
-    vert.x = x;
-    vert.y = y;
-    vert.z = z;
-    vert.u = u;
-    vert.v = v;
-    vert.argb = argb;
-    vert.oargb = 0;
-    pvr_prim(&vert, sizeof(vert));
+    pvr_vertex_t* vert = pvr_dr_target(dr_state);
+    vert->flags = last ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
+    vert->x = x;
+    vert->y = y;
+    vert->z = z;
+    vert->u = u;
+    vert->v = v;
+    vert->argb = argb;
+    vert->oargb = 0;
+    pvr_dr_commit(vert);
 }
 
 static void
@@ -263,7 +285,9 @@ sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
         /* The anchor of a text surface is its centre (checked against the BIOS layout:
          * the caption pills line up with it), so centre the string on it. */
         float w = (float)strlen(label) * GFX_CHAR_W;
-        gfx_text(label, x - w / 2.0f, y - (float)GFX_LINE_H / 2.0f, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, 1);
+        int header = obj->id == BMENU_ID_HEADER; /* dark text on the light header bar, as in the BIOS */
+        gfx_text(label, x - w / 2.0f, y - (float)GFX_LINE_H / 2.0f, invw + TEXT_Z_BIAS, header ? 0xFF303030u : 0xFFFFFFFFu,
+                 !header);
     }
 }
 
@@ -355,7 +379,9 @@ get_text_texture(const char* str) {
 
     memset(text_canvas, 0, (size_t)w * GFX_LINE_H * 2);
     bfont_draw_str_ex(text_canvas, (uint32_t)w, 0xFFFF, 0, 16, 0, victim->str);
+    dr_suspend();
     pvr_txr_load(text_canvas, victim->ptr, (size_t)w * GFX_LINE_H * 2);
+    dr_resume();
     return victim;
 }
 
@@ -408,22 +434,32 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
     pvr_poly_cxt_t cxt;
     pvr_poly_hdr_t hdr;
     pvr_list_begin(PVR_LIST_OP_POLY);
+    pvr_dr_init(&dr_state);
+    dr_active = 1;
     pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
     cxt.gen.culling = PVR_CULLING_NONE;
-    pvr_poly_compile(&hdr, &cxt);
-    pvr_prim(&hdr, sizeof(hdr));
+    pvr_poly_hdr_t* target = (pvr_poly_hdr_t*)pvr_dr_target(dr_state);
+    pvr_poly_compile(target, &cxt);
+    pvr_dr_commit(target);
+    (void)hdr;
     send_vertex(0.0f, 0.0f, BG_Z, 0, 0, top, 0);
     send_vertex(640.0f, 0.0f, BG_Z, 0, 0, top, 0);
     send_vertex(0.0f, 480.0f, BG_Z, 0, 0, bottom, 0);
     send_vertex(640.0f, 480.0f, BG_Z, 0, 0, bottom, 1);
+    pvr_dr_finish();
+    dr_active = 0;
     pvr_list_finish();
 
     pvr_list_begin(PVR_LIST_TR_POLY);
+    pvr_dr_init(&dr_state);
+    dr_active = 1;
     hdr_valid = 0;
 }
 
 void
 gfx_end_frame(void) {
+    pvr_dr_finish();
+    dr_active = 0;
     pvr_list_finish();
     pvr_scene_finish();
 }

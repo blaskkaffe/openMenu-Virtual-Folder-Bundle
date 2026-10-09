@@ -8,8 +8,18 @@
 #define NEAR_Z (-1.0f) /* anything closer than this to the camera plane is dropped */
 #define MAX_MESH_VERTS 4096 /* nj_model never produces more */
 
+/* The BIOS lights its models with one directional light that shines along the view
+ * direction (0, 0, -1), plus an ambient term (nj_set_screen_params(0.5, 0.5, 0.5) in the
+ * menu init). The colour is the material colour times (ambient + diffuse * N.L). The exact
+ * light intensities live in data I could not pin down, so the split below is a tuned guess. */
+#define LIGHT_AMBIENT 0.5f
+#define LIGHT_DIFFUSE 0.5f
+#define STRIP_IGNORE_LIGHT 0x01
+#define STRIP_DOUBLE_SIDED 0x10
+
 /* Per-object scratch for projected vertices (the engine is single threaded). */
 static float scratch_x[MAX_MESH_VERTS], scratch_y[MAX_MESH_VERTS], scratch_w[MAX_MESH_VERTS];
+static float scratch_l[MAX_MESH_VERTS]; /* light factor per vertex */
 static uint8_t scratch_ok[MAX_MESH_VERTS];
 
 void
@@ -94,6 +104,18 @@ shade(uint32_t base, const float* offs) {
            | ((uint32_t)(c[2] * 255.0f + 0.5f) << 8) | (uint32_t)(c[3] * 255.0f + 0.5f);
 }
 
+/* Multiply the colour channels (not the alpha) by f, clamped to 1. */
+static uint32_t
+scale_rgb(uint32_t argb, float f) {
+    if (f >= 0.999f) {
+        return argb;
+    }
+    uint32_t r = (uint32_t)((float)((argb >> 16) & 255) * f + 0.5f);
+    uint32_t g = (uint32_t)((float)((argb >> 8) & 255) * f + 0.5f);
+    uint32_t b = (uint32_t)((float)(argb & 255) * f + 0.5f);
+    return (argb & 0xFF000000u) | (r << 16) | (g << 8) | b;
+}
+
 void
 bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
     if (!o->active || (o->flags & BVM_F_HIDE)) {
@@ -127,6 +149,12 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                     if (vx->valid) {
                         nj_vec3 w = nj_mat_apply(&m, vx->pos);
                         scratch_ok[i] = (uint8_t)bscene_project(w, &scratch_x[i], &scratch_y[i], &scratch_w[i]);
+                        /* only the z of the rotated normal matters for a light along the view axis */
+                        float nz = vx->has_nrm ? m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z : 1.0f;
+                        scratch_l[i] = LIGHT_AMBIENT + LIGHT_DIFFUSE * (nz > 0.0f ? (nz > 1.0f ? 1.0f : nz) : 0.0f);
+                        if (!vx->has_nrm) {
+                            scratch_l[i] = 1.0f;
+                        }
                     }
                 }
 
@@ -139,6 +167,8 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         tex.b = poly->tex;
                     }
                     uint32_t poly_argb = poly->has_diffuse ? shade(poly->diffuse, offs) : 0;
+                    int lit = !(poly->strip_flags & STRIP_IGNORE_LIGHT);
+                    int cull = !(poly->strip_flags & STRIP_DOUBLE_SIDED);
                     for (int t = 0; t < poly->ntris; t++) {
                         bscene_vtx v[3];
                         int ok = 1;
@@ -150,12 +180,21 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                             v[k].invw = scratch_w[c->idx];
                             v[k].u = c->u;
                             v[k].v = c->v;
+                            uint32_t base;
                             if (poly->has_diffuse) {
-                                v[k].argb = poly_argb;
+                                base = poly_argb;
                             } else {
                                 const nj_vertex* vx = &mesh->verts[c->idx];
-                                v[k].argb = shade(vx->has_col ? vx->col : 0xFFFFFFFFu, offs);
+                                base = shade(vx->has_col ? vx->col : 0xFFFFFFFFu, offs);
                             }
+                            v[k].argb = lit ? scale_rgb(base, scratch_l[c->idx]) : base;
+                        }
+                        if (ok && cull) {
+                            /* Front faces are counter-clockwise in view space (all the menu models are
+                             * wound that way); the screen's y axis points down, so they come out with
+                             * a negative area here. Back faces are not drawn. */
+                            float area = (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (v[1].y - v[0].y);
+                            ok = area < 0.0f;
                         }
                         if (ok) {
                             sink->triangle(sink->user, v, tex);
