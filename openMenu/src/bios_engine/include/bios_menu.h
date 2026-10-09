@@ -41,6 +41,9 @@ void bmenu_free(bmenu* m);
 /* (Re)create the main menu objects with icon `selected` highlighted. */
 void bmenu_show_main(bmenu* m, int selected);
 
+/* Select icon `i` directly (the mouse). Returns 1 if the selection changed. */
+int bmenu_select(bmenu* m, int i);
+
 /* D-pad on the 2x2 icon grid. Returns 1 if the selection changed. */
 int bmenu_move(bmenu* m, bmenu_dir dir);
 

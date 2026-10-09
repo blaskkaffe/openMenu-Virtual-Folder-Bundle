@@ -13,6 +13,7 @@
 #include "bios_rom.h"
 #include "bios_vm.h"
 #include "dcbg.h"
+#include "bios_datetime.h"
 #include "bios_list.h"
 #include "bios_page.h"
 #include "bios_scene.h"
@@ -726,6 +727,47 @@ test_list(const bios_rom* rom) {
 }
 
 static void
+test_datetime(const bios_rom* rom) {
+    static bmenu m;
+    static bdt d;
+    char text[32];
+    bmenu_init(&m, rom, NULL);
+    CHECK(bdt_days_in_month(2024, 2) == 29 && bdt_days_in_month(2100, 2) == 28 && bdt_days_in_month(2000, 2) == 29);
+    CHECK(bdt_days_in_month(2023, 4) == 30 && bdt_days_in_month(2023, 12) == 31);
+    bdt_open(&d, &m, BDT_ORDER_MDY, 2024, 1, 31, 23, 59);
+    CHECK(d.cursor == BDT_MONTH);
+    bdt_format(&d, text, sizeof(text));
+    CHECK(!strcmp(text, "01/31/2024 23:59"));
+    CHECK(bdt_change(&d, 1) == 1 && d.month == 2 && d.day == 29); /* the day follows the month */
+    CHECK(bdt_move(&d, 1) == 1 && d.cursor == BDT_DAY);
+    CHECK(bdt_move(&d, 1) == 1 && d.cursor == BDT_YEAR);
+    bdt_change(&d, -1);
+    CHECK(d.year == 2023 && d.day == 28); /* 29 Feb 2023 does not exist */
+    CHECK(bdt_move(&d, 1) == 1 && d.cursor == BDT_HOUR);
+    bdt_change(&d, 1);
+    CHECK(d.hour == 0); /* 23 wraps to 0 */
+    CHECK(bdt_move(&d, 1) == 1 && d.cursor == BDT_MINUTE);
+    bdt_change(&d, 1);
+    CHECK(d.minute == 0);
+    CHECK(bdt_move(&d, 1) == 1 && d.cursor == BDT_SELECT);
+    CHECK(bdt_move(&d, 1) == 0);
+    CHECK(bdt_change(&d, -1) == 1 && d.cursor == BDT_CANCEL);
+    CHECK(bdt_change(&d, 1) == 1 && d.cursor == BDT_SELECT);
+    CHECK(bdt_move(&d, -1) == 1 && d.cursor == BDT_MINUTE);
+    bdt_open(&d, &m, BDT_ORDER_YMD, 1950, 12, 1, 0, 0);
+    CHECK(d.cursor == BDT_YEAR);
+    bdt_change(&d, -1);
+    CHECK(d.year == BDT_YEAR_MAX); /* the year wraps from 1950 to 2085 */
+    bdt_format(&d, text, sizeof(text));
+    CHECK(!strcmp(text, "2085/12/01 00:00"));
+    bdt_open(&d, &m, BDT_ORDER_DMY, 2026, 3, 9, 8, 5);
+    bdt_format(&d, text, sizeof(text));
+    CHECK(!strcmp(text, "09/03/2026 08:05") && d.cursor == BDT_DAY);
+    bdt_sync(&d);
+    bmenu_free(&m);
+}
+
+static void
 test_page(const bios_rom* rom) {
     static bmenu m;
     static bpage p;
@@ -774,6 +816,7 @@ main(void) {
     test_scene(&rom);
     test_page(&rom);
     test_list(&rom);
+    test_datetime(&rom);
 
     const char* real = getenv("BIOS_ROM_FILE");
     if (real && *real) {

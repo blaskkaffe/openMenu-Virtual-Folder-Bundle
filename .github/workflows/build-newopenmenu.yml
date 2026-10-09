@@ -29,6 +29,9 @@ jobs:
           gcc -std=c99 -Wall -Wextra -Werror -IopenMenu/src/openmenu/src \
             openMenu/src/openmenu/test/serial_region_test.c openMenu/src/openmenu/src/serial_region.c -o serial_region_test
           ./serial_region_test
+          gcc -std=c99 -Wall -Wextra -Werror -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/clock_test.c openMenu/src/openmenu/src/clock_math.c -o clock_test
+          ./clock_test
 
       - uses: docker/setup-buildx-action@v3
 

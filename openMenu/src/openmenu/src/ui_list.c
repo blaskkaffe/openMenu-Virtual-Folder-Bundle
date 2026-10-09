@@ -168,6 +168,38 @@ uil_disc_index(void) {
     return disc_idx;
 }
 
+void
+uil_set_cursor(int index) {
+    move_cursor(index - cursor);
+}
+
+/* Jump to the next game whose title starts with the letter (digits: any title starting with a
+ * digit); from the cursor on, wrapping around. Returns 1 if the cursor moved. */
+int
+uil_jump_to_letter(int c) {
+    int n = count_now();
+    for (int i = 1; i <= n; i++) {
+        int at = (cursor + i) % n;
+        const gd_item* it = uil_item(at);
+        if (!it) {
+            continue;
+        }
+        const char* name = it->name;
+        while (*name == '[' || *name == ' ') { /* a folder is written [Name] */
+            name++;
+        }
+        int first = *name;
+        if (first >= 'a' && first <= 'z') {
+            first -= 'a' - 'A';
+        }
+        if (first == c || (c >= '0' && c <= '9' && first >= '0' && first <= '9' && first == c)) {
+            move_cursor(at - cursor);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void
 move_cursor(int delta) {
     int count = count_now();
@@ -196,6 +228,8 @@ uil_button(button_t btn, const gd_item** launch) {
     switch (btn) {
         case BTN_UP: move_cursor(-1); return UIL_REDRAW;
         case BTN_DOWN: move_cursor(1); return UIL_REDRAW;
+        case BTN_PAGE_UP: move_cursor(-UIL_VISIBLE); return UIL_REDRAW;
+        case BTN_PAGE_DOWN: move_cursor(UIL_VISIBLE); return UIL_REDRAW;
         case BTN_LEFT:
         case BTN_RIGHT:
             if (is_set(item)) { /* pick a disc of the set */

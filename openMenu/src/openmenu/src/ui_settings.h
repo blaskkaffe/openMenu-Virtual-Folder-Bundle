@@ -25,6 +25,14 @@ void uis_set(int row, int choice);
 /* Name of the current value */
 const char* uis_value(int row);
 
+/* Rows that are not a choice but open something: the date and time editor, the About box. */
+enum { UIS_ACTION_NONE, UIS_ACTION_DATETIME, UIS_ACTION_ABOUT };
+int uis_action(int row);
+
+/* Icon of a row: 0..3 one of the BIOS settings icons (language, clock, sound, question mark),
+ * -1 a placeholder digit. */
+int uis_icon(int row);
+
 /* Rows with more than two choices open a popup. */
 int uis_opens_popup(int row);
 

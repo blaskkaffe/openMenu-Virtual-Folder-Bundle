@@ -11,11 +11,13 @@
 
 #include <bios_audio.h>
 #include <bios_menu.h>
+#include <bios_datetime.h>
 #include <bios_list.h>
 #include <bios_page.h>
 #include <backend/db_list.h>
 #include <kos/fs.h>
 
+#include "clock.h"
 #include "gfx.h"
 #include "history.h"
 #include "input.h"
@@ -31,7 +33,7 @@
 #include "ui_settings.h"
 #include "video.h"
 
-typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS } screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
  * longer; the animations were written for that rate. */
@@ -84,6 +86,11 @@ static bpage page;
 static blist glist;                 /* the game list screen */
 static const gd_item* launch_pending; /* a game waiting for the launch animation to end */
 static int have_meta;               /* META.DAT loaded: players, VMU blocks */
+static bdt dtedit;                    /* the date and time editor */
+static int about_open;                /* the About box over the settings */
+static int saved_page_cursor, saved_page_top;
+static const bios_rom* g_rom;
+static mouse_t pointer;
 static int settings_popup;     /* a settings row popup is open */
 static int settings_popup_sel;
 static int games_opened;  /* the game browser has been opened once (last game restored) */
@@ -320,7 +327,8 @@ settings_choice_name(int index) {
 static void
 page_row(void* user, int index, bpage_row* out) {
     (void)user;
-    out->icon = BPAGE_ICON_DIGIT(index % 10); /* placeholder icons until the real ones exist */
+    int icon = uis_icon(index);
+    out->icon = icon >= 0 ? BPAGE_ICON_BIOS(icon) : BPAGE_ICON_DIGIT(index % 10); /* digits until real icons exist */
 }
 
 /* Text of the visible rows and of the help box, then the objects themselves. */
@@ -342,6 +350,25 @@ settings_sync(void) {
 }
 
 static void
+draw_about(void) {
+    char line[48];
+    gfx_rrect(120.0f, 100.0f, 400.0f, 250.0f, 12.0f, 0.6f, 0xE0102050u);
+    gfx_text("About", 144.0f, 108.0f, 0.7f, 0xFFFFFFFFu, 1);
+#ifdef OPENMENU_BUILD_VERSION
+    snprintf(line, sizeof(line), "openMenu  %.24s", OPENMENU_BUILD_VERSION);
+#else
+    snprintf(line, sizeof(line), "openMenu");
+#endif
+    gfx_text(line, 144.0f, 148.0f, 0.7f, 0xFFFFFFFFu, 0);
+    snprintf(line, sizeof(line), "BIOS %.30s", g_rom ? g_rom->revision : "?");
+    gfx_text(line, 144.0f, 180.0f, 0.7f, 0xFFC0C0C0u, 0);
+    gfx_text(sound_status(), 144.0f, 212.0f, 0.7f, 0xFFC0C0C0u, 0);
+    gfx_text("A 3D menu made from the", 144.0f, 252.0f, 0.7f, 0xFFA0A0A0u, 0);
+    gfx_text("Dreamcast BIOS menu.", 144.0f, 280.0f, 0.7f, 0xFFA0A0A0u, 0);
+    gfx_text("A: close", 144.0f, 316.0f, 0.7f, 0xFFA0A0A0u, 0);
+}
+
+static void
 draw_settings(void) {
     bpage_draw(&page, gfx_sink());
     /* more rows above / below the four shown */
@@ -351,6 +378,9 @@ draw_settings(void) {
     if (page.top + BPAGE_SLOTS < page.count) {
         gfx_text("v", 590.0f, 370.0f, 0.5f, 0xFFFFFFFFu, 1);
     }
+    if (about_open) {
+        draw_about();
+    }
     if (settings_popup) {
         draw_popup(uis_label(page.cursor), "A: choose   B: cancel", uis_choice_count(page.cursor), settings_popup_sel,
                    settings_choice_name);
@@ -358,10 +388,56 @@ draw_settings(void) {
 }
 
 static void
+draw_datetime(void) {
+    static const char* const help[4] = {"Set Date/Time. L/R on the", "controller moves the cursor.", "U/D on the controller", "changes the settings."};
+    char text[24];
+    gfx_rrect(BDT_PANEL_X, BDT_PANEL_Y, BDT_PANEL_W, BDT_PANEL_H, 12.0f, 0.4f, 0xD0203060u);
+    for (int i = 0; i < 4; i++) {
+        gfx_text(help[i], 320.0f - (float)strlen(help[i]) * GFX_CHAR_W / 2.0f, BDT_PANEL_Y + 12.0f + (float)i * 26.0f, 0.5f,
+                 0xFFFFFFFFu, 1);
+    }
+    bdt_draw(&dtedit, gfx_sink());
+    bdt_format(&dtedit, text, sizeof(text));
+    gfx_text(text, bdt_text_x(&dtedit), BDT_TEXT_Y, 0.5f, 0xFFFFFFFFu, 1);
+    /* the green ovals mark the buttons; their names stand to the right */
+    gfx_text("Select", BDT_BUTTON_X + 30.0f, BDT_SELECT_Y - 16.0f, 0.5f, 0xFFFFFFFFu, 1);
+    gfx_text("Cancel", BDT_BUTTON_X + 30.0f, BDT_CANCEL_Y - 16.0f, 0.5f, 0xFFFFFFFFu, 1);
+}
+
+/* The mouse pointer: the BIOS' green triangle (model 35) turned so its tip points to the top left
+ * and sits on the pointer position. Drawn nearer than everything else. */
+static void
+draw_pointer(void) {
+    if (!pointer.visible) {
+        return;
+    }
+    float ux = (float)pointer.x;
+    if (sf_aspect[0] == ASPECT_WIDE) {
+        ux = 320.0f + (ux - 320.0f) / 0.75f; /* the picture is squeezed: place it where the screen shows it */
+    }
+    float tip = 13.6f * 0.7071f; /* the tip is 13.6 px from the model's origin, up and to the left */
+    float ox = ux + tip, oy = (float)pointer.y + tip;
+    bvm_obj o;
+    memset(&o, 0, sizeof(o));
+    o.active = 1;
+    o.flags = BVM_F_MODEL;
+    o.model = 35;
+    o.texlist = 35;
+    o.pos[0] = (ox - 320.0f) / 13.3333f; /* z = -300: 4000 / 300 pixels per unit */
+    o.pos[1] = (240.0f - oy) / 13.3333f;
+    o.pos[2] = -300.0f;
+    o.rot[2] = 40960; /* 225 degrees: the model's tip points down, this turns it up and to the left */
+    o.scale_tw[0].cur = o.scale_tw[1].cur = o.scale_tw[2].cur = 1.1f;
+    menu.scene.parts = BSCENE_PART_ALL;
+    bscene_draw_object(&menu.scene, &o, gfx_sink());
+}
+
+static void
 draw_frame(void) {
     uint32_t top, bottom;
     uint64_t t0 = timer_us_gettime64();
     uint32_t held = UI_DEBUG ? input_buttons() : 0;
+    gfx_set_aspect(sf_aspect[0] == ASPECT_WIDE);
     dcbg_gradient(&menu.bg, &top, &bottom);
     if (fade_step < FADE_STEPS) {
         top = blend_color(START_COLOR, top, fade_step);
@@ -379,6 +455,9 @@ draw_frame(void) {
     } else if (screen == SCREEN_SETTINGS) {
         bscene_draw_background(&menu.bg, gfx_sink());
         draw_settings();
+    } else if (screen == SCREEN_DATETIME) {
+        bscene_draw_background(&menu.bg, gfx_sink());
+        draw_datetime();
     } else {
         bscene_draw_background(&menu.bg, gfx_sink());
         if (screen == SCREEN_GAMES) {
@@ -395,6 +474,7 @@ draw_frame(void) {
     if (notice_frames > 0 && notice_text) {
         gfx_text(notice_text, TEXT_X, screen == SCREEN_MAIN ? NOTICE_Y_MAIN : NOTICE_Y_PANEL, 0.5f, 0xFFFFFFFFu, 1);
     }
+    draw_pointer();
     build_us_sum += timer_us_gettime64() - t0;
     gfx_end_frame();
 }
@@ -537,8 +617,75 @@ leave_settings(void) {
 }
 
 static void
+enter_datetime(void) {
+    int y, mo, d, h, mi;
+    clock_get(&y, &mo, &d, &h, &mi);
+    saved_page_cursor = page.cursor;
+    saved_page_top = page.top;
+    bdt_open(&dtedit, &menu, clock_date_order(), y, mo, d, h, mi);
+    screen = SCREEN_DATETIME;
+}
+
+static void
+leave_datetime(void) {
+    bpage_open(&page, &menu, uis_count());
+    page.cursor = saved_page_cursor;
+    page.top = saved_page_top;
+    screen = SCREEN_SETTINGS;
+}
+
+static void
+handle_datetime(button_t b) {
+    switch (b) {
+        case BTN_LEFT:
+            if (bdt_move(&dtedit, -1)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        case BTN_RIGHT:
+            if (bdt_move(&dtedit, 1)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        case BTN_UP:
+            if (bdt_change(&dtedit, 1)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        case BTN_DOWN:
+            if (bdt_change(&dtedit, -1)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        case BTN_A:
+        case BTN_START:
+            if (dtedit.cursor == BDT_SELECT) {
+                if (clock_set(dtedit.year, dtedit.month, dtedit.day, dtedit.hour, dtedit.minute) == 0) {
+                    sound_sfx(BAUDIO_SFX_CONFIRM);
+                    update_clock();
+                } else {
+                    sound_sfx(BAUDIO_SFX_ERROR);
+                    show_notice("Could not set the clock");
+                }
+                leave_datetime();
+            } else if (dtedit.cursor == BDT_CANCEL) {
+                sound_sfx(BAUDIO_SFX_CANCEL);
+                leave_datetime();
+            } else {
+                bdt_move(&dtedit, 1); /* A on a field moves on to the next one */
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_B:
+            sound_sfx(BAUDIO_SFX_CANCEL);
+            leave_datetime();
+            break;
+        default: break;
+    }
+}
+
+static void
 handle_settings(button_t b) {
     int row = page.cursor;
+    if (about_open) {
+        if (b == BTN_A || b == BTN_B || b == BTN_START) {
+            about_open = 0;
+            sound_sfx(BAUDIO_SFX_CANCEL);
+        }
+        return;
+    }
     if (settings_popup) {
         int n = uis_choice_count(row);
         switch (b) {
@@ -581,7 +728,13 @@ handle_settings(button_t b) {
             sound_sfx(BAUDIO_SFX_CONFIRM);
             break;
         case BTN_A:
-            if (uis_opens_popup(row)) {
+            if (uis_action(row) == UIS_ACTION_DATETIME) {
+                sound_sfx(BAUDIO_SFX_ENTER);
+                enter_datetime();
+            } else if (uis_action(row) == UIS_ACTION_ABOUT) {
+                sound_sfx(BAUDIO_SFX_ENTER);
+                about_open = 1;
+            } else if (uis_opens_popup(row)) {
                 settings_popup = 1;
                 settings_popup_sel = uis_get(row);
                 sound_sfx(BAUDIO_SFX_ENTER);
@@ -596,8 +749,65 @@ handle_settings(button_t b) {
     }
 }
 
+/* The mouse over a row selects it, as the d-pad would. */
+static void
+apply_hover(void) {
+    float ux = (float)pointer.x, uy = (float)pointer.y;
+    if (sf_aspect[0] == ASPECT_WIDE) {
+        ux = 320.0f + (ux - 320.0f) / 0.75f;
+    }
+    int popup_rows = 0, popup_sel = -1;
+    if (recent_open) {
+        popup_rows = history_recent_count();
+    } else if (settings_popup) {
+        popup_rows = uis_choice_count(page.cursor);
+    }
+    if (recent_open || settings_popup) {
+        int sel = recent_open ? recent_row : settings_popup_sel;
+        int first = sel >= POPUP_ROWS ? sel - POPUP_ROWS + 1 : 0;
+        int rows = popup_rows < POPUP_ROWS ? popup_rows : POPUP_ROWS;
+        if (ux >= POPUP_X && ux <= POPUP_X + POPUP_W && uy >= ROWS_Y && uy < ROWS_Y + (float)rows * GFX_LINE_H) {
+            popup_sel = first + (int)((uy - ROWS_Y) / GFX_LINE_H);
+            if (recent_open) {
+                recent_row = popup_sel;
+            } else {
+                settings_popup_sel = popup_sel;
+            }
+        }
+        return;
+    }
+    if (about_open) {
+        return;
+    }
+    switch (screen) {
+        case SCREEN_MAIN: {
+            int i = (uy > 270.0f ? 2 : 0) + (ux >= 320.0f ? 1 : 0);
+            if (bmenu_select(&menu, i)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        }
+        case SCREEN_GAMES: {
+            if (launch_pending) {
+                break;
+            }
+            int row = blist_row_in_slot(&glist, blist_slot_at_px(&glist, ux, uy));
+            if (row >= 0 && row != uil_cursor()) {
+                uil_set_cursor(row);
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        }
+        case SCREEN_SETTINGS: {
+            int row = bpage_row_in_slot(&page, bpage_slot_at_px(&page, ux, uy));
+            if (row >= 0 && bpage_set_cursor(&page, row)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        }
+        default: break;
+    }
+}
+
 int
 ui_bios_run(const bios_rom* rom) {
+    g_rom = rom;
     if (gfx_init(rom) != 0) {
         return -1;
     }
@@ -634,10 +844,20 @@ ui_bios_run(const bios_rom* rom) {
 
     for (;;) {
         button_t b = input_poll();
+        input_mouse(&pointer);
+        if (pointer.moved) {
+            apply_hover();
+        }
+        int typed = input_typed_char();
+        if (typed && screen == SCREEN_GAMES && !recent_open && !launch_pending && uil_jump_to_letter(typed)) {
+            sound_sfx(BAUDIO_SFX_CURSOR);
+        }
         if (screen == SCREEN_MAIN) {
             handle_main(b);
         } else if (screen == SCREEN_GAMES) {
             handle_games(b);
+        } else if (screen == SCREEN_DATETIME) {
+            handle_datetime(b);
         } else {
             handle_settings(b);
         }
@@ -675,6 +895,8 @@ ui_bios_run(const bios_rom* rom) {
 
         if (screen == SCREEN_SETTINGS) {
             settings_sync();
+        } else if (screen == SCREEN_DATETIME) {
+            bdt_sync(&dtedit);
         } else if (screen == SCREEN_GAMES) {
             games_sync();
         }

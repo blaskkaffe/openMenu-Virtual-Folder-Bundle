@@ -174,6 +174,22 @@ blist_button_center_px(int i, float* x, float* y) {
     *y = 240.0f - BUTTON_Y * PX_PER_UNIT;
 }
 
+static float row_y(const blist* l, int s);
+
+int
+blist_slot_at_px(const blist* l, float x, float y) {
+    if (x < 40.0f || x > blist_row_right_px()) {
+        return -1;
+    }
+    for (int s = 0; s < l->slots; s++) {
+        float cy = 240.0f - row_y(l, s) * PX_PER_UNIT;
+        if (y >= cy - 27.0f && y <= cy + 27.0f && blist_row_in_slot(l, s) >= 0) {
+            return s;
+        }
+    }
+    return -1;
+}
+
 float
 blist_row_right_px(void) {
     return 320.0f + (ANCHOR_X + (BAR_CAP_L + (BAR_CAP_R - BAR_CAP_L) * BAR_MIDDLE_F + 1.0f) * 0.8671875f) * PX_PER_UNIT;

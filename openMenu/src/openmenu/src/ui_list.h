@@ -28,3 +28,5 @@ int uil_is_folder(const gd_item* item);
 int uil_disc_index(void);                /* picked disc (0-based) of the set under the cursor, else 0 */
 int uil_disc_total(const gd_item* item); /* discs in the item's set, 1 if not part of one */
 void uil_goto_real(int row);        /* cursor onto a row of the underlying list */
+void uil_set_cursor(int index);          /* the cursor onto a visible row (the mouse) */
+int uil_jump_to_letter(int c);          /* the keyboard: next title starting with the letter */

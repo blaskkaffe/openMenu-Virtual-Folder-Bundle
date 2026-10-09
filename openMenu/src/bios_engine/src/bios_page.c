@@ -84,6 +84,11 @@ bpage_move(bpage* p, int delta) {
 }
 
 int
+bpage_set_cursor(bpage* p, int row) {
+    return bpage_move(p, row - p->cursor);
+}
+
+int
 bpage_row_in_slot(const bpage* p, int slot) {
     int row = p->top + slot;
     return slot >= 0 && slot < BPAGE_SLOTS && row < p->count ? row : -1;
@@ -135,6 +140,22 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
         help->text_w = 512;
         help->text_h = 64;
     }
+}
+
+int
+bpage_slot_at_px(const bpage* p, float x, float y) {
+    /* the four bars of the BIOS Settings screen (anchors 0x1600..0x1603 at y 14.26, 7.42, 0.35, -6.45) */
+    static const float ys[BPAGE_SLOTS] = {14.2578125f, 7.421875f, 0.3515625f, -6.4453125f};
+    if (x < 40.0f || x > 620.0f) {
+        return -1;
+    }
+    for (int s = 0; s < BPAGE_SLOTS; s++) {
+        float cy = 240.0f - ys[s] * 11.32f;
+        if (y >= cy - 30.0f && y <= cy + 30.0f && bpage_row_in_slot(p, s) >= 0) {
+            return s;
+        }
+    }
+    return -1;
 }
 
 void

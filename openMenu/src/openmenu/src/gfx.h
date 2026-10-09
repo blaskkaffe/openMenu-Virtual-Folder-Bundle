@@ -52,3 +52,7 @@ void gfx_art_box(const char* product, float x, float y, float w, float h, float 
 /* Game list row `slot`: show its title through a window of `window_px` pixels, moved left by
  * `offset_px` (a scrolling title). window_px 0 shows the title as it is. */
 void gfx_set_row_scroll(int slot, int window_px, int offset_px);
+
+/* 16:9 mode: everything but the background gradient is squeezed to 3/4 of its width around the
+ * centre of the screen, so a wide TV that stretches the picture shows it in proportion. */
+void gfx_set_aspect(int wide);

@@ -62,6 +62,16 @@ bmenu_show_main(bmenu* m, int selected) {
 }
 
 int
+bmenu_select(bmenu* m, int i) {
+    if (i < 0 || i >= BMENU_ICONS || i == m->selected) {
+        return 0;
+    }
+    m->selected = i;
+    apply_selection(m);
+    return 1;
+}
+
+int
 bmenu_move(bmenu* m, bmenu_dir dir) {
     int next = cursor_table[m->selected][dir];
     if (next == m->selected) {

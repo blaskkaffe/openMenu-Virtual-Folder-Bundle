@@ -459,8 +459,20 @@ ensure_header(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
  * as last arrives, so there is one submission per polygon. */
 static pvr_vertex_t* cur_poly;
 
+/* 16:9: the picture is squeezed to 3/4 of its width around the centre; a wide TV stretches it back. */
+static float aspect_x = 1.0f;
+static int aspect_bypass; /* the background gradient always fills the screen */
+
+void
+gfx_set_aspect(int wide) {
+    aspect_x = wide ? 0.75f : 1.0f;
+}
+
 static void
 send_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last) {
+    if (!aspect_bypass) {
+        x = 320.0f + (x - 320.0f) * aspect_x;
+    }
     if (!cur_poly) {
         cmd_reserve(4);
         cur_poly = &cmdbuf[cmd_n];
@@ -788,10 +800,12 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
     pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
     cxt.gen.culling = PVR_CULLING_NONE;
     submit_header(&cxt);
+    aspect_bypass = 1;
     send_vertex(0.0f, 0.0f, BG_Z, 0, 0, top, 0);
     send_vertex(640.0f, 0.0f, BG_Z, 0, 0, top, 0);
     send_vertex(0.0f, 480.0f, BG_Z, 0, 0, bottom, 0);
     send_vertex(640.0f, 480.0f, BG_Z, 0, 0, bottom, 1);
+    aspect_bypass = 0;
     cmd_flush();
     pvr_list_finish();
 

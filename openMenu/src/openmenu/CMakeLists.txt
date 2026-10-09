@@ -11,6 +11,8 @@ endif()
 
 set(OPENMENU_SOURCES
         src/main.c
+        src/clock.c
+        src/clock_math.c
         src/gfx.c
         src/history.c
         src/input.c

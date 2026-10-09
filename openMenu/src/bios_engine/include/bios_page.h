@@ -46,11 +46,17 @@ void bpage_open(bpage* p, bmenu* m, int count);
 /* Move the selection by `delta` rows (clamped). Returns 1 if it moved. */
 int bpage_move(bpage* p, int delta);
 
+/* Put the cursor on a row (the mouse). Returns 1 if it moved. */
+int bpage_set_cursor(bpage* p, int row);
+
 /* Apply selection, icons and visibility; call once per frame after bmenu_update(). */
 void bpage_sync(bpage* p, bpage_row_fn row, void* user);
 
 /* Row shown in slot `slot`, -1 if the slot is empty. */
 int bpage_row_in_slot(const bpage* p, int slot);
+
+/* The slot whose bar is under a point (pixels), -1 if none. */
+int bpage_slot_at_px(const bpage* p, float x, float y);
 
 /* Draw the objects of the page (no background). */
 void bpage_draw(bpage* p, const bscene_sink* sink);

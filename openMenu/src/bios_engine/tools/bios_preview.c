@@ -19,6 +19,7 @@
 #include "bios_menu.h"
 #include "bios_page.h"
 #include "bios_list.h"
+#include "bios_datetime.h"
 #include "tex_decode.h"
 
 #define W 640
@@ -193,6 +194,7 @@ main(int argc, char** argv) {
     static bmenu menu;
     static bpage page;
     static blist list;
+    static bdt dt;
     bmenu_init(&menu, &rom, NULL);
     if (script == -2) { /* settings page demo: `selected` = cursor row, 10 rows */
         bpage_open(&page, &menu, 10);
@@ -202,6 +204,20 @@ main(int argc, char** argv) {
     } else if (script == -3 || script == -4) { /* game list demo: 7 rows; -4 = launch animation at `frames` */
         blist_open(&list, &menu, getenv("BLIST_SLOTS") ? atoi(getenv("BLIST_SLOTS")) : 7, 30);
         blist_goto(&list, selected);
+    } else if (script == -6) { /* date and time editor, `selected` = field */
+        bdt_open(&dt, &menu, BDT_ORDER_MDY, 2026, 10, 9, 14, 30);
+        dt.cursor = selected;
+    } else if (script == -7) { /* model 35 (the green triangle) as the mouse pointer, `selected` = rotation in degrees */
+        bvm_obj* o = bvm_create(&menu.vm, 0x3d, 0x500, 0x2000);
+        bmenu_update(&menu);
+        o->flags &= ~(uint32_t)BVM_F_ATTACHED;
+        o->pos_tw[0].cur = -8.0f;
+        o->pos_tw[1].cur = 6.0f;
+        o->pos_tw[2].cur = -353.5f;
+        o->scale_tw[0].cur = o->scale_tw[1].cur = o->scale_tw[2].cur = 1.0f;
+        o->rot_tw[2].cur = (int32_t)((float)selected * 65536.0f / 360.0f);
+        o->rot_tw[2].step = 0;
+        bmenu_update(&menu);
     } else if (script == -5) { /* the GD-ROM disc model seen from behind, large */
         bvm_obj* o = bvm_create(&menu.vm, 0x4e, 0x500, 0x2000);
         bmenu_update(&menu);
@@ -223,10 +239,13 @@ main(int argc, char** argv) {
     } else {
         bmenu_show_main(&menu, selected);
     }
-    for (int i = 0; i < (script == -5 ? 0 : frames); i++) {
+    for (int i = 0; i < (script == -5 || script == -7 ? 0 : frames); i++) {
         bmenu_update(&menu);
         if (script == -2) {
             bpage_sync(&page, demo_row, NULL);
+        }
+        if (script == -6) {
+            bdt_sync(&dt);
         }
         if (script == -3 || script == -4) {
             if (script == -4 && i == 20) {
@@ -254,7 +273,13 @@ main(int argc, char** argv) {
         }
     }
     bscene_sink sink = {NULL, tri, text};
-    if (script == -3 || script == -4) {
+    if (script == -6) {
+        bscene_draw_background(&menu.bg, &sink);
+        bdt_draw(&dt, &sink);
+    } else if (script == -7) {
+        bscene_draw_background(&menu.bg, &sink);
+        bmenu_draw_objects(&menu, &sink);
+    } else if (script == -3 || script == -4) {
         bscene_draw_background(&menu.bg, &sink);
         blist_draw(&list, &sink);
     } else if (script == -2) {

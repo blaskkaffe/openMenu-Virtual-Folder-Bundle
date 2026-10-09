@@ -65,6 +65,9 @@ void blist_launch_cancel(blist* l);
 #define BLIST_BUTTONS 5
 void blist_button_center_px(int i, float* x, float* y);
 
+/* The slot whose bar is under a point (pixels), -1 if none; and the buttons row. */
+int blist_slot_at_px(const blist* l, float x, float y);
+
 /* Right edge of the rows (pixels). */
 float blist_row_right_px(void);
 

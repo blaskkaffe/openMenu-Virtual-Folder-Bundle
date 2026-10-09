@@ -137,3 +137,17 @@ blocks and disc count (`draw_button_text` in `ui_bios.c`); they are free for oth
 Disc colour: a game without icon art shows the BIOS disc of its region, chosen from the serial number
 (`serial_region.c`): PAL (Sega MK + 7 digits, third party ...D, ...D50, ...N50) gets the blue disc,
 everything else the red one - the same pairing the BIOS uses (blue on European consoles).
+
+## Date/time editor, aspect, About, mouse and keyboard (sketch)
+
+- Settings > Date and time opens the BIOS editor (`bios_engine/bios_datetime`): left/right pick a
+  field, up/down change it, the green arrows (model 35) sit above and below the field, Select sets
+  the console clock, Cancel or B leaves. Years 1950-2085, field order by console region (Japan
+  Y/M/D, America M/D/Y, Europe D/M/Y). The window panel is drawn as a rounded rectangle.
+- Settings > Aspect ratio: 16:9 squeezes everything except the background gradient to 3/4 width
+  (`gfx_set_aspect`) so a wide TV shows it in proportion.
+- Settings > About (last row, question mark icon): version, BIOS revision, sound status.
+- Keyboard: arrows, Enter = A, Escape/Backspace = B, Tab = X, Page Up/Down, and typing a letter or
+  digit jumps to the next game starting with it. Mouse: the pointer is model 35 turned 225 degrees
+  so its tip points to the top left; moving over a row selects it, left click = A, right click = B,
+  the wheel scrolls. Both are written against the KOS maple API and untested on hardware.
