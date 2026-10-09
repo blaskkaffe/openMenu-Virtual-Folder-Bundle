@@ -473,7 +473,10 @@ build_case(builder* b, uint32_t spine_c, uint32_t tray_c, uint32_t edge_c, int p
     if (pal) {
         /* the embossed label panel on the spine */
         int label = poly_new(b, -1, 0xFF3C66CCu, 0);
-        box(b, label, -hw - 0.04f, -hh, -hd + 0.18f * S, -hw + 0.02f, hh, hd - 0.18f * S); /* the whole length: the logo sits behind the clear label plastic */
+        /* The label runs the length of the spine but leaves a rim of dark blue as thick as the top edge (0.3 cm)
+         * at both ends. It sits toward the front of the spine: 2 mm behind the front face, 13 mm wide. */
+        const float label_front = hd - 0.2f * S, label_back = label_front - 1.3f * S;
+        box(b, label, -hw - 0.04f, -hh + 0.3f * S, label_back, -hw + 0.02f, hh - 0.3f * S, label_front);
     } else {
         box(b, mark, -hw - 0.02f, -hh + 0.6f * S, -hd + 0.15f * S, -hw + 0.02f, hh - 0.6f * S, hd - 0.15f * S);
     }
