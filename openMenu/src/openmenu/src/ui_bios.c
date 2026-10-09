@@ -954,6 +954,16 @@ ui_bios_run(const bios_rom* rom) {
         if (pointer.moved) {
             apply_hover();
         }
+        if (b == BTN_A && screen == SCREEN_SETTINGS && !settings_popup && !about_open && pointer.visible) {
+            /* a click on the BACK marker (bottom left, as the BIOS' settings page places it) goes back */
+            float ux = (float)pointer.x, uy = (float)pointer.y;
+            if (sf_aspect[0] == ASPECT_WIDE) {
+                ux = 320.0f + (ux - 320.0f) / 0.75f;
+            }
+            if (ux >= 80.0f && ux <= 165.0f && uy >= 360.0f && uy <= 445.0f) {
+                b = BTN_B;
+            }
+        }
         int typed = input_typed_char();
         if (typed && screen == SCREEN_GAMES && !recent_open && !launch_pending && uil_jump_to_letter(typed)) {
             sound_sfx(BAUDIO_SFX_CURSOR);
