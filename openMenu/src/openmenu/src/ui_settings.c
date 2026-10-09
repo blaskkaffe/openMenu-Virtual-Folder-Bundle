@@ -16,7 +16,12 @@ typedef struct {
 static const char* const boot_modes[] = {"Full", "License only", "Animation only", "Fast"};
 static const char* const disc_exit[] = {"Standard", "Alternate", "Alternate 3D"};
 
+static const char* const multidisc_modes[] = {"Show all discs", "Compact"};
+static const char* const multidisc_groups[] = {"Anywhere", "Same folder only"};
+
 static const option options[] = {
+    {"Multi-disc games", &sf_multidisc, MULTIDISC_END + 1, multidisc_modes},
+    {"Disc sets from", &sf_multidisc_grouping, MULTIDISC_GROUPING_END + 1, multidisc_groups},
     {"Boot animation", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
     {"Exit to BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
 };

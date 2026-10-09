@@ -16,6 +16,8 @@
 #include "input.h"
 #include "launch.h"
 #include "sound.h"
+#include <openmenu_settings.h>
+
 #include "ui_bios.h"
 #include "ui_list.h"
 #include "ui_settings.h"
@@ -103,7 +105,7 @@ draw_games(void) {
     int count = uil_count();
 
     gfx_rect(PANEL_X, PANEL_Y, PANEL_W, (ROWS_Y - PANEL_Y) + UIL_VISIBLE * GFX_LINE_H + 40.0f, 0.4f, 0x90000000u);
-    gfx_text("Game", TEXT_X, TITLE_Y, 0.5f, 0xFFFFFFFFu, 1);
+    gfx_text(uil_in_chooser() ? "Select disc" : "Game", TEXT_X, TITLE_Y, 0.5f, 0xFFFFFFFFu, 1);
 
     if (count <= 0) {
         gfx_text("No games found.", TEXT_X, ROWS_Y + 4.0f, 0.5f, 0xFFC0C0C0u, 0);
@@ -119,7 +121,12 @@ draw_games(void) {
         if (selected) {
             gfx_rect(PANEL_X + 8.0f, y, PANEL_W - 16.0f, (float)GFX_LINE_H, 0.45f, 0x50FFFFFFu);
         }
-        snprintf(line, sizeof(line), "%s%.40s", uil_is_folder(item) ? "> " : "", item->name);
+        int discs = uil_in_chooser() ? 1 : (sf_multidisc[0] == MULTIDISC_HIDE ? uil_disc_total(item) : 1);
+        if (discs > 1) {
+            snprintf(line, sizeof(line), "%.34s  (%d discs)", item->name, discs);
+        } else {
+            snprintf(line, sizeof(line), "%s%.40s", uil_is_folder(item) ? "> " : "", item->name);
+        }
         gfx_text(line, TEXT_X, y, 0.5f, selected ? 0xFFFFFFFFu : 0xFFC0C0C0u, selected);
     }
     const gd_item* cur = uil_item(uil_cursor());

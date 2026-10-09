@@ -85,3 +85,8 @@ dev ROMs (0.976, 1.001) have a different layout and fall back to the plain list.
 Phases 0 and 1 build in CI. Everything from Phase 2 on has only been syntax checked against the
 KOS API and tested on a PC with a synthetic ROM; texture placement, camera constants, the text
 anchor of the icon captions, and the sound driver start-up are the likely places to need tuning.
+
+## Todo (after the essential functions are back)
+
+- Genre filter: the genre list is incomplete and sometimes wrong (the genre data comes from
+  the bundled game database). Review and correct it, then bring the filter back.
