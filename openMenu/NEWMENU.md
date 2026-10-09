@@ -204,3 +204,17 @@ Not yet: copying a group of files, the animated icons.
 - Change the console's ISP network settings without starting a browser, if that is possible, with 2-3
   presets to switch between (with a clear warning, as this writes to the flash memory).
 - In-menu notifications when a favourite player or game comes online.
+
+## Extra models in the BIOS style (sketch2)
+
+`src/bios_engine/src/bios_models.c` builds four models in code (no ROM data), ids from `BMODEL_BASE` (0x100):
+`BMODEL_PHONE` (classic telephone in the music note colour, plain white dial disc), `BMODEL_GLOBE` (low poly
+earth, green land raised over blue sea, small stand), `BMODEL_CASE_WHITE` and `BMODEL_CASE_PAL` (CD jewel
+cases, white spine / blue PAL style). Use the id as `bvm_obj.model` and also as its `texlist`; the scene
+draws them like ROM models.
+
+The jewel cases have two texture slots: slot 0 (`BMODEL_TEX_FRONT`) is the front picture (box art, UV 0..1,
+top-left origin), slot 1 (`BMODEL_TEX_BACK`) the back. In the app `gfx_model_bind_front(product)` puts the box
+art of a game on the front; the back is plain white until something is placed there.
+`models/*.obj` are the same models exported with `tools/bmodel_obj` (materials `front_art`, `back_art`).
+Preview: `BIOS_PREVIEW_ROT="22,-25,0" bios_preview dc_boot.bin out.ppm 5 <0..3> -10`.

@@ -13,6 +13,7 @@
 
 #include <bios_menu.h>
 #include <bios_list.h>
+#include <bios_models.h>
 #include <bios_page.h>
 #include <backend/dat_format.h>
 #include <texture/serial_sanitize.h>
@@ -317,8 +318,48 @@ disc_face(int pal) {
     return face[i].valid ? &face[i] : NULL;
 }
 
+/* Plain white picture for the texture slots of the built-in models (bios_models.h) that have no art. */
+static rom_tex*
+white_tex(void) {
+    static rom_tex white;
+    static int tried;
+    if (!tried) {
+        tried = 1;
+        unsigned short px[8 * 8];
+        for (int i = 0; i < 64; i++) {
+            px[i] = 0xFFFF;
+        }
+        white.ptr = pvr_mem_malloc(sizeof(px));
+        if (white.ptr) {
+            pvr_txr_load(px, white.ptr, sizeof(px));
+            white.w = white.h = 8;
+            white.fmt = PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED;
+            white.valid = 1;
+        }
+    }
+    return white.valid ? &white : NULL;
+}
+
+static char model_front_product[16];
+
+void
+gfx_model_bind_front(const char* product) {
+    strncpy(model_front_product, product ? product : "", sizeof(model_front_product) - 1);
+    model_front_product[sizeof(model_front_product) - 1] = '\0';
+}
+
 static rom_tex*
 get_rom_texture(bscene_texref ref) {
+    /* built-in models: slot 0 shows the box art of the bound game, everything else is plain white */
+    if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END) {
+        if (ref.b == BMODEL_TEX_FRONT) {
+            art_entry* e = art_get(model_front_product, 1);
+            if (e && e->tex.valid) {
+                return &e->tex;
+            }
+        }
+        return white_tex();
+    }
     /* A row disc: texture 0 is the label (the game's art); the rest is the BIOS disc, texlist 61 */
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BLIST_TEXLIST_BASE) {
         int slot = ref.a - BLIST_TEXLIST_BASE;

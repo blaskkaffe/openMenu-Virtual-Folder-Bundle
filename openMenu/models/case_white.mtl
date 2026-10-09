@@ -1,0 +1,24 @@
+newmtl mat0
+Kd 0.172549 0.172549 0.203922
+d 1
+
+newmtl mat1
+Kd 0.956863 0.956863 0.972549
+d 1
+
+newmtl mat2
+Kd 1 1 1
+d 1
+
+newmtl back_art
+Kd 1 1 1
+d 1
+
+newmtl front_art
+Kd 1 1 1
+d 1
+
+newmtl mat5
+Kd 0.862745 0.901961 0.941176
+d 0.439216
+

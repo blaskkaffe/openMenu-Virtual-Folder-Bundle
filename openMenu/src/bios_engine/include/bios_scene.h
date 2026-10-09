@@ -15,6 +15,7 @@
 #include "bios_rom.h"
 #include "bios_vm.h"
 #include "dcbg.h"
+#include "bios_models.h"
 #include "nj_model.h"
 
 #ifdef __cplusplus
@@ -64,6 +65,8 @@ typedef struct bscene {
     const bios_rom* rom;
     nj_object models[BSCENE_MODEL_CACHE];
     uint8_t model_state[BSCENE_MODEL_CACHE]; /* 0 not loaded, 1 loaded, 2 failed */
+    nj_object custom[BMODEL_COUNT];          /* the built-in models of bios_models.h (ids from BMODEL_BASE) */
+    uint8_t custom_state[BMODEL_COUNT];
     struct {
         int model, motion;
         int state;

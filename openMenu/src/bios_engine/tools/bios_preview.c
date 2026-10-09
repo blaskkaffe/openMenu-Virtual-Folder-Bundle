@@ -22,6 +22,7 @@
 #include "bios_datetime.h"
 #include "bios_files.h"
 #include "tex_decode.h"
+#include "bios_models.h"
 
 #define W 640
 #define H 480
@@ -60,6 +61,23 @@ lookup(bscene_texref ref) {
     }
     cached_tex* c = &cache[cache_n++];
     c->ref = ref;
+    if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END) {
+        /* built-in models: a test chart for the front picture, plain white for the back */
+        c->bmp.w = c->bmp.h = 64;
+        c->bmp.px = malloc(sizeof(uint32_t) * 64 * 64);
+        for (int i = 0; i < 64 * 64; i++) {
+            int x = i % 64, y = i / 64;
+            uint32_t col = 0xFFFFFFFFu;
+            if (ref.b == BMODEL_TEX_FRONT) {
+                col = ((x / 8 + y / 8) & 1) ? 0xFFF0A020u : 0xFF20A0F0u;
+                if (x < 3 || y < 3 || x > 60 || y > 60) col = 0xFF202020u;
+                if (y < 12 && x < 24) col = 0xFFFF2020u; /* top-left marker shows the orientation */
+            }
+            c->bmp.px[i] = col;
+        }
+        c->valid = c->bmp.px != NULL;
+        return c->valid ? &c->bmp : NULL;
+    }
     bios_texture t;
     int ok = (ref.kind == BSCENE_TEX_GBIX) ? bios_texture_find(g_rom, (uint32_t)ref.a, &t) == 0
                                             : bios_texlist_texture(g_rom, ref.a >= 0x1000 ? 61 : ref.a, ref.b, &t) == 0;
@@ -219,6 +237,25 @@ main(int argc, char** argv) {
         o->rot_tw[2].cur = (int32_t)((float)selected * 65536.0f / 360.0f);
         o->rot_tw[2].step = 0;
         bmenu_update(&menu);
+    } else if (script == -10) { /* built-in models: `selected` = model index from BMODEL_BASE, BIOS_PREVIEW_ROT="x,y,z" degrees */
+        bvm_obj* o = bvm_create(&menu.vm, 0x3d, 0x500, 0x2000);
+        bmenu_update(&menu);
+        o->flags &= ~(uint32_t)(BVM_F_ATTACHED | BVM_F_MOTION);
+        o->model = BMODEL_BASE + selected;
+        o->texlist = o->model;
+        o->pos_tw[0].cur = 0.0f;
+        o->pos_tw[1].cur = -3.0f;
+        o->pos_tw[2].cur = getenv("BIOS_PREVIEW_Z") ? -(float)atof(getenv("BIOS_PREVIEW_Z")) : -140.0f;
+        o->scale_tw[0].cur = o->scale_tw[1].cur = o->scale_tw[2].cur = 1.0f;
+        float rot[3] = {0, 0, 0};
+        if (getenv("BIOS_PREVIEW_ROT")) {
+            sscanf(getenv("BIOS_PREVIEW_ROT"), "%f,%f,%f", &rot[0], &rot[1], &rot[2]);
+        }
+        for (int k = 0; k < 3; k++) {
+            o->rot_tw[k].cur = (int32_t)(rot[k] * 65536.0f / 360.0f);
+            o->rot_tw[k].step = 0;
+        }
+        bmenu_update(&menu);
     } else if (script == -9) { /* memory card grid of the File screen: `selected` = cursor; cards in A1, B1, B2 */
         static bfiles bf;
         bfiles_open(&bf, &menu, selected);
@@ -250,7 +287,7 @@ main(int argc, char** argv) {
     } else {
         bmenu_show_main(&menu, selected);
     }
-    for (int i = 0; i < (script == -5 || script == -7 || script == -8 || script == -9 ? 0 : frames); i++) {
+    for (int i = 0; i < (script == -5 || script == -7 || script == -10 || script == -8 || script == -9 ? 0 : frames); i++) {
         bmenu_update(&menu);
         if (script == -2) {
             bpage_sync(&page, demo_row, NULL);
@@ -299,7 +336,7 @@ main(int argc, char** argv) {
         bscene_draw_background(&menu.bg, &sink);
         bscene_draw_panel(&menu.scene, BDT_PANEL_X, BDT_PANEL_Y, BDT_PANEL_W, BDT_PANEL_H, 0xFFE00070u, &sink);
         bdt_draw(&dt, &sink);
-    } else if (script == -7) {
+    } else if (script == -7 || script == -10) {
         bscene_draw_background(&menu.bg, &sink);
         bmenu_draw_objects(&menu, &sink);
     } else if (script == -3 || script == -4) {

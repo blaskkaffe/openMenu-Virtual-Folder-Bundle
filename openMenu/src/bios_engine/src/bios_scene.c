@@ -40,6 +40,11 @@ bscene_free(bscene* s) {
             nj_object_free(&s->models[i]);
         }
     }
+    for (int i = 0; i < BMODEL_COUNT; i++) {
+        if (s->custom_state[i] == 1) {
+            nj_object_free(&s->custom[i]);
+        }
+    }
     for (int i = 0; i < s->motion_count; i++) {
         if (s->motions[i].state == 1) {
             nj_motion_free(&s->motions[i].data);
@@ -50,6 +55,13 @@ bscene_free(bscene* s) {
 
 static const nj_object*
 get_model(bscene* s, int idx) {
+    if (idx >= BMODEL_BASE && idx < BMODEL_END) {
+        int c = idx - BMODEL_BASE;
+        if (s->custom_state[c] == 0) {
+            s->custom_state[c] = bmodel_build(idx, &s->custom[c]) == 0 ? 1 : 2;
+        }
+        return s->custom_state[c] == 1 ? &s->custom[c] : NULL;
+    }
     if (idx < 0 || idx >= BSCENE_MODEL_CACHE) {
         return NULL;
     }

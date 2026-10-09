@@ -16,6 +16,7 @@
 #include "bios_datetime.h"
 #include "bios_files.h"
 #include "bios_list.h"
+#include "bios_models.h"
 #include "bios_page.h"
 #include "bios_scene.h"
 #include "nj_model.h"
@@ -769,6 +770,66 @@ test_datetime(const bios_rom* rom) {
 }
 
 static void
+test_models(const bios_rom* rom) {
+    for (int id = BMODEL_BASE; id < BMODEL_END; id++) {
+        nj_object obj;
+        CHECK(bmodel_build(id, &obj) == 0);
+        CHECK(obj.count == 1 && obj.nodes[0].mesh && obj.nodes[0].parent == -1);
+        const nj_mesh* m = obj.nodes[0].mesh;
+        CHECK(m->nverts > 0 && m->nverts <= 4096 && m->npolys > 0);
+        int bad_winding = 0, front_tris = 0, back_tris = 0;
+        for (int p = 0; p < m->npolys; p++) {
+            const nj_poly* poly = &m->polys[p];
+            CHECK(poly->has_diffuse && poly->ntris > 0);
+            for (int t = 0; t < poly->ntris; t++) {
+                const nj_corner* c = &poly->corners[t * 3];
+                const nj_vec3 a = m->verts[c[0].idx].pos, b = m->verts[c[1].idx].pos, d = m->verts[c[2].idx].pos;
+                float ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z, vx = d.x - a.x, vy = d.y - a.y, vz = d.z - a.z;
+                float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+                const nj_vec3 n = m->verts[c[0].idx].nrm;
+                /* the stored normal points the same way as the counter-clockwise face (smooth normals roughly) */
+                if (nx * n.x + ny * n.y + nz * n.z <= 0.0f) {
+                    bad_winding++;
+                }
+                if (poly->tex == BMODEL_TEX_FRONT) {
+                    front_tris++;
+                    CHECK(poly->has_uv);
+                    for (int k = 0; k < 3; k++) {
+                        CHECK(c[k].u >= 0.0f && c[k].u <= 1.0f && c[k].v >= 0.0f && c[k].v <= 1.0f);
+                    }
+                }
+                back_tris += poly->tex == BMODEL_TEX_BACK;
+            }
+        }
+        CHECK(bad_winding == 0);
+        if (id == BMODEL_CASE_WHITE || id == BMODEL_CASE_PAL) {
+            CHECK(front_tris == 2 && back_tris == 2); /* one picture slot on the front, one on the back */
+        } else {
+            CHECK(front_tris == 0 && back_tris == 0);
+        }
+        nj_object_free(&obj);
+    }
+    CHECK(bmodel_build(BMODEL_BASE - 1, &(nj_object){0}) != 0 && bmodel_build(BMODEL_END, &(nj_object){0}) != 0);
+
+    /* the scene draws them like ROM models, with the texture slots as texlist references */
+    bscene sc;
+    bscene_init(&sc, rom);
+    bvm vm;
+    bvm_init(&vm, rom, NULL);
+    bvm_obj* o = bvm_create(&vm, 7, 0x70, 0);
+    bvm_update(&vm);
+    o->pos[2] = -150.0f;
+    o->model = BMODEL_CASE_PAL;
+    o->texlist = BMODEL_CASE_PAL;
+    tally t = {0, 0, 0, 1e9f, -1e9f, 1e9f, -1e9f};
+    bscene_sink sink = {&t, tally_tri, tally_text};
+    bscene_draw_objects(&sc, &vm, &sink);
+    CHECK(t.tris >= 10 && t.textured >= 2); /* seen from the front: the picture is drawn, the back is culled */
+    CHECK(t.minx > 0.0f && t.maxx < 640.0f && t.miny > 0.0f && t.maxy < 480.0f);
+    bscene_free(&sc);
+}
+
+static void
 test_files(const bios_rom* rom) {
     static bmenu m;
     static bfiles f;
@@ -841,6 +902,7 @@ main(void) {
     test_list(&rom);
     test_datetime(&rom);
     test_files(&rom);
+    test_models(&rom);
 
     const char* real = getenv("BIOS_ROM_FILE");
     if (real && *real) {

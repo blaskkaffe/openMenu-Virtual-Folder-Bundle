@@ -49,6 +49,10 @@ void gfx_art_bind_row(int slot, const char* product, int pal);
 /* Box art of a game as a textured rectangle (a blank frame while it loads or if there is none). */
 void gfx_art_box(const char* product, float x, float y, float w, float h, float z);
 
+/* The front picture of the built-in models of bios_models.h (the jewel cases): box art of `product`,
+ * or plain white when empty or not found. The back picture is white until something is placed there. */
+void gfx_model_bind_front(const char* product);
+
 /* Game list row `slot`: show its title through a window of `window_px` pixels, moved left by
  * `offset_px` (a scrolling title). window_px 0 shows the title as it is. */
 void gfx_set_row_scroll(int slot, int window_px, int offset_px);
