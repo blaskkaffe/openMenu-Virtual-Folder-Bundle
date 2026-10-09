@@ -133,24 +133,41 @@ shade(uint32_t base, const int* off) {
  * directional light along the view axis; ambient_light 0.5, diffuse_light 0.3. The alpha is the
  * material's diffuse alpha. nl is N.L in 0..256. */
 static uint32_t
-bios_lit(uint32_t diffuse, uint32_t ambient, uint32_t specular, int nl) {
+bios_lit(uint32_t diffuse, uint32_t ambient, int nl) {
     uint32_t out = diffuse & 0xFF000000u;
-    int spec = 0; /* 1.4 * (N.L)^power, power = the specular colour's alpha byte, in 1/256 */
-    if (specular) {
-        int power = (int)(specular >> 24);
-        float i = (float)nl / 256.0f, k = 1.0f;
-        for (int n = 0; n < power && n < 64 && k > 0.002f && k < 8.0f; n++) {
-            k *= i;
-        }
-        spec = (int)(k * 1.4f * 256.0f);
-    }
     for (int sh = 0; sh <= 16; sh += 8) {
         int a = (int)((ambient >> sh) & 255), d = (int)((diffuse >> sh) & 255);
         int c = (a * LIGHT_AMBIENT_256 + ((d * nl) >> 8) * 77) >> 8; /* ambient and 0.3 in 1/256 */
-        if (spec) {
-            c += (int)((specular >> sh) & 255) * spec >> 8;
-        }
         out |= (uint32_t)clamp255(c) << sh;
+    }
+    return out;
+}
+
+/* The specular term of a textured strip, the PVR offset colour (0x8C098968): 1.4 * spec.rgb * (d * d)^P[n], n = the
+ * specular colour's alpha byte. Untextured strips never show it. nl is d in 1/256. Returns 0xFF000000 | rgb. */
+static uint32_t
+bios_offset(uint32_t specular, int nl) {
+    static const float P[17] = {0, 0.5f, 1, 1.5f, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128};
+    int n = (int)(specular >> 24);
+    float e = n < 17 ? P[n] : 128.0f, x = (float)nl / 256.0f;
+    x *= x;
+    float k = 1.0f;
+    if (nl <= 0) {
+        return 0;
+    }
+    if (e > 0.0f) {
+        int whole = (int)e;
+        for (int i = 0; i < whole && k > 0.0005f; i++) {
+            k *= x;
+        }
+        if (e - (float)whole > 0.0f) {
+            k *= sqrtf(x);
+        }
+    }
+    int f = (int)(k * 1.4f * 256.0f);
+    uint32_t out = 0xFF000000u;
+    for (int sh = 0; sh <= 16; sh += 8) {
+        out |= (uint32_t)clamp255(((int)((specular >> sh) & 255) * f) >> 8) << sh;
     }
     return out;
 }
@@ -214,12 +231,14 @@ draw_round_face(const nj_mesh* mesh, const nj_poly* poly, const nj_mat4* m, uint
         pts[i].u = 0.5f + 0.5f * cs;
         pts[i].v = 0.5f - 0.5f * sn;
         pts[i].argb = argb;
+        pts[i].oargb = 0;
     }
     bscene_vtx c;
     nj_vec3 wc = nj_mat_apply(m, (nj_vec3){cx, cy, z});
     int cok = bscene_project(wc, &c.x, &c.y, &c.invw);
     c.u = c.v = 0.5f;
     c.argb = argb;
+    c.oargb = 0;
     for (int i = 0; i < ROUND_SEGMENTS; i++) {
         bscene_vtx v[3] = {c, pts[i], pts[i + 1]};
         float area = (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (v[1].y - v[0].y);
@@ -276,7 +295,7 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
 
             for (int n = 0; n < obj->count; n++) {
                 const nj_mesh* mesh = obj->nodes[n].mesh;
-                if (!mesh) {
+                if (!mesh || (obj->nodes[n].eval & NJ_EVAL_HIDE)) {
                     continue;
                 }
                 nj_mat4 m;
@@ -303,15 +322,11 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         nj_vec3 w = nj_mat_apply(&m, src);
                         scratch_ok[i] = (uint8_t)bscene_project(w, &scratch_x[i], &scratch_y[i], &scratch_w[i]);
                         {
-                            /* The BIOS does not normalise: the normal is multiplied by the object's matrix M and the
-                             * light direction (0, 0, -1) by its transpose (0x8C0A5B08), so N.L = (M n) . (row 2 of M),
-                             * which grows with the square of the object's scale. */
+                            /* 0x8C0989D8 with the light (0, 0, -1) in view space: d = max(0, nz) of the transformed normal,
+                             * not renormalised (the object's scale counts) */
                             float nl = 1.0f;
                             if (vx->has_nrm) {
-                                float nx = m.m[0][0] * vx->nrm.x + m.m[0][1] * vx->nrm.y + m.m[0][2] * vx->nrm.z;
-                                float ny = m.m[1][0] * vx->nrm.x + m.m[1][1] * vx->nrm.y + m.m[1][2] * vx->nrm.z;
-                                float nz = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
-                                nl = nx * m.m[2][0] + ny * m.m[2][1] + nz * m.m[2][2];
+                                nl = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
                                 nl = nl > 0.0f ? (nl > 8.0f ? 8.0f : nl) : 0.0f;
                             }
                             scratch_n[i] = (int16_t)(s->fullbright ? 256 : (int)(nl * 256.0f));
@@ -369,8 +384,7 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                      * the diffuse colour plus the object's constant colour is copied over the ambient colour (0x8C094D22), so
                      * the ambient chunks in the files never take part */
                     const uint32_t amb = (poly->has_diffuse && !(poly->strip_flags & STRIP_IGNORE_AMBIENT)) ? poly_argb : 0;
-                    /* the specular term (strip flag 0x02 switches it off); 0 = none */
-                    const uint32_t spc = (poly->has_specular && !(poly->strip_flags & 0x02) && (poly->specular >> 24)) ? poly->specular : 0;
+                    const int spec_on = poly->tex >= 0 && poly->has_specular && !(poly->strip_flags & 0x02);
                     int cull = !(poly->strip_flags & STRIP_DOUBLE_SIDED);
                     for (int t = 0; t < poly->ntris; t++) {
                         bscene_vtx v[3];
@@ -398,8 +412,12 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                                     base = double_alpha(base);
                                 }
                             }
+                            v[k].oargb = 0;
                             if (lit && poly->has_diffuse && !forced && !s->fullbright && mesh->verts[c->idx].has_nrm) {
-                                v[k].argb = bios_lit(base, amb, spc, scratch_n[c->idx]);
+                                v[k].argb = bios_lit(base, amb, scratch_n[c->idx]);
+                                if (spec_on) {
+                                    v[k].oargb = bios_offset(poly->specular, scratch_n[c->idx]);
+                                }
                             } else {
                                 v[k].argb = base;
                             }
@@ -460,6 +478,7 @@ draw_mesh(const dcbg_mesh* m, const dcbg_obj* o, const bscene_sink* sink) {
                     v[k].u = src->u;
                     v[k].v = src->v;
                     v[k].argb = src->argb;
+                    v[k].oargb = 0;
                 }
                 sink->triangle(sink->user, v, tex);
             }

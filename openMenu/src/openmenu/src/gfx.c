@@ -573,6 +573,7 @@ send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
 
     if (tex) {
         pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY, tex->fmt, tex->w, tex->h, tex->ptr, PVR_FILTER_BILINEAR);
+        cxt.gen.specular = PVR_SPECULAR_ENABLE; /* the offset colour: the BIOS' specular on textured strips */
     } else if (text_ptr) {
         pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY, PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED, text_w, GFX_LINE_H, text_ptr,
                          PVR_FILTER_NONE);
@@ -606,6 +607,7 @@ ensure_header(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
 /* Vertices of the polygon being built (a triangle or a quad strip); sent when the one marked
  * as last arrives, so there is one submission per polygon. */
 static pvr_vertex_t* cur_poly;
+static uint32_t vtx_offset; /* the PVR offset colour of the vertices being sent (specular of textured strips) */
 
 /* 16:9: the picture is squeezed to 3/4 of its width around the centre; a wide TV stretches it back. */
 static float aspect_x = 1.0f;
@@ -633,7 +635,7 @@ send_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last
     vert->u = u;
     vert->v = v;
     vert->argb = argb;
-    vert->oargb = 0;
+    vert->oargb = vtx_offset;
     if (last) {
         cur_poly = NULL;
     }
@@ -655,8 +657,10 @@ sink_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
     tri_count++;
     ensure_header(tex, NULL, 0);
     for (int i = 0; i < 3; i++) {
+        vtx_offset = tex ? v[i].oargb : 0;
         send_vertex(v[i].x, v[i].y, v[i].invw, v[i].u, v[i].v, v[i].argb, i == 2);
     }
+    vtx_offset = 0;
 }
 
 static const char*

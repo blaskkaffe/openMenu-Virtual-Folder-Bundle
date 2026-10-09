@@ -178,6 +178,14 @@ tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
                 col[1] *= (float)((p >> 16) & 255) / 255.0f;
                 col[2] *= (float)((p >> 8) & 255) / 255.0f;
                 col[3] *= (float)(p & 255) / 255.0f;
+                if (v[0].oargb | v[1].oargb | v[2].oargb) { /* the offset colour is added after the texture */
+                    for (int c = 0; c < 3; c++) {
+                        int sh = 16 - 8 * c;
+                        float o = (w0 * (float)((v[0].oargb >> sh) & 255) * v[0].invw + w1 * (float)((v[1].oargb >> sh) & 255) * v[1].invw
+                                   + w2 * (float)((v[2].oargb >> sh) & 255) * v[2].invw) / iw / 255.0f;
+                        col[c + 1] = col[c + 1] + o > 1.0f ? 1.0f : col[c + 1] + o;
+                    }
+                }
             }
             for (int c = 0; c < 3; c++) {
                 fb[y][x][c] = fb[y][x][c] * (1.0f - col[0]) + col[c + 1] * col[0];

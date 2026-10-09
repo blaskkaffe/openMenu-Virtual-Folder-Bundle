@@ -31,6 +31,7 @@ typedef struct bscene_vtx {
     float invw;  /* 1/w, what the PVR wants as Z */
     float u, v;
     uint32_t argb;
+    uint32_t oargb; /* PVR offset colour (the specular term of textured strips), 0 = none */
 } bscene_vtx;
 
 typedef enum bscene_tex_kind {

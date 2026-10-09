@@ -61,6 +61,7 @@ typedef struct nj_mesh {
 #define NJ_EVAL_NO_TRANSLATE 0x01
 #define NJ_EVAL_NO_ROTATE 0x02
 #define NJ_EVAL_NO_SCALE 0x04
+#define NJ_EVAL_HIDE 0x08 /* the node is not drawn */
 #define NJ_EVAL_ZXY 0x20 /* rotate Y, X, Z instead of Z, Y, X */
 
 typedef struct nj_node {
