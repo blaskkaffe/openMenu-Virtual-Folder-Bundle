@@ -90,6 +90,9 @@ anchor of the icon captions, and the sound driver start-up are the likely places
 
 - Genre filter: the genre list is incomplete and sometimes wrong (the genre data comes from
   the bundled game database). Review and correct it, then bring the filter back.
+- Browsing by letter or region: decide between the old category rows (A-Z, region, genre) and
+  an L/R jump through the list. Undecided.
+- Most played sort (needs a play counter in the save file).
 
 ## Game browser settings (phase 5)
 
