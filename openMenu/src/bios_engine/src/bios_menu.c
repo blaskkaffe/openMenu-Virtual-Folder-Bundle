@@ -81,17 +81,22 @@ bmenu_update(bmenu* m) {
 
 void
 bmenu_draw_objects(bmenu* m, const bscene_sink* sink) {
-    for (int i = 0; i < m->vm.count; i++) {
-        const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
-        int caption = o->id >= BMENU_ID_CAPTION(0) && o->id < BMENU_ID_CAPTION(BMENU_ICONS);
-        int icon = o->id >= BMENU_ID_ICON(0) && o->id < BMENU_ID_ICON(BMENU_ICONS);
-        if (caption) {
-            continue;
+    static const unsigned passes[2] = {BSCENE_PART_MODEL, BSCENE_PART_TEXT};
+    for (int pass = 0; pass < 2; pass++) {
+        m->scene.parts = passes[pass];
+        for (int i = 0; i < m->vm.count; i++) {
+            const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
+            int caption = o->id >= BMENU_ID_CAPTION(0) && o->id < BMENU_ID_CAPTION(BMENU_ICONS);
+            int icon = o->id >= BMENU_ID_ICON(0) && o->id < BMENU_ID_ICON(BMENU_ICONS);
+            if (caption) {
+                continue;
+            }
+            m->scene.double_alpha = icon;
+            bscene_draw_object(&m->scene, o, sink);
         }
-        m->scene.double_alpha = icon;
-        bscene_draw_object(&m->scene, o, sink);
     }
     m->scene.double_alpha = 0;
+    m->scene.parts = BSCENE_PART_ALL;
 }
 
 void
