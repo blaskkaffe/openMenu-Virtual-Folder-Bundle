@@ -114,7 +114,7 @@ draw_frame(void) {
             bscene_draw_background(&menu.bg, gfx_sink());
         }
         if (!(held & CONT_Y)) {
-            bscene_draw_objects(&menu.scene, &menu.vm, gfx_sink());
+            bmenu_draw_objects(&menu, gfx_sink());
         }
     } else {
         bscene_draw_background(&menu.bg, gfx_sink());

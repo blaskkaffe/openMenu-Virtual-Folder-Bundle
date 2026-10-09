@@ -80,7 +80,22 @@ bmenu_update(bmenu* m) {
 }
 
 void
+bmenu_draw_objects(bmenu* m, const bscene_sink* sink) {
+    for (int i = 0; i < m->vm.count; i++) {
+        const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
+        int caption = o->id >= BMENU_ID_CAPTION(0) && o->id < BMENU_ID_CAPTION(BMENU_ICONS);
+        int icon = o->id >= BMENU_ID_ICON(0) && o->id < BMENU_ID_ICON(BMENU_ICONS);
+        if (caption) {
+            continue;
+        }
+        m->scene.double_alpha = icon;
+        bscene_draw_object(&m->scene, o, sink);
+    }
+    m->scene.double_alpha = 0;
+}
+
+void
 bmenu_draw(bmenu* m, const bscene_sink* sink) {
     bscene_draw_background(&m->bg, sink);
-    bscene_draw_objects(&m->scene, &m->vm, sink);
+    bmenu_draw_objects(m, sink);
 }

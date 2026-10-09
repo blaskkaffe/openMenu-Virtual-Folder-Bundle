@@ -19,7 +19,7 @@
 
 /* Per-object scratch for projected vertices (the engine is single threaded). */
 static float scratch_x[MAX_MESH_VERTS], scratch_y[MAX_MESH_VERTS], scratch_w[MAX_MESH_VERTS];
-static float scratch_l[MAX_MESH_VERTS]; /* light factor per vertex */
+static int16_t scratch_l[MAX_MESH_VERTS]; /* light factor per vertex, 0..256 */
 static uint8_t scratch_ok[MAX_MESH_VERTS];
 
 void
@@ -85,35 +85,52 @@ bscene_project(nj_vec3 p, float* sx, float* sy, float* invw) {
     return 1;
 }
 
-static float
-clamp01(float v) {
-    return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+/* Integer colour maths on purpose: on the SH-4 a float to unsigned conversion is a slow library
+ * call, and this runs for every corner of every triangle. */
+static int
+clamp255(int v) {
+    return v < 0 ? 0 : (v > 255 ? 255 : v);
 }
 
-/* Base colour plus the object's constant material offsets (a, r, g, b in 0..1 units). */
-static uint32_t
-shade(uint32_t base, const float* offs) {
-    float c[4] = {(float)(base >> 24) / 255.0f, (float)((base >> 16) & 255) / 255.0f, (float)((base >> 8) & 255) / 255.0f,
-                  (float)(base & 255) / 255.0f};
-    if (offs) {
-        for (int i = 0; i < 4; i++) {
-            c[i] = clamp01(c[i] + offs[i]);
-        }
+/* Constant material offsets (a, r, g, b in 0..1 units) as 0..255 integers. */
+static void
+offsets_to_int(const float* offs, int out[4]) {
+    for (int i = 0; i < 4; i++) {
+        out[i] = (int)(offs[i] * 255.0f);
     }
-    return ((uint32_t)(c[0] * 255.0f + 0.5f) << 24) | ((uint32_t)(c[1] * 255.0f + 0.5f) << 16)
-           | ((uint32_t)(c[2] * 255.0f + 0.5f) << 8) | (uint32_t)(c[3] * 255.0f + 0.5f);
 }
 
-/* Multiply the colour channels (not the alpha) by f, clamped to 1. */
+/* Base colour plus the object's constant material offsets. */
 static uint32_t
-scale_rgb(uint32_t argb, float f) {
-    if (f >= 0.999f) {
+shade(uint32_t base, const int* off) {
+    if (!off) {
+        return base;
+    }
+    int a = clamp255((int)(base >> 24) + off[0]);
+    int r = clamp255((int)((base >> 16) & 255) + off[1]);
+    int g = clamp255((int)((base >> 8) & 255) + off[2]);
+    int b = clamp255((int)(base & 255) + off[3]);
+    return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+}
+
+/* Multiply the colour channels (not the alpha) by f / 256. */
+static uint32_t
+scale_rgb(uint32_t argb, int f) {
+    if (f >= 256) {
         return argb;
     }
-    uint32_t r = (uint32_t)((float)((argb >> 16) & 255) * f + 0.5f);
-    uint32_t g = (uint32_t)((float)((argb >> 8) & 255) * f + 0.5f);
-    uint32_t b = (uint32_t)((float)(argb & 255) * f + 0.5f);
+    uint32_t r = (((argb >> 16) & 255) * (uint32_t)f) >> 8;
+    uint32_t g = (((argb >> 8) & 255) * (uint32_t)f) >> 8;
+    uint32_t b = ((argb & 255) * (uint32_t)f) >> 8;
     return (argb & 0xFF000000u) | (r << 16) | (g << 8) | b;
+}
+
+/* Alpha of two layers of the same translucent surface on top of each other. */
+static uint32_t
+double_alpha(uint32_t argb) {
+    uint32_t a = argb >> 24;
+    a = a + (((255 - a) * a) / 255);
+    return (argb & 0x00FFFFFFu) | (a << 24);
 }
 
 void
@@ -132,7 +149,12 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
             const nj_motion* mo = (o->flags & BVM_F_MOTION) ? get_motion(s, o->model, o->motion, obj->count) : NULL;
             nj_mat4* world = s->pose;
             nj_object_pose(obj, mo, o->motion_tw.cur, world);
-            const float* offs = (o->flags & BVM_F_COLOUR) ? o->color : NULL;
+            int off_i[4];
+            const int* offs = NULL;
+            if (o->flags & BVM_F_COLOUR) {
+                offsets_to_int(o->color, off_i);
+                offs = off_i;
+            }
 
             for (int n = 0; n < obj->count; n++) {
                 const nj_mesh* mesh = obj->nodes[n].mesh;
@@ -150,11 +172,14 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         nj_vec3 w = nj_mat_apply(&m, vx->pos);
                         scratch_ok[i] = (uint8_t)bscene_project(w, &scratch_x[i], &scratch_y[i], &scratch_w[i]);
                         /* only the z of the rotated normal matters for a light along the view axis */
-                        float nz = vx->has_nrm ? m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z : 1.0f;
-                        scratch_l[i] = LIGHT_AMBIENT + LIGHT_DIFFUSE * (nz > 0.0f ? (nz > 1.0f ? 1.0f : nz) : 0.0f);
-                        if (!vx->has_nrm) {
-                            scratch_l[i] = 1.0f;
+                        int light = 256;
+                        if (vx->has_nrm) {
+                            float nz = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
+                            nz = nz > 0.0f ? (nz > 1.0f ? 1.0f : nz) : 0.0f;
+                            light = (int)((LIGHT_AMBIENT + LIGHT_DIFFUSE * nz) * 256.0f);
+                            light = light > 256 ? 256 : light;
                         }
+                        scratch_l[i] = (int16_t)light;
                     }
                 }
 
@@ -167,6 +192,9 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         tex.b = poly->tex;
                     }
                     uint32_t poly_argb = poly->has_diffuse ? shade(poly->diffuse, offs) : 0;
+                    if (poly->has_diffuse && s->double_alpha) {
+                        poly_argb = double_alpha(poly_argb);
+                    }
                     int lit = !(poly->strip_flags & STRIP_IGNORE_LIGHT);
                     int cull = !(poly->strip_flags & STRIP_DOUBLE_SIDED);
                     for (int t = 0; t < poly->ntris; t++) {
@@ -186,6 +214,9 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                             } else {
                                 const nj_vertex* vx = &mesh->verts[c->idx];
                                 base = shade(vx->has_col ? vx->col : 0xFFFFFFFFu, offs);
+                                if (s->double_alpha) {
+                                    base = double_alpha(base);
+                                }
                             }
                             v[k].argb = lit ? scale_rgb(base, scratch_l[c->idx]) : base;
                         }
