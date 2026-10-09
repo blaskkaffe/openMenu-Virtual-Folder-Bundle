@@ -856,10 +856,10 @@ test_case(const bios_rom* rom) {
     bcase_show(&c, BMODEL_CASE_PAL, "MK51052", 1); /* same game: nothing happens */
     CHECK(!c.old.active);
     bcase_show(&c, BMODEL_CASE_WHITE, "HDR0001", 1);
-    CHECK(c.old.active && c.old.leaving && c.old.target > 100.0f); /* the old one leaves at the bottom */
+    CHECK(c.old.active && c.old.leaving && c.old.target > 400.0f); /* the old one leaves at the bottom, far enough to be off the screen */
     CHECK(c.cur.y < -100.0f);
     bcase_show(&c, BMODEL_CASE_WHITE, "HDR0002", -1); /* moved up: from the bottom, previous flies up */
-    CHECK(c.cur.y > 100.0f && c.old.target < -100.0f);
+    CHECK(c.cur.y > 400.0f && c.old.target < -100.0f);
     for (int i = 0; i < 100; i++) {
         bcase_step(&c);
     }

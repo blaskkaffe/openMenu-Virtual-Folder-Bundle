@@ -280,6 +280,8 @@ main(int argc, char** argv) {
     } else if (script == -3 || script == -4) { /* game list demo: 7 rows; -4 = launch animation at `frames` */
         blist_open(&list, &menu, getenv("BLIST_SLOTS") ? atoi(getenv("BLIST_SLOTS")) : 7, 30);
         blist_goto(&list, selected);
+        list.back_selected = getenv("BLIST_BACK") != NULL;
+        list.pal_console = getenv("BLIST_PAL") != NULL;
     } else if (script == -6) { /* date and time editor, `selected` = field */
         bdt_open(&dt, &menu, BDT_ORDER_MDY, 2026, 10, 9, 14, 30);
         dt.cursor = selected;

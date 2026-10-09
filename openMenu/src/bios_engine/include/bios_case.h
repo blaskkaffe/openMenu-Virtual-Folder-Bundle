@@ -13,7 +13,9 @@ extern "C" {
 #endif
 
 #define BCASE_TAG_MAX 16
-#define BCASE_FLY_PX 300.0f /* distance a case flies in from / out to */
+#define BCASE_FLY_DOWN 480.0f /* a case leaving at the bottom ends this far below its resting place: off the screen */
+#define BCASE_FLY_UP 260.0f   /* ... and this far above it */
+#define BCASE_FLY_PX 300.0f   /* scale of the lean while flying */
 
 typedef struct bcase_item {
     int active;

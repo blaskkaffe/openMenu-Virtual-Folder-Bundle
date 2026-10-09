@@ -49,8 +49,8 @@
 #define SPIN_Y 140 /* 0.77 degrees: 0x10000 = 360 degrees */
 #define SPIN_Z 500 /* 2.75 degrees */
 
-#define LAUNCH_FRAMES 26
-#define LAUNCH_HOLD 6
+#define LAUNCH_FRAMES 14 /* everything but the chosen disc bursts outwards, the disc moves to the CD player's place */
+#define LAUNCH_HOLD 18   /* the disc alone on the screen before the game starts */
 
 static const struct {
     int anchor_script, pill_script, icon_script, text_script;
@@ -70,6 +70,8 @@ blist_open(blist* l, bmenu* m, int slots, int count) {
     l->top = 0;
     l->launching = 0;
     l->launch_frame = 0;
+    l->back_selected = 0;
+    l->anim = 0;
     bvm_kill_all(&m->vm);
     for (int s = 0; s < l->slots; s++) {
         bvm_create(&m->vm, proto.anchor_script, ID_ANCHOR(s), PRIO);
@@ -129,6 +131,17 @@ fix_top(blist* l) {
 
 int
 blist_move(blist* l, int delta) {
+    if (l->back_selected) {
+        if (delta < 0) {
+            l->back_selected = 0;
+            return 1;
+        }
+        return 0;
+    }
+    if (delta == 1 && l->count > 0 && l->cursor == l->count - 1) {
+        l->back_selected = 1; /* one step down from the last row: the BACK marker */
+        return 1;
+    }
     int next = l->cursor + delta;
     if (next > l->count - 1) {
         next = l->count - 1;
@@ -146,6 +159,7 @@ blist_move(blist* l, int delta) {
 
 void
 blist_goto(blist* l, int cursor) {
+    l->back_selected = 0;
     l->cursor = cursor;
     l->top = cursor > l->slots / 2 ? cursor - l->slots / 2 : 0;
     blist_set_count(l, l->count);
@@ -154,10 +168,14 @@ blist_goto(blist* l, int cursor) {
 
 void
 blist_set_cursor(blist* l, int cursor) {
+    int before = l->cursor;
     l->cursor = cursor < 0 ? 0 : (cursor > l->count - 1 ? (l->count > 0 ? l->count - 1 : 0) : cursor);
     fix_top(l);
     if (l->count <= l->slots) {
         l->top = 0;
+    }
+    if (l->cursor != before) {
+        l->back_selected = 0;
     }
 }
 
@@ -178,6 +196,12 @@ blist_button_center_px(int i, float* x, float* y) {
 static float row_y(const blist* l, int s);
 
 int
+blist_back_at_px(float x, float y) {
+    float cx = 320.0f + BACK_X * PX_PER_UNIT, cy = 240.0f - BACK_Y * PX_PER_UNIT;
+    return x >= cx - 34.0f && x <= cx + 34.0f && y >= cy - 34.0f && y <= cy + 34.0f;
+}
+
+int
 blist_slot_at_px(const blist* l, float x, float y) {
     if (x < 40.0f || x > blist_row_right_px()) {
         return -1;
@@ -193,7 +217,7 @@ blist_slot_at_px(const blist* l, float x, float y) {
 
 void
 blist_rows_extent_px(const blist* l, float* top, float* bottom) {
-    *top = 240.0f - row_y(l, 0) * PX_PER_UNIT - 26.5f; /* the bars are about 53 px high */
+    *top = 240.0f - row_y(l, 0) * PX_PER_UNIT - 28.5f; /* the bars are about 53 px high; the panel starts 2 px higher (checked on a console) */
     *bottom = 240.0f - row_y(l, l->slots - 1) * PX_PER_UNIT + 26.5f;
 }
 
@@ -272,11 +296,12 @@ blist_launch_step(blist* l) {
     return l->launch_frame >= LAUNCH_FRAMES + LAUNCH_HOLD;
 }
 
-/* Where a point of the row layout is while the rows leave in a circle (e = 0..1). */
+/* Where a point of the row layout is while everything bursts outwards from the centre (e = 0..1):
+ * slowly at first, then fast, with a little turn, so the screen is clear well before e = 1. */
 static void
 leave_xf(float e, float x, float y, float* ox, float* oy) {
-    float phi = e * 3.6f;
-    float k = 1.0f + e * 3.5f;
+    float phi = e * 0.5f;
+    float k = 1.0f + 18.0f * e * e;
     float cs = cosf(phi), sn = sinf(phi);
     *ox = k * (cs * x - sn * y);
     *oy = k * (sn * x + cs * y);
@@ -285,6 +310,7 @@ leave_xf(float e, float x, float y, float* ox, float* oy) {
 void
 blist_sync(blist* l) {
     bvm* vm = &l->m->vm;
+    l->anim++;
     float t = l->launching ? (float)l->launch_frame / (float)LAUNCH_FRAMES : 0.0f;
     if (t > 1.0f) {
         t = 1.0f;
@@ -295,7 +321,7 @@ blist_sync(blist* l) {
     for (int s = 0; s < l->slots; s++) {
         int row = blist_row_in_slot(l, s);
         int on = row >= 0;
-        int sel = on && row == l->cursor;
+        int sel = on && row == l->cursor && !l->back_selected;
         int multi = on && l->multi[s];
         bvm_obj* anchor = bvm_find(vm, ID_ANCHOR(s));
         bvm_obj* pill = bvm_find(vm, ID_PILL(s));
@@ -400,17 +426,28 @@ blist_sync(blist* l) {
         }
     }
 
-    for (int i = 0; i < BLIST_BUTTONS; i++) {
-        bvm_obj* b = bvm_find(vm, ID_BUTTON(i));
-        if (b) {
-            set_hidden(b, l->launching);
+    /* the five buttons and the BACK marker: at rest where their scripts put them, bursting outwards on launch */
+    for (int i = 0; i <= BLIST_BUTTONS; i++) {
+        bvm_obj* o = i < BLIST_BUTTONS ? bvm_find(vm, ID_BUTTON(i)) : bvm_find(vm, 0x1110);
+        if (!o) {
+            continue;
         }
-    }
-    bvm_obj* back = bvm_find(vm, 0x1110);
-    if (back) {
-        set_pos(back, BACK_X, BACK_Y, BACK_Z);
-        set_scale(back, BACK_SCALE, BACK_SCALE, BACK_SCALE);
-        set_hidden(back, l->launching);
+        if (i == BLIST_BUTTONS) {
+            set_pos(o, BACK_X, BACK_Y, BACK_Z);
+            set_scale(o, BACK_SCALE, BACK_SCALE, BACK_SCALE);
+        }
+        if (!l->launching) {
+            l->base[i][0] = o->pos[0];
+            l->base[i][1] = o->pos[1];
+            l->base[i][2] = o->pos[2];
+            l->base_valid = 1;
+            set_hidden(o, 0);
+        } else if (l->base_valid) {
+            float x, y;
+            leave_xf(e, l->base[i][0], l->base[i][1], &x, &y);
+            set_pos(o, x, y, l->base[i][2]);
+            set_hidden(o, e >= 1.0f);
+        }
     }
 }
 
@@ -418,6 +455,13 @@ void
 blist_draw(blist* l, const bscene_sink* sink) {
     static const unsigned passes[2] = {BSCENE_PART_MODEL, BSCENE_PART_TEXT};
     bmenu* m = l->m;
+    /* the BACK marker as the BIOS script effect colours it (fx 0x8C021CD0): arrow and frame only light up when selected,
+     * and the frame blinks yellow for 16 frames, dark for 16 */
+    const uint32_t arrow = l->back_selected ? (l->pal_console ? 0xD02020F0u : 0xD0F02000u) : 0u;
+    const uint32_t frame = l->back_selected && ((l->anim / 16) & 1) == 0 ? 0xFFFFFF00u : 0xC0404040u;
+    m->scene.ovr[0].model = 0, m->scene.ovr[0].node = 1, m->scene.ovr[0].poly = 0, m->scene.ovr[0].argb = arrow;
+    m->scene.ovr[1].model = 0, m->scene.ovr[1].node = 2, m->scene.ovr[1].poly = 0, m->scene.ovr[1].argb = frame;
+    m->scene.ovr_n = 2;
     for (int pass = 0; pass < 2; pass++) {
         m->scene.parts = passes[pass];
         for (int i = 0; i < m->vm.count; i++) {
@@ -447,5 +491,6 @@ blist_draw(blist* l, const bscene_sink* sink) {
     m->scene.fullbright = 0;
     m->scene.stretch_on = 0;
     m->scene.no_decals = 0;
+    m->scene.ovr_n = 0;
     m->scene.parts = BSCENE_PART_ALL;
 }

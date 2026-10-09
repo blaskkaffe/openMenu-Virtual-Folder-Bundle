@@ -48,7 +48,7 @@ typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCRE
 
 enum { ICON_GAME, ICON_FILES, ICON_MUSIC, ICON_SETTINGS };
 
-static const char* const icon_names[BMENU_ICONS] = {"Game", "Files", "Music", "Settings"};
+static const char* const icon_names[BMENU_ICONS] = {"Play", "File", "Music", "Settings"};
 
 #define NOTICE_FRAMES 150
 
@@ -209,6 +209,7 @@ games_sync(void) {
     case_update();
     blist_set_count(&glist, uil_count());
     blist_set_cursor(&glist, uil_cursor());
+    glist.pal_console = console_is_pal();
     for (int s = 0; s < glist.slots; s++) {
         int row = blist_row_in_slot(&glist, s);
         const gd_item* item = row >= 0 ? uil_item(row) : NULL;
@@ -338,6 +339,13 @@ screen_accent(void) {
 
 typedef const char* (*popup_name_fn)(int index);
 
+/* y of the first row of a popup with `rows` rows: the popup panel is centred on the screen. */
+static float
+popup_rows_y(int rows) {
+    float panel_h = (float)(rows + 2) * GFX_LINE_H + 16.0f + 20.0f;
+    return 240.0f - panel_h / 2.0f + 50.0f;
+}
+
 /* A BIOS-style popup list: title, a few rows with the selected one highlighted, a hint line. */
 static void
 draw_popup(const char* title, const char* hint, int count, int sel, popup_name_fn name) {
@@ -345,10 +353,11 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
     int first = sel >= POPUP_ROWS ? sel - POPUP_ROWS + 1 : 0;
     int rows = count < POPUP_ROWS ? count : POPUP_ROWS;
     float h = (float)(rows + 2) * GFX_LINE_H + 16.0f;
-    bscene_draw_panel(&menu.scene, POPUP_X - 10.0f, ROWS_Y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), gfx_sink());
-    gfx_text(title, POPUP_X + 16.0f, ROWS_Y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
+    const float rows_y = popup_rows_y(rows);
+    bscene_draw_panel(&menu.scene, POPUP_X - 10.0f, rows_y - 50.0f, POPUP_W + 20.0f, h + 20.0f, screen_accent(), gfx_sink());
+    gfx_text(title, POPUP_X + 16.0f, rows_y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
     for (int i = 0; i < rows; i++) {
-        float y = ROWS_Y + (float)i * GFX_LINE_H;
+        float y = rows_y + (float)i * GFX_LINE_H;
         int is_sel = first + i == sel;
         if (is_sel) {
             gfx_rect(POPUP_X + 8.0f, y, POPUP_W - 16.0f, (float)GFX_LINE_H, 0.65f, 0x60FFFFFFu);
@@ -356,7 +365,7 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
         snprintf(line, sizeof(line), "%.38s", name(first + i));
         gfx_text(line, POPUP_X + 16.0f, y, 0.7f, is_sel ? 0xFFFFFFFFu : 0xFFC0C0C0u, is_sel);
     }
-    gfx_text(hint, POPUP_X + 16.0f, ROWS_Y + (float)rows * GFX_LINE_H + 2.0f, 0.7f, 0xFFA0A0A0u, 0);
+    gfx_text(hint, POPUP_X + 16.0f, rows_y + (float)rows * GFX_LINE_H + 2.0f, 0.7f, 0xFFA0A0A0u, 0);
 }
 
 static const char*
@@ -641,6 +650,28 @@ handle_games(button_t b) {
     if (launch_pending) {
         return; /* the launch animation is running */
     }
+    if (glist.back_selected) {
+        /* the cursor is on the BACK marker below the last row: up goes back to the list, A leaves */
+        if (b == BTN_UP) {
+            glist.back_selected = 0;
+            sound_sfx(BAUDIO_SFX_CURSOR);
+            return;
+        }
+        if (b == BTN_A || b == BTN_START) {
+            sound_sfx(BAUDIO_SFX_CANCEL);
+            glist.back_selected = 0;
+            bmenu_show_main(&menu, ICON_GAME);
+            screen = SCREEN_MAIN;
+            return;
+        }
+        if (b != BTN_B) {
+            return;
+        }
+    } else if (b == BTN_DOWN && uil_count() > 0 && uil_cursor() == uil_count() - 1) {
+        glist.back_selected = 1;
+        sound_sfx(BAUDIO_SFX_CURSOR);
+        return;
+    }
     uil_result r = uil_button(b, &game);
     if (r == UIL_LAUNCH) {
         if (sf_scroll_art[0] == SCROLL_ART_ON) { /* "Launch animation" setting */
@@ -826,8 +857,9 @@ apply_hover(void) {
         int sel = recent_open ? recent_row : settings_popup_sel;
         int first = sel >= POPUP_ROWS ? sel - POPUP_ROWS + 1 : 0;
         int rows = popup_rows < POPUP_ROWS ? popup_rows : POPUP_ROWS;
-        if (ux >= POPUP_X && ux <= POPUP_X + POPUP_W && uy >= ROWS_Y && uy < ROWS_Y + (float)rows * GFX_LINE_H) {
-            popup_sel = first + (int)((uy - ROWS_Y) / GFX_LINE_H);
+        const float rows_y = popup_rows_y(rows);
+        if (ux >= POPUP_X && ux <= POPUP_X + POPUP_W && uy >= rows_y && uy < rows_y + (float)rows * GFX_LINE_H) {
+            popup_sel = first + (int)((uy - rows_y) / GFX_LINE_H);
             if (recent_open) {
                 recent_row = popup_sel;
             } else {
@@ -849,10 +881,18 @@ apply_hover(void) {
             if (launch_pending) {
                 break;
             }
+            if (blist_back_at_px(ux, uy)) {
+                if (!glist.back_selected) sound_sfx(BAUDIO_SFX_CURSOR);
+                glist.back_selected = 1;
+                break;
+            }
             int row = blist_row_in_slot(&glist, blist_slot_at_px(&glist, ux, uy));
-            if (row >= 0 && row != uil_cursor()) {
-                uil_set_cursor(row);
-                sound_sfx(BAUDIO_SFX_CURSOR);
+            if (row >= 0) {
+                glist.back_selected = 0;
+                if (row != uil_cursor()) {
+                    uil_set_cursor(row);
+                    sound_sfx(BAUDIO_SFX_CURSOR);
+                }
             }
             break;
         }

@@ -35,7 +35,7 @@ bcase_show(bcase* c, int model, const char* tag, int dir) {
     if (c->cur.active) {
         c->old = c->cur; /* an older one still flying out is dropped */
         c->old.leaving = 1;
-        c->old.target = d * BCASE_FLY_PX;
+        c->old.target = d > 0 ? BCASE_FLY_DOWN : -BCASE_FLY_UP;
     }
     memset(&c->cur, 0, sizeof(c->cur));
     if (model >= 0) {
@@ -43,7 +43,7 @@ bcase_show(bcase* c, int model, const char* tag, int dir) {
         c->cur.active = 1;
         c->cur.model = model;
         memcpy(c->cur.tag, t, sizeof(c->cur.tag));
-        c->cur.y = -d * BCASE_FLY_PX;
+        c->cur.y = d > 0 ? -BCASE_FLY_UP : BCASE_FLY_DOWN; /* comes from the side the old one does not leave by */
         for (int k = 0; k < 3; k++) {
             c->cur.phase[k] = (float)((h >> (k * 8)) & 255) / 255.0f * 6.2831853f;
             c->cur.sign[k] = ((h >> (24 + k)) & 1) ? 1.0f : -1.0f;
@@ -83,9 +83,8 @@ draw_item(const bcase* c, const bcase_item* it, bscene* s, float cx, float cy, f
     for (int k = 0; k < 3; k++) {
         rot[k] = it->sign[k] * amp[k] * sinf(6.2831853f * freq[k] * (float)c->frame + it->phase[k]);
     }
-    float fly = it->y / BCASE_FLY_PX; /* -1..1, 0 at rest: lean into the motion while it flies */
-    rot[0] += 40.0f * fly;
-    rot[2] += 14.0f * fly * it->sign[2];
+    float fly = it->y / BCASE_FLY_PX; /* 0 at rest: lean into the motion while it flies (no roll: it flies straight) */
+    rot[0] += 30.0f * (fly > 1.2f ? 1.2f : (fly < -1.2f ? -1.2f : fly));
     if (bind) {
         bind(user, it->tag);
     }

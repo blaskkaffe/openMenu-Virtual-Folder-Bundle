@@ -350,6 +350,11 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                     if (s->panel_on && p == 0) {
                         poly_argb = s->panel_accent; /* the rim */
                     }
+                    for (int k = 0; k < s->ovr_n; k++) {
+                        if (s->ovr[k].model == o->model && s->ovr[k].node == n && s->ovr[k].poly == p) {
+                            poly_argb = s->ovr[k].argb;
+                        }
+                    }
                     if (poly->has_diffuse && s->double_alpha) {
                         poly_argb = double_alpha(poly_argb);
                     }

@@ -33,6 +33,8 @@ extern "C" {
 #define BLIST_TEXT_H 32
 #define BLIST_NUM_W 48
 
+#define BLIST_BUTTONS 5
+
 typedef struct blist {
     bmenu* m;
     int slots; /* rows shown: 5 or 7 */
@@ -41,6 +43,11 @@ typedef struct blist {
     int top;
     int launching;
     int launch_frame;
+    int back_selected; /* the cursor is on the BACK marker, below the last row */
+    int pal_console;   /* set by the caller: the console is a PAL one (the BACK marker is blue instead of red) */
+    float base[BLIST_BUTTONS + 1][3]; /* resting positions of the five buttons and the BACK marker (for the launch animation) */
+    int base_valid;
+    unsigned anim;     /* frames since the list was opened (the BACK marker's frame blinks) */
     int multi[BLIST_MAX_SLOTS]; /* set by the caller before blist_sync(): row is a multi-disc set */
 } blist;
 
@@ -62,8 +69,10 @@ void blist_launch_cancel(blist* l);
 
 /* The five buttons of the CD player along the bottom, without their pictures. The caller writes
  * text on them: this gives the centre of button i (pixels). */
-#define BLIST_BUTTONS 5
 void blist_button_center_px(int i, float* x, float* y);
+
+/* The BACK marker is under a point (pixels). */
+int blist_back_at_px(float x, float y);
 
 /* The slot whose bar is under a point (pixels), -1 if none; and the buttons row. */
 int blist_slot_at_px(const blist* l, float x, float y);

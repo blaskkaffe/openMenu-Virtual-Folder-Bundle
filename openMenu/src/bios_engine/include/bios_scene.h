@@ -85,6 +85,13 @@ typedef struct bscene {
     uint32_t panel_accent;
     float light_y, light_z; /* direction of the light toward the scene (y up); 0, 0 means straight along the view axis */
     int amb_k; /* how much of the material's ambient colour is the lowest the light can make a surface, 256 = all */
+    /* material colours replaced while an object of `model` is drawn (the BIOS script effects that recolour a model:
+     * the BACK marker's arrow and frame). node and poly index into the model. */
+    struct {
+        int model, node, poly;
+        uint32_t argb;
+    } ovr[4];
+    int ovr_n;
     uint64_t ambient_models; /* bit n: model n never gets darker than its materials' ambient colours (see amb_k) */
     int fullbright; /* no shading by the light (the gold reverse of a disc looks shinier) */
     int double_alpha;  /* draw objects as if two identical layers were stacked (see bmenu_draw) */
