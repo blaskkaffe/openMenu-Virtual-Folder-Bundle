@@ -25,7 +25,8 @@ add_executable(openmenu ${OPENMENU_SOURCES})
 
 # Triangle submission: 0 = pvr_prim (default), 1 = direct rendering (store queues), see gfx.c
 set(GFX_USE_DR 0 CACHE STRING "Submit triangles with direct rendering (experimental)")
-target_compile_definitions(openmenu PRIVATE GFX_USE_DR=${GFX_USE_DR})
+set(GFX_PRESORT 1 CACHE STRING "Draw translucent polygons in submission order instead of PVR autosort")
+target_compile_definitions(openmenu PRIVATE GFX_USE_DR=${GFX_USE_DR} GFX_PRESORT=${GFX_PRESORT})
 
 # Pass version string as compile definition
 target_compile_definitions(openmenu PRIVATE OPENMENU_BUILD_VERSION="${OPENMENU_VERSION}")
