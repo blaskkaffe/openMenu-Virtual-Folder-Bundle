@@ -20,6 +20,12 @@ void gfx_end_frame(void);
 
 const bscene_sink* gfx_sink(void);
 
+/* Replace the "Dreamcast" logo of the header bar by a .PVR file (GBIX optional, 16-bit
+ * twiddled / rectangle / VQ, no mipmaps). The picture is stretched over the logo's area,
+ * which is 4:1: 128x32 is the natural size. Returns 0 if the file was found and used;
+ * otherwise the BIOS logo stays. */
+int gfx_load_logo(const char* path);
+
 /* Triangles submitted since gfx_begin_frame(). */
 unsigned gfx_triangles(void);
 

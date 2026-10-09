@@ -137,43 +137,66 @@ bios_texture_payload_size(uint8_t data_type, uint16_t width, uint16_t height) {
     }
 }
 
+static uint32_t
+buf_u32(const uint8_t* p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+int
+bios_texture_parse(const uint8_t* buf, size_t len, bios_texture* out) {
+    if (!buf || !out || len < 0x30) {
+        return -1;
+    }
+    size_t p = 0;
+    uint32_t gbix = 0;
+    if (!memcmp(buf, "GBIX", 4)) {
+        gbix = buf_u32(buf + 8);
+        for (size_t k = 8; k <= 0x20 && k + 16 <= len; k++) {
+            if (!memcmp(buf + k, "PVRT", 4)) {
+                p = k;
+                break;
+            }
+        }
+        if (!p) {
+            return -1;
+        }
+    } else if (memcmp(buf, "PVRT", 4) != 0) {
+        return -1;
+    }
+
+    uint8_t fmt = buf[p + 8];
+    uint8_t type = buf[p + 9];
+    uint16_t w = (uint16_t)(buf[p + 12] | (buf[p + 13] << 8));
+    uint16_t h = (uint16_t)(buf[p + 14] | (buf[p + 15] << 8));
+    if (fmt > BIOS_PVR_ARGB4444 || w == 0 || h == 0 || w > 1024 || h > 1024) {
+        return -1;
+    }
+
+    size_t size = bios_texture_payload_size(type, w, h);
+    if (size == 0 || p + 16 + size > len) {
+        return -1;
+    }
+
+    out->gbix = gbix;
+    out->pixel_format = fmt;
+    out->data_type = type;
+    out->width = w;
+    out->height = h;
+    out->data = buf + p + 16;
+    out->data_size = size;
+    out->offset = 0;
+    return 0;
+}
+
 /* Parse the texture whose GBIX header is at `off`. Returns 0 on success. */
 static int
 parse_texture(const bios_rom* rom, uint32_t off, bios_texture* out) {
     if ((size_t)off + 0x30 > rom->size || memcmp(rom->data + off, "GBIX", 4) != 0) {
         return -1;
     }
-    uint32_t p = 0;
-    for (uint32_t k = off + 8; k <= off + 0x20 && (size_t)k + 16 <= rom->size; k++) {
-        if (!memcmp(rom->data + k, "PVRT", 4)) {
-            p = k;
-            break;
-        }
-    }
-    if (!p) {
+    if (bios_texture_parse(rom->data + off, rom->size - off, out) != 0) {
         return -1;
     }
-
-    uint8_t fmt = rom->data[p + 8];
-    uint8_t type = rom->data[p + 9];
-    uint16_t w = bios_rom_u16(rom, p + 12);
-    uint16_t h = bios_rom_u16(rom, p + 14);
-    if (fmt > BIOS_PVR_ARGB4444 || w == 0 || h == 0 || w > 1024 || h > 1024) {
-        return -1;
-    }
-
-    size_t size = bios_texture_payload_size(type, w, h);
-    if ((size_t)p + 16 + size > rom->size) {
-        return -1;
-    }
-
-    out->gbix = bios_rom_u32(rom, off + 8);
-    out->pixel_format = fmt;
-    out->data_type = type;
-    out->width = w;
-    out->height = h;
-    out->data = rom->data + p + 16;
-    out->data_size = size;
     out->offset = off;
     return 0;
 }
