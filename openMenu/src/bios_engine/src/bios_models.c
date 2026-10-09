@@ -447,7 +447,7 @@ static void
 build_case(builder* b, uint32_t spine_c, uint32_t tray_c, uint32_t edge_c, int pal) {
     const float S = 0.75f;
     /* The PAL case has a wide blue spine band that also shows on the front, the picture fills the rest. */
-    const float hw = (pal ? 6.78f : 6.6f) * S, hh = 6.2f * S, hd = (pal ? 0.7f : 0.5f) * S; /* the PAL cases are thicker: 14 mm, a standard jewel case is 10 */
+    const float hw = (pal ? 6.78f : 6.6f) * S, hh = 6.2f * S, hd = (pal ? 1.0f : 0.5f) * S; /* the PAL cases are about twice as thick: 20 mm against 10 (measured from a photo of a stack) */
     const float spine_w = (pal ? 1.5f : 1.0f) * S;
     /* art window on the front: 11.8 x 11.8 */
     const float ax0 = pal ? -hw + spine_w : -5.4f * S, ax1 = hw - 0.2f * S, ay0 = -5.9f * S, ay1 = 5.9f * S;
