@@ -8,14 +8,19 @@
 #define ROW_Z (-353.515625f)
 
 /* Layout in world units (screen centre = 0,0). */
-#define ROW_SX 0.66f        /* the original row bar is about 580 px wide; this makes it 60% of 640 */
 #define ROW_SY 1.0f         /* same height as the rows of the settings screen (about 53 px) */
-#define ANCHOR_X (-7.1f)    /* row bar origin */
+#define ANCHOR_X 1.95f      /* row bar origin, as in the Settings screen */
+/* The row bar (model 41) is 59 units wide: a round left end (to x=-28), a straight middle and a
+ * small right end (from 27.5). The middle is shortened so the bar is about 60% of the screen
+ * wide while both ends keep their shape. */
+#define BAR_CAP_L (-28.0f)
+#define BAR_CAP_R 27.5f
+#define BAR_MIDDLE_F 0.638f
 #define ICON_X (-22.6f)
 #define ICON_SCALE 0.125f /* the disc is as big as the Settings icons (about 40 px) */
 #define TEXT_X (-5.1f)      /* centre of the 300 px text surface */
 #define PILL_X (-6.1f)       /* the lit part of the row: from the disc to the right end */
-#define PILL_SX (ROW_SX * 0.859375f * 1.37f)
+#define PILL_SX 0.777f /* the lit part of the row: model 33 stretched from the disc to the right end */
 /* disc selector of multi-disc games: a small pill at the right end of the row, with the shiny
  * side of a CD and the disc number */
 #define SPILL_X 5.1f
@@ -152,7 +157,7 @@ blist_row_in_slot(const blist* l, int slot) {
 
 float
 blist_row_right_px(void) {
-    return 320.0f + (ANCHOR_X + 26.8f * ROW_SX) * PX_PER_UNIT;
+    return 320.0f + (ANCHOR_X + (BAR_CAP_L + (BAR_CAP_R - BAR_CAP_L) * BAR_MIDDLE_F + 1.0f) * 0.8671875f) * PX_PER_UNIT;
 }
 
 /* Distance between rows in pixels: the bars are about 53 px high, so 6 rows have a 9 px gap and
@@ -285,7 +290,7 @@ blist_sync(blist* l) {
             set_hidden(parts[i].o, !parts[i].show);
         }
         if (anchor) {
-            set_scale(anchor, ROW_SX * 0.8671875f, ROW_SY * 0.8671875f, 0.8671875f);
+            set_scale(anchor, 0.8671875f, ROW_SY * 0.8671875f, 0.8671875f);
         }
         if (pill) {
             set_scale(pill, PILL_SX, ROW_SY * 0.859375f, 0.859375f);
@@ -369,9 +374,14 @@ blist_draw(blist* l, const bscene_sink* sink) {
         for (int i = 0; i < m->vm.count; i++) {
             const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
             m->scene.fullbright = o->id >= ID_MINI(0) && o->id < ID_MINI(BLIST_MAX_SLOTS);
+            m->scene.stretch_on = o->id >= ID_ANCHOR(0) && o->id < ID_ANCHOR(BLIST_MAX_SLOTS);
+            m->scene.stretch_a = BAR_CAP_L;
+            m->scene.stretch_b = BAR_CAP_R;
+            m->scene.stretch_f = BAR_MIDDLE_F;
             bscene_draw_object(&m->scene, o, sink);
         }
     }
     m->scene.fullbright = 0;
+    m->scene.stretch_on = 0;
     m->scene.parts = BSCENE_PART_ALL;
 }

@@ -170,7 +170,15 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                     const nj_vertex* vx = &mesh->verts[i];
                     scratch_ok[i] = 0;
                     if (vx->valid) {
-                        nj_vec3 w = nj_mat_apply(&m, vx->pos);
+                        nj_vec3 src = vx->pos;
+                        if (s->stretch_on) {
+                            if (src.x > s->stretch_b) {
+                                src.x = s->stretch_a + (s->stretch_b - s->stretch_a) * s->stretch_f + (src.x - s->stretch_b);
+                            } else if (src.x > s->stretch_a) {
+                                src.x = s->stretch_a + (src.x - s->stretch_a) * s->stretch_f;
+                            }
+                        }
+                        nj_vec3 w = nj_mat_apply(&m, src);
                         scratch_ok[i] = (uint8_t)bscene_project(w, &scratch_x[i], &scratch_y[i], &scratch_w[i]);
                         /* only the z of the rotated normal matters for a light along the view axis */
                         int light = 256;
