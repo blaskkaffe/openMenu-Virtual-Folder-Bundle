@@ -59,17 +59,17 @@ I add an on-screen debug overlay (fps, triangles, free video RAM, picture cache 
 
 Targets (suggestion): 60 fps in every screen, no frame drop when a picture loads, boot to menu under ~5 s.
 
-| Screen / action | fps | tris | notes |
-|---|---|---|---|
-| Boot: time from BIOS logo to main menu | s | | |
-| Main menu, idle | | | |
-| Game list, 5 rows, case at rest | | | |
-| Game list, scrolling fast (hold down) | | | picture pop-in? stutter? |
-| Case flying in/out (single press) | | | smooth? |
-| Game launch animation | | | |
-| Settings, popup open | | | |
-| Date/time editor | | | |
-| Files: card grid / file list / icons | | | |
+| Screen / action                        | fps | tris | notes |
+|----------------------------------------|-----|------|-------|
+| Boot: time from BIOS logo to main menu | s   |      |       |
+| Main menu, idle                        | 60  | 1877 | wrong lighting |
+| Game list, 5 rows, case at rest        | 29  | 2200 |       |
+| Game list, scrolling fast (hold down)  | 19  | 2100 | smooth but framerate drops, maybe too many 3d objects? |
+| Case flying in/out (single press)      | 27  | 2021 | smooth but drops a bit in frame rate|
+| Game launch animation                  |     |      |         |
+| Settings, popup open                   | | | |
+| Date/time editor                       | | | |
+| Files: card grid / file list / icons   | 19fps|3355| Doesnt look like the original really, font too thin, no vmu screen images on 3d objects and such. make a full check in bios to copy that 100%|
 | 100+ games folder: first draw after boot | s | | |
 
 Optimization work list **(me)**, in this order, each measured before/after on hardware:
@@ -88,26 +88,30 @@ Optimization work list **(me)**, in this order, each measured before/after on ha
 Mark OK / FAIL / n.a. and write what you saw.
 
 ### Boot and main menu
-- [ ] Fade-in from flat colour to the BIOS gradient, no white flash
-- [ ] Main menu: items, icons, accent colours, sound, music on/off
-- [ ] Logo setting (BIOS logo vs custom), language rows present?
+- [x] Fade-in from flat colour to the BIOS gradient, no white flash - a bit too fast maybe, check timings of original screen
+- [-] Main menu: items, icons, accent colours, sound, music on/off - colors are still a bit off, font to thin both on the clock and date and labels. time and date uses antialised font in original
+- [-] Logo setting (BIOS logo vs custom), language rows present? - language rows are not present, logo setting present but only affects when launching games, not openmenu itself
 
 ### Game list
-- [ ] 5 rows, titles readable, long titles scroll, multi-disc pill, GD discs, BACK + 5 buttons with info
-- [ ] Art on discs is a round CD; no art -> blue (PAL) / red (NTSC) disc matching the game
-- [ ] Right panel: colour/alpha/radius like the rows, top/bottom line up with first/last row
-- [ ] 3D case: PAL case for PAL games, white-spine case otherwise; front = box art; tilt; fly in from the
+Drops to 30fps
+- [x] 5 rows, titles readable, long titles scroll, multi-disc pill, GD discs, BACK + 5 buttons with info  - Back button in normal dreamcast Bios has yellow blinking frame when selected, othwerwise no blinking or yellow frame. This build it is not selectable at all.
+- [-] Art on discs is a round CD; no art -> blue (PAL) / red (NTSC) disc matching the game - yes but wrong art, Discs should use 0GDTEX.PVR from the GDI as label, but I have not tried with games missing the artwork. All games with artwork shows up ok
+- [-] Right panel: colour/alpha/radius like the rows, top/bottom line up with first/last row - corect alpha, top is a bit lower 1 or 2 pixels.
+- [x] 3D case: PAL case for PAL games, white-spine case otherwise; front = box art; tilt; fly in from the - need to move further down out of view, it currently moves to right over the buttons in the bottom and then dissapears.
       direction of the selection (down arrow: from the top, old leaves at the bottom; up arrow: reverse)
-- [ ] Case with no box art (white front) and with art; folder (no case)
-- [ ] Page up/down, hold-to-scroll, jumping far (case direction right?), wrap-around
-- [ ] A to launch (animation + game boots), X recent popup, B back, sort A-Z / SD order, remember last game
-- [ ] Mouse: hover, click row, wheel; keyboard: arrows, Enter, Esc, typed characters
+- [-] Case with no box art (white front) and with art; folder (no case) - case gets totally white, would be better with some other default artwork like the texture for the GDrom 
+- [x] Page up/down, hold-to-scroll, jumping far (case direction right?), wrap-around - page up down (left right works, hold to scroll works, dont know jumping far?, it does not wrap around which is exactly like I want it right now)
+- [-] A to launch (animation + game boots), - Launches game, and it boots. but the animation is not quick enough so it cuts short. also brings with it the row backgrounds. all items except for the disc should "explode" outwards quickly to clear the screen, only disc should be visible.
+- [x] X recent popup - ugly but works. I want it to be centered
+- [x] B back, sort A-Z / SD order - b goes back, I think sorting order works, but my card is already sorted by letter so put it as not tested yet.
+- [x] remember last game 
+- [x] Mouse: hover, click row, wheel; keyboard: arrows, Enter, Esc, typed characters
 
 ### Settings / date and time / About
 - [ ] All rows scroll and change values, popups, values persist after reboot
-- [ ] Date/time editor: fields, buttons, saves to the console clock (check in the BIOS afterwards)
-- [ ] Aspect ratio 4:3 / 16:9 on your TV
-- [ ] About row (question mark)
+- [!!] Date/time editor: fields, buttons, saves to the console clock (check in the BIOS afterwards) - buttons work but after reboot time is reset to 1998
+- [-] Aspect ratio 4:3 / 16:9 on your TV - text looks bad in widescreen some pixels are dropped, most likely due to using single width text. clock in top bar not visible properly, white top bar doesnt stretch the whole width
+- [X] About row (question mark) - it works but ugly box. Make it the same style popup box as the screen for setting the time and date.
 
 ### Files (memory cards)
 - [ ] Card grid: cards/VMUs present in each slot, free blocks, names
@@ -129,20 +133,6 @@ Mark OK / FAIL / n.a. and write what you saw.
 - [ ] 60 fps in all screens, no stutter while browsing
 - [ ] No crashes in 1 hour of normal use
 
-## 5. Results of the first hardware round (dev build, game list)
 
-| Item | Result | Follow-up |
-|---|---|---|
-| 5 rows, titles, pill, discs, BACK + buttons | OK | BACK was not selectable, no yellow blinking frame: **fixed** (down from the last row, A leaves; frame and arrow colours from the BIOS effect 0x8C021CD0) |
-| Art on discs round | art shows, but **wrong art** | The BIOS shows the disc's own `0GDTEX.PVR`; which picture do you expect here, and which DAT does the Card Manager write it to? (open question) |
-| Art for games without art (PAL blue / NTSC red) | not tested | |
-| Right panel | alpha OK, top 1-2 px low | **fixed** (2 px higher) |
-| 3D case flies | works, but leaves over the buttons and to the right | **changed**: leaves fully off the screen, no roll |
-| Case with no box art / folder | not tested | |
-| Paging, hold to scroll, no wrap | OK | jumping far: not tested |
-| Launch animation | too slow / cut short, row backgrounds stayed | **changed**: everything bursts outwards in 14 frames, the disc alone stays 18 frames |
-| X recent popup | works, ugly | **centred** |
-| B back, remember last game, mouse, keyboard | OK | |
-| Sort A-Z / SD order | not tested (card already sorted) | |
-| All models look a bit weird against the original BIOS | open | lighting: see NEWMENU.md notes |
-| Labels | "Game"/"Files" | **changed** to "Play"/"File" like the BIOS; text uses the BIOS double-thick font everywhere |
+
+I
