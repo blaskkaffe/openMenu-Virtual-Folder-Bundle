@@ -473,7 +473,7 @@ build_case(builder* b, uint32_t spine_c, uint32_t tray_c, uint32_t edge_c, int p
     if (pal) {
         /* the embossed label panel on the spine */
         int label = poly_new(b, -1, 0xFF3C66CCu, 0);
-        box(b, label, -hw - 0.04f, -5.7f * S, -hd + 0.18f * S, -hw + 0.02f, 4.6f * S, hd - 0.18f * S); /* nearly the whole spine, the top end is left free (the logo sits there) */
+        box(b, label, -hw - 0.04f, -hh, -hd + 0.18f * S, -hw + 0.02f, hh, hd - 0.18f * S); /* the whole length: the logo sits behind the clear label plastic */
     } else {
         box(b, mark, -hw - 0.02f, -hh + 0.6f * S, -hd + 0.15f * S, -hw + 0.02f, hh - 0.6f * S, hd - 0.15f * S);
     }
