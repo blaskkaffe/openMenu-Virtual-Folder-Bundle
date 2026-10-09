@@ -532,9 +532,8 @@ draw_frame(void) {
     /* The BIOS draws its main menu with the PVR sorting the translucent polygons per pixel: where an icon's parts and
      * its two copies overlap, the farther layer is always blended first. Other screens keep the build's default. */
     {
-        int hw = screen == SCREEN_MAIN ? GFX_MAIN_AUTOSORT : !GFX_PRESORT;
-        gfx_set_autosort(hw);
-        menu.hw_autosort = hw;
+        int hw = gfx_set_autosort(screen == SCREEN_MAIN ? GFX_MAIN_AUTOSORT : !GFX_PRESORT);
+        menu.hw_autosort = hw; /* not sorted by the PVR: the CPU sorter takes over */
     }
     gfx_begin_frame(top, bottom);
     uint64_t t1 = timer_us_gettime64();

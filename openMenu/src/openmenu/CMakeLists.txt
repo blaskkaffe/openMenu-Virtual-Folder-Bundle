@@ -35,6 +35,15 @@ set(GFX_PRESORT 1 CACHE STRING "Draw translucent polygons in submission order in
 target_compile_definitions(openmenu PRIVATE GFX_PRESORT=${GFX_PRESORT})
 set(GFX_MAIN_AUTOSORT 1 CACHE STRING "Main menu: let the PVR sort translucent polygons per pixel, as the BIOS does (exact look of the icons)")
 target_compile_definitions(openmenu PRIVATE GFX_MAIN_AUTOSORT=${GFX_MAIN_AUTOSORT})
+# Switching the sort mode per frame needs KOS's internal PVR state (see gfx.c, set_tile_presort): KOS 2.1.1's
+# pvr_set_presort_mode() moves the tile matrix on every call and hangs the PVR.
+set(GFX_PVR_INTERNAL_DIR "$ENV{KOS_BASE}/kernel/arch/dreamcast/hardware/pvr")
+if (EXISTS "${GFX_PVR_INTERNAL_DIR}/pvr_internal.h")
+    target_include_directories(openmenu PRIVATE ${GFX_PVR_INTERNAL_DIR})
+    target_compile_definitions(openmenu PRIVATE GFX_PVR_INTERNAL=1)
+else ()
+    message(WARNING "pvr_internal.h not found under KOS_BASE: the main menu keeps the default sort mode (GFX_PRESORT)")
+endif ()
 
 # Pass version string as compile definition
 target_compile_definitions(openmenu PRIVATE OPENMENU_BUILD_VERSION="${OPENMENU_VERSION}")

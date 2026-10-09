@@ -20,8 +20,9 @@ void gfx_end_frame(void);
 
 /* How the PVR orders translucent polygons from the next gfx_begin_frame() on: 1 = autosort (sorted per pixel by
  * depth, as the BIOS draws its menus; needed where the parts of a 3D model overlap), 0 = presort (blended in the
- * order they are sent, cheaper). The default comes from GFX_PRESORT. */
-void gfx_set_autosort(int on);
+ * order they are sent, cheaper). The default comes from GFX_PRESORT. Returns the mode that will be used: where the
+ * build cannot switch (no KOS source tree found), the default. */
+int gfx_set_autosort(int on);
 int gfx_autosort(void);
 
 const bscene_sink* gfx_sink(void);

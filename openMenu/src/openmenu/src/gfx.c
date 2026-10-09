@@ -69,6 +69,50 @@ static gfx_stats stats; /* since the last gfx_stats_take() */
 #endif
 static int autosort = !GFX_PRESORT; /* see gfx_set_autosort */
 
+/* Switching the sort mode per frame.
+ * KOS 2.1.1's pvr_set_presort_mode() must not be used: it re-runs the whole tile-matrix set-up, which moves the
+ * buffer's matrix 0x48 bytes further on each call (the start-up code skips the matrix header that way). Called every
+ * frame, the matrix walks through video RAM: tiles in the lower right break into tall stripes and the PVR hangs on
+ * the first frame. Later KOS fixed it by rewriting only the control words of the tiles; this is that fix, reaching
+ * the buffer through KOS's internal PVR state (pvr_internal.h, found by CMake in the KOS source tree). Without that
+ * header the mode stays what pvr_init set (GFX_PRESORT). */
+#ifdef GFX_PVR_INTERNAL
+#include <pvr_internal.h>
+#define TILE_PRESORT (1u << 29)
+static int tile_mode[2] = {-1, -1}; /* presort bit currently in each TA buffer's tile matrix, -1 unknown */
+static int tile_mode_broken;        /* the matrix did not look as expected: never touch it */
+
+static int
+set_tile_presort(int presort) {
+    int target = pvr_state.ta_target;
+    if (tile_mode_broken || target < 0 || target > 1) {
+        return 0;
+    }
+    if (tile_mode[target] == presort) {
+        return 1;
+    }
+    /* tile_matrix points at the start-up tile; the screen tiles follow, 6 words each, column by column */
+    volatile uint32_t* vr = (volatile uint32_t*)PVR_RAM_BASE + (pvr_state.ta_buffers[target].tile_matrix >> 2) + 6;
+    const int tw = pvr_state.tw, th = pvr_state.th;
+    if ((vr[0] & ~TILE_PRESORT) != 0 || (th > 1 && (vr[6] & ~TILE_PRESORT) != 0x100u)) {
+        tile_mode_broken = 1;
+        return 0;
+    }
+    for (int x = 0; x < tw; x++) {
+        for (int y = 0; y < th; y++) {
+            uint32_t w = ((uint32_t)y << 8) | ((uint32_t)x << 2) | (presort ? TILE_PRESORT : 0u);
+            if (x == tw - 1 && y == th - 1) {
+                w |= 1u << 31; /* last tile */
+            }
+            vr[0] = w;
+            vr += 6;
+        }
+    }
+    tile_mode[target] = presort;
+    return 1;
+}
+#endif
+
 static struct {
     uint16_t id;
     char text[LABEL_CHARS + 1];
@@ -1027,9 +1071,12 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
     }
     art_poll();
     memo_ok = 0;
-    /* The tile matrix of the buffer the TA fills next carries the sort mode; set it every frame so both
-     * buffers follow when it changes. */
-    pvr_set_presort_mode(!autosort);
+    /* The tile matrix of the buffer the TA fills next carries the sort mode (see set_tile_presort). */
+#ifdef GFX_PVR_INTERNAL
+    if (!set_tile_presort(!autosort)) {
+        autosort = !GFX_PRESORT;
+    }
+#endif
     /* Where the gradient quad does not draw, show a mid blue instead of black. */
     pvr_set_bg_color(0.45f, 0.60f, 0.80f);
     pvr_scene_begin();
@@ -1052,9 +1099,14 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
     hdr_valid = 0;
 }
 
-void
+int
 gfx_set_autosort(int on) {
+#ifdef GFX_PVR_INTERNAL
     autosort = on ? 1 : 0;
+#else
+    (void)on; /* cannot switch safely: keep the mode pvr_init set */
+#endif
+    return autosort;
 }
 
 int

@@ -245,7 +245,11 @@ Colours picked by scripts that are not a constant material (panel accent, BACK o
 Sorting: the BIOS lets the PVR sort translucent polygons per pixel (autosort). Where an icon's parts and its two
 copies overlap (d-pad on the body, the copy 0.04 behind), any per-triangle CPU order leaves artefacts, so the main
 screen switches the PVR to autosort for its frames (`gfx_set_autosort`, CMake `GFX_MAIN_AUTOSORT`, default 1) and
-sends the objects unsorted (`bmenu.hw_autosort`). Other screens keep the build default (`GFX_PRESORT`). The PC
+sends the objects unsorted (`bmenu.hw_autosort`). The switch rewrites the presort bit of the tile control words of the
+buffer the TA fills next (`set_tile_presort` in `gfx.c`, the fix later KOS versions have); KOS 2.1.1's own
+`pvr_set_presort_mode()` must not be called per frame: it moves the tile matrix 0x48 bytes on each call, which broke
+the lower right of the picture into stripes and hung the PVR on the first frame. It needs KOS's `pvr_internal.h`,
+which CMake takes from `$KOS_BASE`; without it the build keeps one mode and the CPU sorter. Other screens keep the build default (`GFX_PRESORT`). The PC
 preview composites the main menu per pixel the same way (`BIOS_PREVIEW_PRESORT=1` for submission order). Checked:
 `BIOS_PREVIEW_FLAT=1 bios_preview dc_boot.bin out.ppm 120 -1` matches the reference render of `menu3d_ref.py`
 within one level on every icon and pill pixel.
