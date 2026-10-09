@@ -158,16 +158,22 @@ games_sync(void) {
         int row = blist_row_in_slot(&glist, s);
         const gd_item* item = row >= 0 ? uil_item(row) : NULL;
         line[0] = '\0';
+        int multi = 0;
         if (item) {
-            if (uil_in_chooser()) {
-                snprintf(line, sizeof(line), "Disc %d  %.15s", gd_item_disc_num(item->disc), item->name);
-            } else if (uil_disc_total(item) > 1 && sf_multidisc[0] == MULTIDISC_HIDE) {
-                snprintf(line, sizeof(line), "%.19s (%dd)", item->name, uil_disc_total(item));
-            } else if (strlen(item->name) > 24) {
-                snprintf(line, sizeof(line), "%.22s..", item->name);
+            multi = !uil_is_folder(item) && uil_disc_total(item) > 1;
+            size_t keep = multi ? 19 : 24; /* a multi-disc row has the disc pill at its right end */
+            if (strlen(item->name) > keep) {
+                snprintf(line, sizeof(line), "%.*s..", (int)keep - 2, item->name);
             } else {
                 snprintf(line, sizeof(line), "%s", item->name);
             }
+        }
+        glist.multi[s] = multi;
+        if (multi) {
+            int picked = row == uil_cursor() ? uil_disc_index() : 0;
+            char num[12];
+            snprintf(num, sizeof(num), "%d:%d", picked + 1, uil_disc_total(item));
+            gfx_set_label((uint16_t)BLIST_NUM_ID(s), num);
         }
         gfx_set_label((uint16_t)BLIST_TEXT_ID(s), line);
         gfx_art_bind_row(s, item && !uil_is_folder(item) ? item->product : "");
@@ -187,7 +193,7 @@ draw_games(void) {
         return;
     }
     const gd_item* cur = uil_item(uil_cursor());
-    gfx_rect(INFO_X - 6.0f, ART_Y - 8.0f, INFO_W + 12.0f, 366.0f, 0.4f, 0x58000000u);
+    gfx_rrect(INFO_X - 6.0f, ART_Y - 8.0f, INFO_W + 12.0f, 366.0f, 6.0f, 0.4f, 0x58000000u);
     if (cur && !uil_is_folder(cur)) {
         gfx_art_box(cur->product, INFO_X + (INFO_W - ART_SIZE) / 2.0f, ART_Y, ART_SIZE, ART_SIZE, 0.45f);
         float y = ART_Y + ART_SIZE + 6.0f;
@@ -200,7 +206,7 @@ draw_games(void) {
         snprintf(line, sizeof(line), "%.14s", cur->product);
         gfx_text(line, INFO_X, y, 0.5f, 0xFFC0C0C0u, 0);
         y += GFX_LINE_H - 4.0f;
-        int discs = uil_disc_total(cur);
+        int discs = cur->product[0] ? gd_item_disc_total(cur->disc) : 1;
         if (discs > 1) {
             snprintf(line, sizeof(line), "%.4s  disc %d/%d", cur->region, gd_item_disc_num(cur->disc), discs);
         } else {
@@ -216,9 +222,7 @@ draw_games(void) {
     } else if (cur) {
         gfx_text("Folder", INFO_X, ART_Y, 0.5f, 0xFFFFFFFFu, 1);
     }
-    gfx_text("A: start", INFO_X, 340.0f, 0.5f, 0xFFA0A0A0u, 0);
-    gfx_text("X: recent", INFO_X, 366.0f, 0.5f, 0xFFA0A0A0u, 0);
-    gfx_text("B: back", INFO_X, 392.0f, 0.5f, 0xFFA0A0A0u, 0);
+    gfx_text("A:go X:recent", INFO_X, 330.0f, 0.5f, 0xFFA0A0A0u, 0); /* B is the BACK marker below */
 }
 
 #define POPUP_X 120.0f

@@ -202,6 +202,17 @@ main(int argc, char** argv) {
     } else if (script == -3 || script == -4) { /* game list demo: 7 rows; -4 = launch animation at `frames` */
         blist_open(&list, &menu, getenv("BLIST_SLOTS") ? atoi(getenv("BLIST_SLOTS")) : 7, 30);
         blist_goto(&list, selected);
+    } else if (script == -5) { /* the GD-ROM disc model seen from behind, large */
+        bvm_obj* o = bvm_create(&menu.vm, 0x4e, 0x500, 0x2000);
+        bmenu_update(&menu);
+        o->flags &= ~(uint32_t)(BVM_F_ATTACHED | BVM_F_MOTION);
+        o->model = 61;
+        o->texlist = 61;
+        o->pos_tw[0].cur = o->pos_tw[1].cur = 0;
+        o->pos_tw[2].cur = -378.0f;
+        o->scale_tw[0].cur = o->scale_tw[1].cur = o->scale_tw[2].cur = 0.8f;
+        o->rot_tw[1].cur = selected; /* angle units, 0x8000 = 180 degrees */
+        bmenu_update(&menu);
     } else if (script >= 0) {
         bvm_obj* o = bvm_create(&menu.vm, script, 0x400, 0x2000);
         if (!o) {
@@ -212,7 +223,7 @@ main(int argc, char** argv) {
     } else {
         bmenu_show_main(&menu, selected);
     }
-    for (int i = 0; i < frames; i++) {
+    for (int i = 0; i < (script == -5 ? 0 : frames); i++) {
         bmenu_update(&menu);
         if (script == -2) {
             bpage_sync(&page, demo_row, NULL);
@@ -222,6 +233,7 @@ main(int argc, char** argv) {
                 blist_launch_start(&list);
             }
             blist_launch_step(&list);
+            list.multi[0] = list.multi[2] = list.multi[4] = 1; /* demo: some rows are multi-disc sets */
             blist_sync(&list);
         }
     }

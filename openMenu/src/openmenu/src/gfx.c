@@ -661,6 +661,41 @@ gfx_art_box(const char* product, float x, float y, float w, float h, float z) {
     }
 }
 
+/* Flat translucent rectangle with rounded corners of radius r: three bands and four corner fans
+ * that do not overlap, so the translucent colour is even. */
+void
+gfx_rrect(float x, float y, float w, float h, float r, float z, uint32_t argb) {
+    enum { SEGMENTS = 4 };
+    static const float cs[SEGMENTS + 1] = {1.0f, 0.9239f, 0.7071f, 0.3827f, 0.0f}; /* cos of 0, 22.5, 45, 67.5, 90 degrees */
+    static const float sn[SEGMENTS + 1] = {0.0f, 0.3827f, 0.7071f, 0.9239f, 1.0f};
+    if (r * 2.0f > w) r = w / 2.0f;
+    if (r * 2.0f > h) r = h / 2.0f;
+    ensure_header(NULL, NULL, 0);
+    /* top, middle and bottom bands */
+    float xs[3] = {x + r, x, x + r};
+    float ys[3] = {y, y + r, y + h - r};
+    float ws[3] = {w - 2.0f * r, w, w - 2.0f * r};
+    float hs[3] = {r, h - 2.0f * r, r};
+    for (int i = 0; i < 3; i++) {
+        send_vertex(xs[i], ys[i], z, 0, 0, argb, 0);
+        send_vertex(xs[i] + ws[i], ys[i], z, 0, 0, argb, 0);
+        send_vertex(xs[i], ys[i] + hs[i], z, 0, 0, argb, 0);
+        send_vertex(xs[i] + ws[i], ys[i] + hs[i], z, 0, 0, argb, 1);
+    }
+    /* corners: centre of each arc and the direction of its quarter */
+    float cx[4] = {x + w - r, x + r, x + r, x + w - r};
+    float cy[4] = {y + r, y + r, y + h - r, y + h - r};
+    float dx[4] = {1.0f, -1.0f, -1.0f, 1.0f};
+    float dy[4] = {-1.0f, -1.0f, 1.0f, 1.0f};
+    for (int c = 0; c < 4; c++) {
+        for (int i = 0; i < SEGMENTS; i++) {
+            send_vertex(cx[c], cy[c], z, 0, 0, argb, 0);
+            send_vertex(cx[c] + dx[c] * r * cs[i], cy[c] + dy[c] * r * sn[i], z, 0, 0, argb, 0);
+            send_vertex(cx[c] + dx[c] * r * cs[i + 1], cy[c] + dy[c] * r * sn[i + 1], z, 0, 0, argb, 1);
+        }
+    }
+}
+
 /* ---- Frames ------------------------------------------------------------------------------ */
 
 void

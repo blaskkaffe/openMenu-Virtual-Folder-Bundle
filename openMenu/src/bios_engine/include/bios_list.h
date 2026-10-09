@@ -19,7 +19,9 @@ extern "C" {
 /* Text object ids of the rows (left aligned, one string each). */
 #define BLIST_TEXT_ID(slot) (0x17C0 + (slot))
 #define BLIST_TEXT_FIRST 0x17C0
-#define BLIST_TEXT_LAST (0x17C0 + BLIST_MAX_SLOTS - 1)
+/* The disc number of a multi-disc game ("2:4") in the small pill at the right end of its row. */
+#define BLIST_NUM_ID(slot) (0x17D0 + (slot))
+#define BLIST_TEXT_LAST (0x17D0 + BLIST_MAX_SLOTS - 1)
 
 /* Row disc textures: the disc of slot `s` uses texlist BLIST_TEXLIST_BASE + s; its texture 0
  * is the label (the renderer substitutes the game's art), the others are those of the disc. */
@@ -29,6 +31,7 @@ extern "C" {
 /* Screen area of a row's text surface (pixels), for the renderer. */
 #define BLIST_TEXT_W 300
 #define BLIST_TEXT_H 32
+#define BLIST_NUM_W 48
 
 typedef struct blist {
     bmenu* m;
@@ -38,6 +41,7 @@ typedef struct blist {
     int top;
     int launching;
     int launch_frame;
+    int multi[BLIST_MAX_SLOTS]; /* set by the caller before blist_sync(): row is a multi-disc set */
 } blist;
 
 void blist_open(blist* l, bmenu* m, int slots, int count);

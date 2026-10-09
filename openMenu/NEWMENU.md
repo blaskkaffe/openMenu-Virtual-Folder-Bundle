@@ -125,3 +125,7 @@ the game starts. Settings > Starting games > Launch animation turns this off (st
 "scroll art" save variable, default On). Not animated: starting from the recently played popup.
 Preview: `bios_preview dc_boot.bin out.ppm 60 <row> -3` (list), `... 52 <row> -4` (launch animation).
 Tune on hardware: row layout constants at the top of `bios_list.c`, panel layout in `ui_bios.c`.
+
+Game list details: multi-disc sets (Compact mode) show a small pill with the gold side of a CD and
+"disc:total"; Left/Right on such a row pick the disc, A starts it (Left/Right page the list on other
+rows). The selected row is lit across the title; the BACK marker sits under the info box.

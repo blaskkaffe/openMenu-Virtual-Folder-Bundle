@@ -71,6 +71,7 @@ typedef struct bscene {
     } motions[BSCENE_MOTION_CACHE];
     int motion_count;
     nj_mat4 pose[256]; /* scratch: world matrices of the object being drawn */
+    int fullbright; /* no shading by the light (the gold reverse of a disc looks shinier) */
     int double_alpha;  /* draw objects as if two identical layers were stacked (see bmenu_draw) */
     unsigned parts;    /* BSCENE_PART_* drawn by bscene_draw_object() */
 } bscene;

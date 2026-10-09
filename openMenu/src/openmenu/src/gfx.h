@@ -36,7 +36,8 @@ void gfx_set_label(uint16_t obj_id, const char* text);
  * `shadow` draws a dark copy 2 px down-right first. */
 void gfx_text(const char* str, float x, float y, float z, uint32_t argb, int shadow);
 
-/* Flat translucent rectangle. */
+/* Flat translucent rectangle, plain or with rounded corners of radius r. */
+void gfx_rrect(float x, float y, float w, float h, float r, float z, uint32_t argb);
 void gfx_rect(float x, float y, float w, float h, float z, uint32_t argb);
 
 #define GFX_CHAR_W 12

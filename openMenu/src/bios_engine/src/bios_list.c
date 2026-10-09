@@ -12,10 +12,22 @@
 #define ROW_SY 1.0f         /* same height as the rows of the settings screen (about 53 px) */
 #define ANCHOR_X (-7.1f)    /* row bar origin */
 #define ICON_X (-22.6f)
-#define ICON_SCALE 0.16f
+#define ICON_SCALE 0.125f /* the disc is as big as the Settings icons (about 40 px) */
 #define TEXT_X (-5.1f)      /* centre of the 300 px text surface */
 #define PILL_X (-6.1f)       /* the lit part of the row: from the disc to the right end */
 #define PILL_SX (ROW_SX * 0.859375f * 1.37f)
+/* disc selector of multi-disc games: a small pill at the right end of the row, with the shiny
+ * side of a CD and the disc number */
+#define SPILL_X 5.1f
+#define SPILL_SX 0.172f
+#define MINI_X 3.3f
+#define MINI_SCALE 0.0625f
+#define NUM_TEXT_X 7.9f /* the text script offsets its text by -1.37 */
+/* the BACK marker: bottom right, under the info box */
+#define BACK_X 19.6f
+#define BACK_Y (-12.6f)
+#define BACK_Z (-351.5625f)
+#define BACK_SCALE 0.75f
 
 /* CD player disc (script 0x1c): position and spin per frame, in the original's angle units */
 #define CD_Z (-378.90625f)
@@ -33,6 +45,8 @@ static const struct {
 #define ID_ANCHOR(s) ((uint16_t)(0x1700 + (s)))
 #define ID_PILL(s) ((uint16_t)(0x1720 + (s)))
 #define ID_ICON(s) ((uint16_t)(0x1740 + (s)))
+#define ID_SPILL(s) ((uint16_t)(0x1760 + (s)))
+#define ID_MINI(s) ((uint16_t)(0x1780 + (s)))
 
 void
 blist_open(blist* l, bmenu* m, int slots, int count) {
@@ -53,7 +67,18 @@ blist_open(blist* l, bmenu* m, int slots, int count) {
         bvm_create(&m->vm, proto.icon_script, ID_ICON(s), PRIO);
     }
     for (int s = 0; s < l->slots; s++) {
+        bvm_create(&m->vm, 0x1e, ID_SPILL(s), PRIO);
+    }
+    for (int s = 0; s < l->slots; s++) {
+        bvm_create(&m->vm, 0x4e, ID_MINI(s), PRIO);
+    }
+    for (int s = 0; s < l->slots; s++) {
         bvm_create(&m->vm, proto.text_script, (uint16_t)BLIST_TEXT_ID(s), PRIO);
+        bvm_create(&m->vm, 0x24, (uint16_t)BLIST_NUM_ID(s), PRIO);
+    }
+    bvm_create(&m->vm, 6, 0x1110, PRIO); /* BACK marker */
+    for (int s = 0; s < BLIST_MAX_SLOTS; s++) {
+        l->multi[s] = 0;
     }
     blist_set_count(l, count);
 }
@@ -199,6 +224,16 @@ blist_launch_step(blist* l) {
     return l->launch_frame >= LAUNCH_FRAMES + LAUNCH_HOLD;
 }
 
+/* Where a point of the row layout is while the rows leave in a circle (e = 0..1). */
+static void
+leave_xf(float e, float x, float y, float* ox, float* oy) {
+    float phi = e * 3.6f;
+    float k = 1.0f + e * 3.5f;
+    float cs = cosf(phi), sn = sinf(phi);
+    *ox = k * (cs * x - sn * y);
+    *oy = k * (sn * x + cs * y);
+}
+
 void
 blist_sync(blist* l) {
     bvm* vm = &l->m->vm;
@@ -207,82 +242,90 @@ blist_sync(blist* l) {
         t = 1.0f;
     }
     float e = smooth(t);
-    /* the rows leave in a circle around the screen centre */
-    float phi = e * 3.6f;
-    float k = 1.0f + e * 3.5f;
-    float cs = cosf(phi), sn = sinf(phi);
+    int32_t rot_z = (int32_t)(e * 3.6f * 65536.0f / 6.2831853f);
 
     for (int s = 0; s < l->slots; s++) {
         int row = blist_row_in_slot(l, s);
         int on = row >= 0;
         int sel = on && row == l->cursor;
+        int multi = on && l->multi[s];
         bvm_obj* anchor = bvm_find(vm, ID_ANCHOR(s));
         bvm_obj* pill = bvm_find(vm, ID_PILL(s));
         bvm_obj* icon = bvm_find(vm, ID_ICON(s));
+        bvm_obj* spill = bvm_find(vm, ID_SPILL(s));
+        bvm_obj* mini = bvm_find(vm, ID_MINI(s));
         bvm_obj* text = bvm_find(vm, (uint16_t)BLIST_TEXT_ID(s));
+        bvm_obj* num = bvm_find(vm, (uint16_t)BLIST_NUM_ID(s));
         float y = row_y(l, s);
+        float x, yy;
+        int off = l->launching; /* the row is leaving the screen */
 
-        /* rotate a point of the row layout about the screen centre while launching */
-        float ax = ANCHOR_X, ay = y;
-        float px = PILL_X, ix = ICON_X;
-        float rot_deg = 0.0f;
-        int hide_row = !on;
-        if (l->launching && !sel) {
-            float x0[3] = {ax, px, ix};
-            float out[3];
-            float oy[3];
-            for (int i = 0; i < 3; i++) {
-                out[i] = k * (cs * x0[i] - sn * ay);
-                oy[i] = k * (sn * x0[i] + cs * ay);
+        /* the row bar and its parts: x of each part in the resting layout */
+        struct {
+            bvm_obj* o;
+            float x, z;
+            int show;
+        } parts[4] = {
+            {anchor, ANCHOR_X, ROW_Z, on},
+            {pill, PILL_X, ROW_Z + 0.78f, sel},
+            {spill, SPILL_X, ROW_Z + 0.78f, multi},
+            {mini, MINI_X, ROW_Z + 1.2f, multi},
+        };
+        for (int i = 0; i < 4; i++) {
+            if (!parts[i].o) {
+                continue;
             }
-            ax = out[0];
-            px = out[1];
-            ix = out[2];
-            if (anchor) set_pos(anchor, out[0], oy[0], ROW_Z);
-            if (pill) set_pos(pill, out[1], oy[1], ROW_Z + 0.78f);
-            if (icon) set_pos(icon, out[2], oy[2], ROW_Z + 0.78f);
-            rot_deg = phi;
-            if (anchor) anchor->rot_tw[2].cur = (int32_t)(phi * 65536.0f / 6.2831853f);
-            if (pill) pill->rot_tw[2].cur = (int32_t)(phi * 65536.0f / 6.2831853f);
-            hide_row = hide_row || (k * 20.0f > 80.0f && e > 0.98f);
-        } else {
-            if (anchor) {
-                set_pos(anchor, ax, ay, ROW_Z);
-                anchor->rot_tw[2].cur = 0;
+            x = parts[i].x;
+            yy = y;
+            if (off) {
+                leave_xf(e, x, y, &x, &yy);
             }
-            if (pill) {
-                set_pos(pill, px, ay, ROW_Z + 0.78f);
-                pill->rot_tw[2].cur = 0;
-            }
-            if (icon && !(l->launching && sel)) {
-                set_pos(icon, ix, ay, ROW_Z + 0.78f);
-            }
+            set_pos(parts[i].o, x, yy, parts[i].z);
+            parts[i].o->rot_tw[2].cur = off ? rot_z : 0;
+            set_hidden(parts[i].o, !parts[i].show);
         }
-        (void)rot_deg;
-
         if (anchor) {
             set_scale(anchor, ROW_SX * 0.8671875f, ROW_SY * 0.8671875f, 0.8671875f);
-            set_hidden(anchor, hide_row || (l->launching && sel));
         }
         if (pill) {
             set_scale(pill, PILL_SX, ROW_SY * 0.859375f, 0.859375f);
-            pill->var[1] = sel;
-            set_hidden(pill, hide_row || (l->launching && sel));
+            pill->var[1] = 1; /* the selected row is lit */
         }
+        if (spill) {
+            set_scale(spill, SPILL_SX, ROW_SY * 0.859375f * 0.85f, 0.859375f);
+            spill->var[1] = sel;
+        }
+        if (mini) {
+            /* the shiny (reverse) side of a CD: the disc model turned half way round */
+            mini->model = BLIST_DISC_MODEL;
+            mini->texlist = BLIST_DISC_MODEL;
+            mini->flags &= ~(uint32_t)BVM_F_MOTION;
+            set_scale(mini, MINI_SCALE, MINI_SCALE, MINI_SCALE);
+            mini->rot_tw[0].cur = 0;
+            mini->rot_tw[1].cur = 0x8000;
+            mini->rot_tw[0].step = mini->rot_tw[1].step = mini->rot_tw[2].step = 0;
+        }
+
         if (icon) {
             icon->model = BLIST_DISC_MODEL;
             icon->texlist = (uint16_t)(BLIST_TEXLIST_BASE + s);
             icon->flags &= ~(uint32_t)BVM_F_MOTION;
             icon->var[0] = sel;
-            if (l->launching && sel) {
+            float sc = ICON_SCALE;
+            if (off && sel) {
                 /* to the CD player's place, keeping the spin */
                 float f = smooth(t);
-                float sc = ICON_SCALE + (CD_SCALE - ICON_SCALE) * f;
+                sc = ICON_SCALE + (CD_SCALE - ICON_SCALE) * f;
                 set_pos(icon, ICON_X * (1.0f - f), y * (1.0f - f), ROW_Z + (CD_Z - ROW_Z) * f);
-                set_scale(icon, sc, sc, sc);
             } else {
-                set_scale(icon, ICON_SCALE, ICON_SCALE, ICON_SCALE);
+                x = ICON_X;
+                yy = y;
+                if (off) {
+                    leave_xf(e, x, y, &x, &yy);
+                }
+                set_pos(icon, x, yy, ROW_Z + 0.78f);
             }
+            set_scale(icon, sc, sc, sc);
             /* the selected disc spins as in the CD player; the others rest */
             if (sel) {
                 icon->rot_tw[1].step = SPIN_Y;
@@ -291,15 +334,29 @@ blist_sync(blist* l) {
                 icon->rot_tw[0].cur = icon->rot_tw[1].cur = icon->rot_tw[2].cur = 0;
                 icon->rot_tw[0].step = icon->rot_tw[1].step = icon->rot_tw[2].step = 0;
             }
-            set_hidden(icon, hide_row && !(l->launching && sel));
+            set_hidden(icon, !on);
         }
         if (text) {
             text->text_w = BLIST_TEXT_W;
             text->text_h = BLIST_TEXT_H;
             set_pos(text, TEXT_X, y, ROW_Z + 1.5f);
-            int show = on && !l->launching;
+            int show = on && !off;
             text->flags = show ? (text->flags | BVM_F_TEXT) : (text->flags & ~(uint32_t)BVM_F_TEXT);
         }
+        if (num) {
+            num->text_w = BLIST_NUM_W;
+            num->text_h = BLIST_TEXT_H;
+            set_pos(num, NUM_TEXT_X, y, ROW_Z + 1.5f);
+            int show = multi && !off;
+            num->flags = show ? (num->flags | BVM_F_TEXT) : (num->flags & ~(uint32_t)BVM_F_TEXT);
+        }
+    }
+
+    bvm_obj* back = bvm_find(vm, 0x1110);
+    if (back) {
+        set_pos(back, BACK_X, BACK_Y, BACK_Z);
+        set_scale(back, BACK_SCALE, BACK_SCALE, BACK_SCALE);
+        set_hidden(back, l->launching);
     }
 }
 
@@ -310,8 +367,11 @@ blist_draw(blist* l, const bscene_sink* sink) {
     for (int pass = 0; pass < 2; pass++) {
         m->scene.parts = passes[pass];
         for (int i = 0; i < m->vm.count; i++) {
-            bscene_draw_object(&m->scene, &m->vm.objs[m->vm.order[i]], sink);
+            const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
+            m->scene.fullbright = o->id >= ID_MINI(0) && o->id < ID_MINI(BLIST_MAX_SLOTS);
+            bscene_draw_object(&m->scene, o, sink);
         }
     }
+    m->scene.fullbright = 0;
     m->scene.parts = BSCENE_PART_ALL;
 }

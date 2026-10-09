@@ -12,12 +12,16 @@ static int cursor;
 static int top;
 
 /* Multi-disc "Compact" mode: discs 2 and up are left out of the list (vis[] holds the indexes
- * of the rows that remain), and starting a set opens a chooser with its discs (chooser = 1). */
+ * of the rows that remain). Left/Right on a set picks its disc, A starts the picked disc. */
 static int* vis;
 static int vis_count;
 static int vis_valid;
-static int chooser;
-static int saved_cursor, saved_top;
+
+#define MAX_SET_DISCS 10
+static const gd_item* members[MAX_SET_DISCS]; /* discs of the set under the cursor, in disc order */
+static int member_count;
+static const gd_item* members_of; /* the list row `members` was built for */
+static int disc_idx;              /* picked disc of that set */
 
 static int
 is_compact_hidden(const gd_item* it) {
@@ -51,9 +55,6 @@ rebuild(void) {
 
 static int
 count_now(void) {
-    if (chooser) {
-        return list_multidisc_length();
-    }
     if (!vis_valid) {
         rebuild();
     }
@@ -71,17 +72,6 @@ uil_count(void) {
 }
 
 int
-uil_in_chooser(void) {
-    return chooser;
-}
-
-/* Number of discs in the set the item belongs to (1 when it is not part of one). */
-int
-uil_disc_total(const gd_item* item) {
-    return item && item->product[0] != '\0' && strncmp(item->disc, "DIR", 3) ? gd_item_disc_total(item->disc) : 1;
-}
-
-int
 uil_top(void) {
     return top;
 }
@@ -93,9 +83,6 @@ uil_cursor(void) {
 
 const gd_item*
 uil_item(int index) {
-    if (chooser) {
-        return index >= 0 && index < list_multidisc_length() ? list_get_multidisc()[index] : NULL;
-    }
     if (!vis_valid) {
         rebuild();
     }
@@ -116,7 +103,6 @@ static void move_cursor(int delta);
 /* Put the cursor on a row of the real list (as returned by the list functions). */
 void
 uil_goto_real(int row) {
-    chooser = 0;
     vis_valid = 0;
     rebuild();
     cursor = 0;
@@ -133,8 +119,53 @@ void
 uil_reset(void) {
     cursor = 0;
     top = 0;
-    chooser = 0;
     vis_valid = 0;
+    members_of = NULL;
+}
+
+/* Collect the discs of the set `item` belongs to (disc 1 first). */
+static void
+load_members(const gd_item* item) {
+    if (members_of == item) {
+        return;
+    }
+    members_of = item;
+    disc_idx = 0;
+    member_count = 0;
+    if (sf_multidisc_grouping[0] == MULTIDISC_GROUPING_SAME_FOLDER && !list_folder_is_root()) {
+        list_set_multidisc_in_folder(item->product);
+    } else {
+        list_set_multidisc(item->product);
+    }
+    const gd_item** all = list_get_multidisc();
+    int n = list_multidisc_length();
+    for (int i = 0; i < n && member_count < MAX_SET_DISCS; i++) {
+        const gd_item* d = all[i];
+        int at = member_count++;
+        while (at > 0 && gd_item_disc_num(members[at - 1]->disc) > gd_item_disc_num(d->disc)) {
+            members[at] = members[at - 1];
+            at--;
+        }
+        members[at] = d;
+    }
+    if (member_count == 0) {
+        members[member_count++] = item;
+    }
+}
+
+int
+uil_disc_total(const gd_item* item) {
+    return is_set(item) ? gd_item_disc_total(item->disc) : 1;
+}
+
+int
+uil_disc_index(void) {
+    const gd_item* it = uil_item(cursor);
+    if (!is_set(it)) {
+        return 0;
+    }
+    load_members(it);
+    return disc_idx;
 }
 
 static void
@@ -165,42 +196,39 @@ uil_button(button_t btn, const gd_item** launch) {
     switch (btn) {
         case BTN_UP: move_cursor(-1); return UIL_REDRAW;
         case BTN_DOWN: move_cursor(1); return UIL_REDRAW;
-        case BTN_LEFT: move_cursor(-UIL_VISIBLE); return UIL_REDRAW;
-        case BTN_RIGHT: move_cursor(UIL_VISIBLE); return UIL_REDRAW;
+        case BTN_LEFT:
+        case BTN_RIGHT:
+            if (is_set(item)) { /* pick a disc of the set */
+                load_members(item);
+                int next = disc_idx + (btn == BTN_LEFT ? -1 : 1);
+                if (next >= 0 && next < member_count) {
+                    disc_idx = next;
+                    return UIL_REDRAW;
+                }
+                return UIL_NONE;
+            }
+            move_cursor(btn == BTN_LEFT ? -UIL_VISIBLE : UIL_VISIBLE);
+            return UIL_REDRAW;
         case BTN_A:
         case BTN_START:
             if (!item) {
                 return UIL_NONE;
             }
-            if (!chooser && uil_is_folder(item)) {
+            if (uil_is_folder(item)) {
                 list_folder_enter(item->name, real_index(cursor));
                 cursor = 0;
                 top = 0;
                 vis_valid = 0;
                 return UIL_REDRAW;
             }
-            if (!chooser && is_set(item)) {
-                if (sf_multidisc_grouping[0] == MULTIDISC_GROUPING_SAME_FOLDER && !list_folder_is_root()) {
-                    list_set_multidisc_in_folder(item->product);
-                } else {
-                    list_set_multidisc(item->product);
-                }
-                saved_cursor = cursor;
-                saved_top = top;
-                chooser = 1;
-                cursor = 0;
-                top = 0;
-                return UIL_REDRAW;
+            if (is_set(item)) {
+                load_members(item);
+                *launch = members[disc_idx < member_count ? disc_idx : 0];
+                return UIL_LAUNCH;
             }
             *launch = item;
             return UIL_LAUNCH;
         case BTN_B:
-            if (chooser) {
-                chooser = 0;
-                cursor = saved_cursor;
-                top = saved_top;
-                return UIL_REDRAW;
-            }
             if (!list_folder_is_root()) {
                 int restored = list_folder_go_back();
                 vis_valid = 0;

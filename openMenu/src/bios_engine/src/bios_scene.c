@@ -180,6 +180,9 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                             light = (int)((LIGHT_AMBIENT + LIGHT_DIFFUSE * nz) * 256.0f);
                             light = light > 256 ? 256 : light;
                         }
+                        if (s->fullbright) {
+                            light = 256;
+                        }
                         scratch_l[i] = (int16_t)light;
                     }
                 }
