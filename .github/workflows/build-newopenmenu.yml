@@ -21,6 +21,11 @@ jobs:
             -IopenMenu/src/bios_rom/include \
             openMenu/src/bios_rom/src/bios_rom.c openMenu/src/bios_rom/test/bios_rom_test.c -o bios_rom_test
           ./bios_rom_test
+          gcc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -IopenMenu/src/bios_rom/include -IopenMenu/src/bios_engine/include \
+            openMenu/src/bios_rom/src/bios_rom.c openMenu/src/bios_engine/src/*.c \
+            openMenu/src/bios_engine/test/bios_engine_test.c -lm -o bios_engine_test
+          ./bios_engine_test
 
       - uses: docker/setup-buildx-action@v3
 

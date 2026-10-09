@@ -18,9 +18,10 @@
 #include "sound.h"
 #include "ui_bios.h"
 #include "ui_list.h"
+#include "ui_settings.h"
 #include "video.h"
 
-typedef enum { SCREEN_MAIN, SCREEN_GAMES } screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
  * longer; the animations were written for that rate. */
@@ -69,6 +70,7 @@ blend_color(uint32_t from, uint32_t to, int t) {
 
 static bmenu menu;
 static screen_t screen;
+static int settings_row;
 static int notice_frames;
 static char fps_text[40];
 static uint64_t build_us_sum;
@@ -120,7 +122,30 @@ draw_games(void) {
         snprintf(line, sizeof(line), "%s%.40s", uil_is_folder(item) ? "> " : "", item->name);
         gfx_text(line, TEXT_X, y, 0.5f, selected ? 0xFFFFFFFFu : 0xFFC0C0C0u, selected);
     }
-    gfx_text("A: start   B: back", TEXT_X, ROWS_Y + UIL_VISIBLE * GFX_LINE_H + 4.0f, 0.5f, 0xFFA0A0A0u, 0);
+    const gd_item* cur = uil_item(uil_cursor());
+    float hint_y = ROWS_Y + UIL_VISIBLE * GFX_LINE_H + 4.0f;
+    if (cur && !uil_is_folder(cur)) {
+        snprintf(line, sizeof(line), "%s  %s  disc %s", cur->product, cur->region, cur->disc);
+        gfx_text(line, TEXT_X, hint_y, 0.5f, 0xFFA0A0A0u, 0);
+    } else {
+        gfx_text("A: open / start   B: back", TEXT_X, hint_y, 0.5f, 0xFFA0A0A0u, 0);
+    }
+}
+
+static void
+draw_settings(void) {
+    char line[64];
+    gfx_rect(PANEL_X, PANEL_Y, PANEL_W, (ROWS_Y - PANEL_Y) + 6 * GFX_LINE_H + 40.0f, 0.4f, 0x90000000u);
+    gfx_text("Settings", TEXT_X, TITLE_Y, 0.5f, 0xFFFFFFFFu, 1);
+    for (int i = 0; i < uis_count(); i++) {
+        float y = ROWS_Y + (float)i * GFX_LINE_H;
+        if (i == settings_row) {
+            gfx_rect(PANEL_X + 8.0f, y, PANEL_W - 16.0f, (float)GFX_LINE_H, 0.45f, 0x50FFFFFFu);
+        }
+        uis_text(i, line, sizeof(line));
+        gfx_text(line, TEXT_X, y, 0.5f, i == settings_row ? 0xFFFFFFFFu : 0xFFC0C0C0u, i == settings_row);
+    }
+    gfx_text("Left/Right: change   B: back", TEXT_X, ROWS_Y + 6 * GFX_LINE_H + 4.0f, 0.5f, 0xFFA0A0A0u, 0);
 }
 
 static void
@@ -144,7 +169,11 @@ draw_frame(void) {
         }
     } else {
         bscene_draw_background(&menu.bg, gfx_sink());
-        draw_games();
+        if (screen == SCREEN_GAMES) {
+            draw_games();
+        } else {
+            draw_settings();
+        }
     }
     if (screen == SCREEN_MAIN) {
         gfx_text(status_line, TEXT_X, STATUS_Y, 0.5f, 0x80FFFFFFu, 0);
@@ -178,6 +207,10 @@ handle_main(button_t b) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 uil_reset();
                 screen = SCREEN_GAMES;
+            } else if (menu.selected == ICON_SETTINGS) {
+                sound_sfx(BAUDIO_SFX_ENTER);
+                settings_row = 0;
+                screen = SCREEN_SETTINGS;
             } else {
                 sound_sfx(BAUDIO_SFX_ERROR);
                 show_notice("Not available yet");
@@ -200,6 +233,41 @@ handle_games(button_t b) {
         screen = SCREEN_MAIN;
     } else if (r == UIL_REDRAW) {
         sound_sfx(b == BTN_A || b == BTN_START ? BAUDIO_SFX_CONFIRM : (b == BTN_B ? BAUDIO_SFX_CANCEL : BAUDIO_SFX_CURSOR));
+    }
+}
+
+static void
+handle_settings(button_t b) {
+    switch (b) {
+        case BTN_UP:
+            if (settings_row > 0) {
+                settings_row--;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_DOWN:
+            if (settings_row < uis_count() - 1) {
+                settings_row++;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_LEFT:
+        case BTN_RIGHT:
+        case BTN_A:
+            uis_change(settings_row, b == BTN_LEFT ? -1 : 1);
+            sound_sfx(BAUDIO_SFX_CONFIRM);
+            break;
+        case BTN_B:
+        case BTN_START:
+            if (uis_commit() != 0) {
+                sound_sfx(BAUDIO_SFX_ERROR);
+                show_notice("Could not save settings");
+            } else {
+                sound_sfx(BAUDIO_SFX_CANCEL);
+            }
+            screen = SCREEN_MAIN;
+            break;
+        default: break;
     }
 }
 
@@ -234,8 +302,10 @@ ui_bios_run(const bios_rom* rom) {
         button_t b = input_poll();
         if (screen == SCREEN_MAIN) {
             handle_main(b);
-        } else {
+        } else if (screen == SCREEN_GAMES) {
             handle_games(b);
+        } else {
+            handle_settings(b);
         }
         if (notice_frames > 0) {
             notice_frames--;
