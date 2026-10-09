@@ -90,7 +90,23 @@ lookup(bscene_texref ref) {
         } else if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END && ref.b == BMODEL_TEX_FRONT) {
             snprintf(name, sizeof(name), "BIOS_PREVIEW_ART_CASE");
         }
-        if (name[0] && getenv(name) && load_ppm(getenv(name), &c->bmp)) {
+        const char* val = name[0] ? getenv(name) : NULL;
+        if (val && (!strcmp(val, "pal") || !strcmp(val, "ntsc"))) {
+            /* the BIOS disc of the region: the first 256x256 gbix 0 picture in the ROM is blue (PAL), the second red */
+            int want = !strcmp(val, "pal") ? 0 : 1, found = 0;
+            for (int n = 0; n < bios_texture_count(g_rom); n++) {
+                bios_texture t;
+                if (bios_texture_get(g_rom, n, &t) == 0 && t.gbix == 0 && t.width == 256 && t.height == 256) {
+                    if (found++ == want) {
+                        c->bmp.w = t.width;
+                        c->bmp.h = t.height;
+                        c->bmp.px = malloc(sizeof(uint32_t) * t.width * t.height);
+                        c->valid = c->bmp.px && bios_texture_decode(&t, c->bmp.px) == 0;
+                        return c->valid ? &c->bmp : NULL;
+                    }
+                }
+            }
+        } else if (val && load_ppm(val, &c->bmp)) {
             c->valid = 1;
             return &c->bmp;
         }
