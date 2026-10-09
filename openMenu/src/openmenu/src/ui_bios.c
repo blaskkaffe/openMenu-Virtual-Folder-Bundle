@@ -20,6 +20,7 @@
 #include "history.h"
 #include "input.h"
 #include "launch.h"
+#include "serial_region.h"
 #include "sound.h"
 #include <openmenu_settings.h>
 
@@ -157,6 +158,12 @@ wrap_text(const char* text, int width, char out[][20], int max_lines) {
 static const gd_item* marquee_item;
 static int marquee_frame;
 
+/* Region of the console, as the BIOS stores it: 2 is Europe (PAL). */
+static int
+console_is_pal(void) {
+    return (*(volatile uint8_t*)0x8C000072 & 0xF) == 2;
+}
+
 /* Row texts, disc pictures and the right panel's data for the frame about to be drawn. */
 static void
 games_sync(void) {
@@ -204,7 +211,8 @@ games_sync(void) {
             gfx_set_label((uint16_t)BLIST_NUM_ID(s), num);
         }
         gfx_set_label((uint16_t)BLIST_TEXT_ID(s), line);
-        gfx_art_bind_row(s, item && !uil_is_folder(item) ? item->product : "");
+        const char* serial = item && !uil_is_folder(item) ? item->product : "";
+        gfx_art_bind_row(s, serial, serial[0] ? serial_is_pal(serial) : console_is_pal());
     }
     blist_sync(&glist);
 }

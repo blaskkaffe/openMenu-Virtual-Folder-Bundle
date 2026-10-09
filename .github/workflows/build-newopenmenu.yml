@@ -26,6 +26,9 @@ jobs:
             openMenu/src/bios_rom/src/bios_rom.c openMenu/src/bios_engine/src/*.c \
             openMenu/src/bios_engine/test/bios_engine_test.c -lm -o bios_engine_test
           ./bios_engine_test
+          gcc -std=c99 -Wall -Wextra -Werror -IopenMenu/src/openmenu/src \
+            openMenu/src/openmenu/test/serial_region_test.c openMenu/src/openmenu/src/serial_region.c -o serial_region_test
+          ./serial_region_test
 
       - uses: docker/setup-buildx-action@v3
 

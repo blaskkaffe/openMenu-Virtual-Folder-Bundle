@@ -15,6 +15,7 @@ set(OPENMENU_SOURCES
         src/history.c
         src/input.c
         src/launch.c
+        src/serial_region.c
         src/sound.c
         src/ui_bios.c
         src/ui_fallback.c

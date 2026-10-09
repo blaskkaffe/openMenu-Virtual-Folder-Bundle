@@ -133,3 +133,7 @@ rows). The selected row is lit across the title; the BACK marker sits under the 
 Game list bottom row: the BACK marker and the CD player's five buttons (without their pictures)
 sit where they do in the CD player. For now the buttons show product code, region, players, VMU
 blocks and disc count (`draw_button_text` in `ui_bios.c`); they are free for other info.
+
+Disc colour: a game without icon art shows the BIOS disc of its region, chosen from the serial number
+(`serial_region.c`): PAL (Sega MK + 7 digits, third party ...D, ...D50, ...N50) gets the blue disc,
+everything else the red one - the same pairing the BIOS uses (blue on European consoles).

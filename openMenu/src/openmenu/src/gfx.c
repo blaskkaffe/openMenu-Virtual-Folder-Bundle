@@ -151,6 +151,7 @@ static int dats_loaded;
 static art_entry art_cache[ART_SLOTS];
 static int art_budget; /* pictures that may still be loaded this frame */
 static char row_product[BLIST_MAX_SLOTS][16];
+static int row_pal[BLIST_MAX_SLOTS]; /* the game of the row is a PAL release: the blue BIOS disc, not the red one */
 static int row_window[BLIST_MAX_SLOTS]; /* title scroll: visible width in px (0 = no scrolling) */
 static int row_offset[BLIST_MAX_SLOTS];
 static uint8_t* art_buf;
@@ -284,11 +285,36 @@ art_get(const char* product, int box) {
 }
 
 void
-gfx_art_bind_row(int slot, const char* product) {
+gfx_art_bind_row(int slot, const char* product, int pal) {
     if (slot >= 0 && slot < BLIST_MAX_SLOTS) {
+        row_pal[slot] = pal != 0;
         strncpy(row_product[slot], product ? product : "", sizeof(row_product[slot]) - 1);
         row_product[slot][sizeof(row_product[slot]) - 1] = '\0';
     }
+}
+
+/* The BIOS has two pictures for the face of a disc, both 256x256 with the GBIX 0: the first in the
+ * ROM is blue (what the BIOS shows on European consoles), the second red (Japan and America). */
+static rom_tex*
+disc_face(int pal) {
+    static rom_tex face[2];
+    static int tried[2];
+    int i = pal ? 1 : 0;
+    if (!tried[i] && g_rom) {
+        tried[i] = 1;
+        int found = 0;
+        for (int n = 0; n < bios_texture_count(g_rom); n++) {
+            bios_texture t;
+            if (bios_texture_get(g_rom, n, &t) == 0 && t.gbix == 0 && t.width == 256 && t.height == 256) {
+                if (found == (pal ? 0 : 1)) {
+                    upload_texture(&t, &face[i]);
+                    break;
+                }
+                found++;
+            }
+        }
+    }
+    return face[i].valid ? &face[i] : NULL;
 }
 
 static rom_tex*
@@ -300,6 +326,10 @@ get_rom_texture(bscene_texref ref) {
             art_entry* e = art_get(row_product[slot], 0);
             if (e && e->tex.valid) {
                 return &e->tex;
+            }
+            rom_tex* face = disc_face(row_pal[slot]); /* no picture: the BIOS disc of the game's region */
+            if (face) {
+                return face;
             }
         }
         ref.a = BLIST_DISC_MODEL;
