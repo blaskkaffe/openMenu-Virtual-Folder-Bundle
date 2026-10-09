@@ -188,3 +188,19 @@ Not yet: copying a group of files, the animated icons.
   connected), enable/disable GameID and show its status, battery level of VM2 and VMU Pro, and more.
 - Much later: integrate with DreamPi so that the DreamPi script can load, download and upload saves
   and VMU backups.
+
+## Todo: Online menu item (blue, takes the place of Music)
+
+- Online players: from DreamcastLive (as openMenu 1.7 does) and from dc99.net. Favourite players.
+- Games being played online, matched with the games on the SD card, so a game somebody is playing
+  now can be launched from the list. Favourite online games.
+- Games and applications (browsers) on the card with known, currently working online support, with
+  which network to use for each (lists from DreamcastLive and the Flycast DCNet list). Show each
+  game's own settings, such as DNS, where there are any.
+- The online event schedule of dc99.net.
+- Switch between DCNET and DCNow! (the default) through the DreamPi companion script.
+- Show which networks a game is patched for (serial PPP, WIZnet), and group several patched
+  versions of a game so that, for example, the regular and the WIZnet one sit together.
+- Change the console's ISP network settings without starting a browser, if that is possible, with 2-3
+  presets to switch between (with a clear warning, as this writes to the flash memory).
+- In-menu notifications when a favourite player or game comes online.
