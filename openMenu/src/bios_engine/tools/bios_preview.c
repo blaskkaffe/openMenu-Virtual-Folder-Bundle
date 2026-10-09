@@ -359,6 +359,16 @@ main(int argc, char** argv) {
     } else if (script == -3 || script == -4) {
         bscene_draw_background(&menu.bg, &sink);
         blist_draw(&list, &sink);
+        if (getenv("BIOS_PREVIEW_CASE")) { /* the right panel of the game browser with the CD case at rest */
+            static bcase bc;
+            bcase_init(&bc);
+            bcase_show(&bc, atoi(getenv("BIOS_PREVIEW_CASE")) ? BMODEL_CASE_PAL : BMODEL_CASE_WHITE, "A", 1);
+            for (int i = 0; i < 200; i++) {
+                bcase_step(&bc);
+            }
+            bscene_draw_panel(&menu.scene, 432.0f, 58.0f, 194.0f, 326.0f, 0xFFE07000u, &sink);
+            bcase_draw(&bc, &menu.scene, 529.0f, 141.0f, 150.0f, NULL, NULL, &sink);
+        }
     } else if (script == -2) {
         bscene_draw_background(&menu.bg, &sink);
         bpage_draw(&page, &sink);
