@@ -29,6 +29,7 @@ enum {
 };
 #define BMODEL_COUNT (BMODEL_END - BMODEL_BASE)
 
+#define BMODEL_CASE_HEIGHT 9.3f /* height of the two cases in model units */
 #define BMODEL_TEX_FRONT 0
 #define BMODEL_TEX_BACK 1
 #define BMODEL_NOTE_COLOR 0xFF7F66FFu /* material colour of the music note (ROM model 2) */

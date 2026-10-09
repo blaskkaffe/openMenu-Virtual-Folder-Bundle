@@ -219,3 +219,12 @@ art of a game on the front; the back is plain white until something is placed th
 Triangle counts (budget 250, the music note has 234): phone 228, globe 230, cases 88 and 80.
 `models/*.obj` are the same models exported with `tools/bmodel_obj` (materials `front_art`, `back_art`).
 Preview: `BIOS_PREVIEW_ROT="22,-25,0" bios_preview dc_boot.bin out.ppm 5 <0..3> -10`.
+
+## CD case in the game browser (sketch2)
+
+The flat box art of the right panel is replaced by the 3D jewel case of the selected game (blue PAL case for
+PAL serials, white-spine case otherwise; the box art is the front picture). `bios_case.c`: when the selection
+moves down the new case flies in from the top while the old one leaves at the bottom (up: the other way round);
+motion is an ease-out of 26% of the remaining way per frame (about 15 frames), the case leans into the motion.
+At rest it tilts slowly about all axes (periods roughly 9, 12 and 15 s), each game with its own phase and
+direction. Folders show no case. Preview: `bios_preview dc_boot.bin out.ppm 5 <frames> -11`.

@@ -10,6 +10,7 @@
 #include <dc/video.h>
 
 #include <bios_audio.h>
+#include <bios_case.h>
 #include <bios_menu.h>
 #include <bios_datetime.h>
 #include <bios_list.h>
@@ -172,10 +173,40 @@ console_is_pal(void) {
     return (*(volatile uint8_t*)0x8C000072 & 0xF) == 2;
 }
 
+/* The CD case of the selected game (right panel): flies in from the side the selection came from. */
+static bcase gcase;
+static int gcase_prev_cursor = -1;
+static const gd_item* gcase_prev_item;
+
+static void
+case_bind(void* user, const char* tag) {
+    (void)user;
+    gfx_model_bind_front(tag);
+}
+
+static void
+case_update(void) {
+    int cursor = uil_cursor();
+    const gd_item* cur = uil_count() > 0 ? uil_item(cursor) : NULL;
+    if (cursor != gcase_prev_cursor || cur != gcase_prev_item) {
+        int dir = cursor >= gcase_prev_cursor ? 1 : -1;
+        if (cur && !uil_is_folder(cur)) {
+            int pal = cur->product[0] ? serial_is_pal(cur->product) : console_is_pal();
+            bcase_show(&gcase, pal ? BMODEL_CASE_PAL : BMODEL_CASE_WHITE, cur->product, dir);
+        } else {
+            bcase_show(&gcase, -1, "", dir);
+        }
+        gcase_prev_cursor = cursor;
+        gcase_prev_item = cur;
+    }
+    bcase_step(&gcase);
+}
+
 /* Row texts, disc pictures and the right panel's data for the frame about to be drawn. */
 static void
 games_sync(void) {
     char line[BPAGE_LABEL_MAX];
+    case_update();
     blist_set_count(&glist, uil_count());
     blist_set_cursor(&glist, uil_cursor());
     for (int s = 0; s < glist.slots; s++) {
@@ -271,8 +302,8 @@ draw_games(void) {
     const gd_item* cur = uil_item(uil_cursor());
     draw_button_text(cur);
     gfx_rrect(INFO_X - 6.0f, ART_Y - 8.0f, INFO_W + 12.0f, 326.0f, 6.0f, 0.4f, 0x58000000u);
+    bcase_draw(&gcase, &menu.scene, INFO_X + INFO_W / 2.0f, ART_Y + ART_SIZE / 2.0f, ART_SIZE + 10.0f, case_bind, NULL, gfx_sink());
     if (cur && !uil_is_folder(cur)) {
-        gfx_art_box(cur->product, INFO_X + (INFO_W - ART_SIZE) / 2.0f, ART_Y, ART_SIZE, ART_SIZE, 0.45f);
         float y = ART_Y + ART_SIZE + 6.0f;
         int n = wrap_text(cur->name, 15, lines, 3);
         for (int i = 0; i < n; i++) {

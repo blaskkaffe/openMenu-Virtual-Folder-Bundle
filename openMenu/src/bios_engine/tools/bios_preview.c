@@ -23,6 +23,7 @@
 #include "bios_files.h"
 #include "tex_decode.h"
 #include "bios_models.h"
+#include "bios_case.h"
 
 #define W 640
 #define H 480
@@ -256,6 +257,8 @@ main(int argc, char** argv) {
             o->rot_tw[k].step = 0;
         }
         bmenu_update(&menu);
+    } else if (script == -11) { /* case flying in: `selected` = frames since the selection moved down */
+        bmenu_update(&menu);
     } else if (script == -9) { /* memory card grid of the File screen: `selected` = cursor; cards in A1, B1, B2 */
         static bfiles bf;
         bfiles_open(&bf, &menu, selected);
@@ -287,7 +290,7 @@ main(int argc, char** argv) {
     } else {
         bmenu_show_main(&menu, selected);
     }
-    for (int i = 0; i < (script == -5 || script == -7 || script == -10 || script == -8 || script == -9 ? 0 : frames); i++) {
+    for (int i = 0; i < (script == -5 || script == -7 || script == -10 || script == -11 || script == -8 || script == -9 ? 0 : frames); i++) {
         bmenu_update(&menu);
         if (script == -2) {
             bpage_sync(&page, demo_row, NULL);
@@ -336,6 +339,20 @@ main(int argc, char** argv) {
         bscene_draw_background(&menu.bg, &sink);
         bscene_draw_panel(&menu.scene, BDT_PANEL_X, BDT_PANEL_Y, BDT_PANEL_W, BDT_PANEL_H, 0xFFE00070u, &sink);
         bdt_draw(&dt, &sink);
+    } else if (script == -11) {
+        static bcase bc;
+        bscene_draw_background(&menu.bg, &sink);
+        bcase_init(&bc);
+        bcase_show(&bc, BMODEL_CASE_PAL, "A", 1);
+        for (int i = 0; i < 200; i++) {
+            bcase_step(&bc);
+        }
+        bcase_show(&bc, BMODEL_CASE_WHITE, "B", 1);
+        for (int i = 0; i < selected; i++) {
+            bcase_step(&bc);
+        }
+        bscene_draw_panel(&menu.scene, 432.0f, 58.0f, 194.0f, 326.0f, 0xFFE07000u, &sink);
+        bcase_draw(&bc, &menu.scene, 529.0f, 136.0f, 150.0f, NULL, NULL, &sink);
     } else if (script == -7 || script == -10) {
         bscene_draw_background(&menu.bg, &sink);
         bmenu_draw_objects(&menu, &sink);

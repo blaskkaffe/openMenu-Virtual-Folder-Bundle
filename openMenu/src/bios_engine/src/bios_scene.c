@@ -175,6 +175,28 @@ bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent
 }
 
 void
+bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], const bscene_sink* sink) {
+    float units_per_px = -BSCENE_PANEL_Z / 4000.0f;
+    bvm_obj o;
+    memset(&o, 0, sizeof(o));
+    o.active = 1;
+    o.flags = BVM_F_MODEL;
+    o.model = model;
+    o.texlist = model;
+    o.pos[0] = (cx - 320.0f) * units_per_px;
+    o.pos[1] = (240.0f - cy) * units_per_px;
+    o.pos[2] = BSCENE_PANEL_Z;
+    o.scale_tw[0].cur = o.scale_tw[1].cur = o.scale_tw[2].cur = scale;
+    for (int k = 0; k < 3; k++) {
+        o.rot[k] = (int32_t)(rot_deg[k] * (65536.0f / 360.0f));
+    }
+    unsigned saved = s->parts;
+    s->parts = BSCENE_PART_MODEL;
+    bscene_draw_object(s, &o, sink);
+    s->parts = saved;
+}
+
+void
 bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
     if (!o->active || (o->flags & BVM_F_HIDE)) {
         return;

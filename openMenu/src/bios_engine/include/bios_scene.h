@@ -105,6 +105,11 @@ void bscene_draw_object(bscene* s, const bvm_obj* obj, const bscene_sink* sink);
 #define BSCENE_PANEL_MODEL 39
 void bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent, const bscene_sink* sink);
 
+/* Draw model `model` (a ROM index or a BMODEL_* id, whose texlist is the same number) centred on the
+ * pixel (cx, cy) as it looks at BSCENE_PANEL_Z; `scale` multiplies the model's own units, `rot_deg` is
+ * the rotation about x, y, z in degrees. Submitted immediately, like bscene_draw_panel(). */
+void bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], const bscene_sink* sink);
+
 void bscene_draw_background(const dcbg_state* bg, const bscene_sink* sink);
 
 /* Screen position of a world point under the BIOS camera. Returns 0 if it is behind the camera. */

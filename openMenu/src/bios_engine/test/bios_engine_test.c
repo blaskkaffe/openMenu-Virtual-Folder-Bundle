@@ -17,6 +17,7 @@
 #include "bios_files.h"
 #include "bios_list.h"
 #include "bios_models.h"
+#include "bios_case.h"
 #include "bios_page.h"
 #include "bios_scene.h"
 #include "nj_model.h"
@@ -835,6 +836,45 @@ test_models(const bios_rom* rom) {
 }
 
 static void
+test_case(const bios_rom* rom) {
+    bcase c;
+    bcase_init(&c);
+    bcase_show(&c, -1, "", 1);
+    CHECK(!c.cur.active);
+    bcase_show(&c, BMODEL_CASE_PAL, "MK51052", 1); /* selection moved down: flies in from the top */
+    CHECK(c.cur.active && c.cur.y < -100.0f && !c.old.active);
+    float last = c.cur.y;
+    int frames = 0;
+    while (c.cur.y != 0.0f && frames < 200) {
+        bcase_step(&c);
+        CHECK(c.cur.y >= last); /* monotonic, no overshoot */
+        last = c.cur.y;
+        frames++;
+    }
+    CHECK(c.cur.y == 0.0f && frames > 6 && frames < 30); /* fast but not instant */
+    bcase_show(&c, BMODEL_CASE_PAL, "MK51052", 1); /* same game: nothing happens */
+    CHECK(!c.old.active);
+    bcase_show(&c, BMODEL_CASE_WHITE, "HDR0001", 1);
+    CHECK(c.old.active && c.old.leaving && c.old.target > 100.0f); /* the old one leaves at the bottom */
+    CHECK(c.cur.y < -100.0f);
+    bcase_show(&c, BMODEL_CASE_WHITE, "HDR0002", -1); /* moved up: from the bottom, previous flies up */
+    CHECK(c.cur.y > 100.0f && c.old.target < -100.0f);
+    for (int i = 0; i < 100; i++) {
+        bcase_step(&c);
+    }
+    CHECK(!c.old.active && c.cur.y == 0.0f);
+
+    /* drawing goes through the scene with the picture bound first */
+    bscene sc;
+    bscene_init(&sc, rom);
+    tally t = {0, 0, 0, 1e9f, -1e9f, 1e9f, -1e9f};
+    bscene_sink sink = {&t, tally_tri, tally_text};
+    bcase_draw(&c, &sc, 530.0f, 140.0f, 150.0f, NULL, NULL, &sink);
+    CHECK(t.tris > 20 && t.minx > 380.0f && t.maxx < 640.0f && t.miny > 20.0f && t.maxy < 260.0f);
+    bscene_free(&sc);
+}
+
+static void
 test_files(const bios_rom* rom) {
     static bmenu m;
     static bfiles f;
@@ -908,6 +948,7 @@ main(void) {
     test_datetime(&rom);
     test_files(&rom);
     test_models(&rom);
+    test_case(&rom);
 
     const char* real = getenv("BIOS_ROM_FILE");
     if (real && *real) {
