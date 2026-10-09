@@ -47,6 +47,12 @@ int bmenu_move(bmenu* m, bmenu_dir dir);
 void bmenu_update(bmenu* m);                          /* one 60 Hz frame */
 void bmenu_draw(bmenu* m, const bscene_sink* sink);   /* background layers, then all objects */
 
+/* The objects only. Every icon is drawn by two objects with the same model (the icon, id 0x200+i,
+ * and its caption, id 0x300+i, a hair behind it); drawing both costs twice the triangles and
+ * translucent layers for the picture of one slightly more opaque icon. This draws the icon once
+ * with the alpha of two stacked layers and skips the caption object. */
+void bmenu_draw_objects(bmenu* m, const bscene_sink* sink);
+
 #ifdef __cplusplus
 }
 #endif
