@@ -17,6 +17,7 @@ set(OPENMENU_SOURCES
         src/ui_bios.c
         src/ui_fallback.c
         src/ui_list.c
+        src/video.c
         src/backend/gdemu_sdk.c
 )
 

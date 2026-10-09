@@ -23,6 +23,7 @@
 #include <openmenu_settings.h>
 
 #include "ui_bios.h"
+#include "video.h"
 #include "ui_fallback.h"
 
 int
@@ -32,7 +33,7 @@ main(int argc, char* argv[]) {
 
     maple_wait_scan();
 
-    vid_set_mode(DM_640x480_NTSC_IL, PM_RGB565);
+    video_init();
     bfont_set_encoding(BFONT_CODE_ISO8859_1);
 
     /* The boot ROM is memory mapped (uncached) at 0xA0000000. */
