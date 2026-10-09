@@ -174,6 +174,48 @@ bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent
     s->panel_on = 0;
 }
 
+/* The face of a row disc is a square with the picture mapped over it. Game pictures are square, so
+ * the face is drawn as a circle (a fan inscribed in the square, same texture coordinates): the disc
+ * keeps its round shape whatever the picture. */
+#define BSCENE_ROUND_FACE_TEXLIST 0x1000
+#define ROUND_SEGMENTS 32
+static void
+draw_round_face(const nj_mesh* mesh, const nj_poly* poly, const nj_mat4* m, uint32_t argb, bscene_texref tex, const bscene_sink* sink) {
+    float minx = 1e9f, maxx = -1e9f, miny = 1e9f, maxy = -1e9f, z = 0.0f;
+    for (int i = 0; i < 6; i++) {
+        const nj_vec3 p = mesh->verts[poly->corners[i].idx].pos;
+        minx = p.x < minx ? p.x : minx;
+        maxx = p.x > maxx ? p.x : maxx;
+        miny = p.y < miny ? p.y : miny;
+        maxy = p.y > maxy ? p.y : maxy;
+        z = p.z;
+    }
+    float cx = (minx + maxx) / 2.0f, cy = (miny + maxy) / 2.0f, rx = (maxx - minx) / 2.0f, ry = (maxy - miny) / 2.0f;
+    bscene_vtx pts[ROUND_SEGMENTS + 1];
+    int ok[ROUND_SEGMENTS + 1];
+    for (int i = 0; i <= ROUND_SEGMENTS; i++) {
+        float a = 6.2831853f * (float)(i % ROUND_SEGMENTS) / ROUND_SEGMENTS;
+        float cs = cosf(a), sn = sinf(a);
+        nj_vec3 w = nj_mat_apply(m, (nj_vec3){cx + rx * cs, cy + ry * sn, z});
+        ok[i] = bscene_project(w, &pts[i].x, &pts[i].y, &pts[i].invw);
+        pts[i].u = 0.5f + 0.5f * cs;
+        pts[i].v = 0.5f - 0.5f * sn;
+        pts[i].argb = argb;
+    }
+    bscene_vtx c;
+    nj_vec3 wc = nj_mat_apply(m, (nj_vec3){cx, cy, z});
+    int cok = bscene_project(wc, &c.x, &c.y, &c.invw);
+    c.u = c.v = 0.5f;
+    c.argb = argb;
+    for (int i = 0; i < ROUND_SEGMENTS; i++) {
+        bscene_vtx v[3] = {c, pts[i], pts[i + 1]};
+        float area = (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (v[1].y - v[0].y);
+        if (cok && ok[i] && ok[i + 1] && area < 0.0f) {
+            sink->triangle(sink->user, v, tex);
+        }
+    }
+}
+
 void
 bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], const bscene_sink* sink) {
     float units_per_px = -BSCENE_PANEL_Z / 4000.0f;
@@ -294,6 +336,10 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                     }
                     if (poly->has_diffuse && s->double_alpha) {
                         poly_argb = double_alpha(poly_argb);
+                    }
+                    if (poly->tex == 0 && o->texlist >= BSCENE_ROUND_FACE_TEXLIST && poly->has_uv && poly->ntris == 2) {
+                        draw_round_face(mesh, poly, &m, poly_argb, tex, sink);
+                        continue;
                     }
                     int lit = !(poly->strip_flags & STRIP_IGNORE_LIGHT);
                     int cull = !(poly->strip_flags & STRIP_DOUBLE_SIDED);
