@@ -2,6 +2,7 @@
  * BIOS-style menu on the PVR, see ui_bios.h.
  */
 #include <stdio.h>
+#include <time.h>
 #include <string.h>
 
 #include <arch/timer.h>
@@ -18,6 +19,7 @@
 #include "ui_bios.h"
 #include "ui_list.h"
 #include "ui_settings.h"
+#include "video.h"
 
 typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS } screen_t;
 
@@ -57,6 +59,19 @@ static uint64_t build_us_sum;
 static const char* notice_text;
 
 static char status_line[64];
+
+/* The BIOS shows the date and time in the header bar; the console's clock holds local time. */
+static void
+update_clock(void) {
+    char text[24];
+    time_t now = time(NULL);
+    struct tm* t = gmtime(&now);
+    if (t) {
+        snprintf(text, sizeof(text), "%02d/%02d/%04d  %02d:%02d", t->tm_mday, t->tm_mon + 1, t->tm_year + 1900, t->tm_hour,
+                 t->tm_min);
+        gfx_set_label(BMENU_ID_HEADER, text);
+    }
+}
 
 static void
 show_notice(const char* text) {
@@ -248,7 +263,7 @@ ui_bios_run(const bios_rom* rom) {
     for (int i = 0; i < BMENU_ICONS; i++) {
         gfx_set_label((uint16_t)BMENU_ID_ICON(i), icon_names[i]);
     }
-    gfx_set_label(BMENU_ID_HEADER, "openMenu");
+    update_clock();
 
     uint64_t last_ms = timer_ms_gettime64();
     uint64_t fps_since = last_ms;
@@ -275,7 +290,7 @@ ui_bios_run(const bios_rom* rom) {
         if (elapsed > 100) {
             elapsed = 100; /* after a stall do not fast-forward */
         }
-        step_credit += (uint32_t)elapsed * STEPS_PER_SECOND;
+        step_credit += (uint32_t)elapsed * (uint32_t)video_refresh_hz();
         int steps = (int)(step_credit / 1000);
         step_credit %= 1000;
         if (steps > MAX_STEPS_PER_FRAME) {
@@ -287,6 +302,7 @@ ui_bios_run(const bios_rom* rom) {
 
         frames_this_second++;
         if (now - fps_since >= 1000) {
+            update_clock();
             snprintf(fps_text, sizeof(fps_text), "%d fps %u tri b%u ms", frames_this_second, gfx_triangles(),
                      frames_this_second ? (unsigned)(build_us_sum / 1000 / (uint64_t)frames_this_second) : 0u);
             build_us_sum = 0;
