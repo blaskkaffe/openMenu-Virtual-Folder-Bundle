@@ -216,6 +216,6 @@ draws them like ROM models.
 The jewel cases have two texture slots: slot 0 (`BMODEL_TEX_FRONT`) is the front picture (box art, UV 0..1,
 top-left origin), slot 1 (`BMODEL_TEX_BACK`) the back. In the app `gfx_model_bind_front(product)` puts the box
 art of a game on the front; the back is plain white until something is placed there.
-Triangle counts (budget 250, the music note has 234): phone 190, globe 234, cases 88 and 100.
+Triangle counts (budget 250, the music note has 234): phone 228, globe 230, cases 88 and 80.
 `models/*.obj` are the same models exported with `tools/bmodel_obj` (materials `front_art`, `back_art`).
 Preview: `BIOS_PREVIEW_ROT="22,-25,0" bios_preview dc_boot.bin out.ppm 5 <0..3> -10`.

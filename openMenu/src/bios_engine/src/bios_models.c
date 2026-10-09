@@ -195,6 +195,67 @@ cylinder(builder* b, int side_poly, int cap_poly, int caps, int seg, v3 c, v3 ax
     }
 }
 
+/* Solid of revolution about the y axis through (cx, cy, cz): rings of (radius, height above cy), bottom to
+ * top, z squeezed by zs. Normals point away from the inner point (cx, cy + inner_y, cz), which makes domes
+ * look round. A cap closes the top (and the bottom if bottom_cap). */
+static void
+lathe(builder* b, int poly, int seg, const float (*ring)[2], int n, v3 c, float zs, float inner_y, int top_cap, int bottom_cap) {
+    v3 in = v3m(c.x, c.y + inner_y, c.z);
+    for (int i = 0; i + 1 < n; i++) {
+        for (int k = 0; k < seg; k++) {
+            float t0 = 2 * PI_F * k / seg, t1 = 2 * PI_F * (k + 1) / seg;
+            v3 p[4] = {v3m(c.x + ring[i][0] * cosf(t0), c.y + ring[i][1], c.z + ring[i][0] * sinf(t0) * zs),
+                       v3m(c.x + ring[i][0] * cosf(t1), c.y + ring[i][1], c.z + ring[i][0] * sinf(t1) * zs),
+                       v3m(c.x + ring[i + 1][0] * cosf(t1), c.y + ring[i + 1][1], c.z + ring[i + 1][0] * sinf(t1) * zs),
+                       v3m(c.x + ring[i + 1][0] * cosf(t0), c.y + ring[i + 1][1], c.z + ring[i + 1][0] * sinf(t0) * zs)};
+            v3 nr[4];
+            for (int q = 0; q < 4; q++) {
+                nr[q] = norm(sub(p[q], in));
+            }
+            v3 out = add(nr[0], nr[2]);
+            v3 t1v[3] = {p[0], p[1], p[2]}, t2v[3] = {p[0], p[2], p[3]};
+            v3 n1[3] = {nr[0], nr[1], nr[2]}, n2[3] = {nr[0], nr[2], nr[3]};
+            tri(b, poly, t1v, n1, NULL, out);
+            tri(b, poly, t2v, n2, NULL, out);
+        }
+    }
+    for (int cap = 0; cap < 2; cap++) {
+        if ((cap == 0 && !top_cap) || (cap == 1 && !bottom_cap)) {
+            continue;
+        }
+        int r = cap == 0 ? n - 1 : 0;
+        float y = c.y + ring[r][1];
+        for (int k = 0; k < seg; k++) {
+            float t0 = 2 * PI_F * k / seg, t1 = 2 * PI_F * (k + 1) / seg;
+            v3 f[3] = {v3m(c.x, y, c.z), v3m(c.x + ring[r][0] * cosf(t0), y, c.z + ring[r][0] * sinf(t0) * zs),
+                       v3m(c.x + ring[r][0] * cosf(t1), y, c.z + ring[r][0] * sinf(t1) * zs)};
+            tri(b, poly, f, NULL, NULL, v3m(0, cap == 0 ? 1.0f : -1.0f, 0));
+        }
+    }
+}
+
+/* Bent bar with a rectangular section (hy x hz half sizes) through `n` centres in the x-y plane. */
+static void
+bar(builder* b, int poly, const v3* c, int n, float hy, float hz) {
+    v3 ring[8][4];
+    for (int i = 0; i < n; i++) {
+        v3 t = norm(sub(c[i + (i + 1 < n)], c[i - (i > 0)]));
+        v3 nn = v3m(-t.y, t.x, 0.0f);
+        ring[i][0] = add(add(c[i], mul(nn, hy)), v3m(0, 0, hz));
+        ring[i][1] = add(add(c[i], mul(nn, -hy)), v3m(0, 0, hz));
+        ring[i][2] = add(add(c[i], mul(nn, -hy)), v3m(0, 0, -hz));
+        ring[i][3] = add(add(c[i], mul(nn, hy)), v3m(0, 0, -hz));
+    }
+    for (int i = 0; i + 1 < n; i++) {
+        v3 mid = mul(add(c[i], c[i + 1]), 0.5f);
+        for (int k = 0; k < 4; k++) {
+            int j = (k + 1) & 3;
+            v3 fc = mul(add(add(ring[i][k], ring[i][j]), add(ring[i + 1][k], ring[i + 1][j])), 0.25f);
+            quad(b, poly, ring[i][k], ring[i][j], ring[i + 1][j], ring[i + 1][k], NULL, sub(fc, mid));
+        }
+    }
+}
+
 /* ---- finishing ----------------------------------------------------------------------------- */
 
 static void
@@ -265,103 +326,119 @@ builder_start(builder* b) {
 
 static void
 build_phone(builder* b) {
-    const uint32_t body_c = BMODEL_NOTE_COLOR, light_c = 0xFFB299FFu, dark_c = 0xFF4C3DB3u;
-    int body = poly_new(b, -1, body_c, 0);
-    int light = poly_new(b, -1, light_c, 0);
-    int dark = poly_new(b, -1, dark_c, 0);
+    int body = poly_new(b, -1, BMODEL_NOTE_COLOR, 0);
+    int light = poly_new(b, -1, 0xFFB299FFu, 0);
     int white = poly_new(b, -1, 0xFFFFFFFFu, 0);
     int hub = poly_new(b, -1, 0xFFD2D2E6u, 0);
 
-    /* base, wider at the foot (the underside is never seen) */
-    frustum(b, body, 0.0f, 0.0f, 0.0f, 2.4f, 4.6f, 3.6f, 3.8f, 3.0f, 0);
-    /* dial plate and the white dial disc, tilted toward the viewer */
-    v3 tilt = norm(v3m(0.0f, cosf(0.55f), sinf(0.55f)));
-    v3 centre = v3m(0.0f, 2.4f, 0.9f);
-    cylinder(b, dark, dark, 0, 12, add(centre, mul(tilt, -0.05f)), tilt, 2.75f, 2.75f, 0.35f);
-    cylinder(b, white, white, CAP_TOP, 12, add(centre, mul(tilt, 0.3f)), tilt, 2.3f, 2.3f, 0.35f);
-    cylinder(b, hub, hub, CAP_TOP, 8, add(centre, mul(tilt, 0.65f)), tilt, 0.75f, 0.6f, 0.25f);
-    /* cradle posts under the handset cups */
-    cylinder(b, dark, dark, 0, 6, v3m(-3.4f, 2.4f, -1.6f), v3m(0, 1, 0), 0.5f, 0.5f, 1.5f);
-    cylinder(b, dark, dark, 0, 6, v3m(3.4f, 2.4f, -1.6f), v3m(0, 1, 0), 0.5f, 0.5f, 1.5f);
-    /* handset: grip bar and the two cups */
-    box(b, light, -3.4f, 4.5f, -2.0f, 3.4f, 5.3f, -1.2f);
-    cylinder(b, light, body, CAP_TOP, 10, v3m(-3.4f, 3.9f, -1.6f), v3m(0, 1, 0), 1.05f, 1.15f, 1.5f);
-    cylinder(b, light, body, CAP_TOP, 10, v3m(3.4f, 3.9f, -1.6f), v3m(0, 1, 0), 1.05f, 1.15f, 1.5f);
+    /* square plinth, then the rounded, domed body of an old bakelite set */
+    frustum(b, body, 0.0f, 0.0f, 0.0f, 0.8f, 4.3f, 3.5f, 4.0f, 3.2f, 0);
+    static const float shell[4][2] = {{3.7f, 0.0f}, {3.6f, 0.9f}, {2.9f, 1.8f}, {1.6f, 2.4f}};
+    lathe(b, body, 10, shell, 4, v3m(0.0f, 0.8f, 0.0f), 0.85f, 0.0f, 1, 0);
+    /* the dial: one white disc with a small hub, on the sloped front */
+    v3 tilt = norm(v3m(0.0f, cosf(0.85f), sinf(0.85f)));
+    v3 centre = v3m(0.0f, 2.0f, 1.9f);
+    cylinder(b, white, white, CAP_TOP, 12, centre, tilt, 1.75f, 1.75f, 0.3f);
+    cylinder(b, hub, hub, CAP_TOP, 6, add(centre, mul(tilt, 0.3f)), tilt, 0.6f, 0.5f, 0.2f);
+    /* handset: two round cups joined by an arched grip */
+    static const float cup[3][2] = {{1.15f, 0.0f}, {1.3f, 0.8f}, {0.7f, 1.7f}};
+    lathe(b, light, 7, cup, 3, v3m(-2.9f, 2.5f, 0.0f), 1.0f, -0.6f, 1, 0);
+    lathe(b, light, 7, cup, 3, v3m(2.9f, 2.5f, 0.0f), 1.0f, -0.6f, 1, 0);
+    const v3 grip[4] = {{-2.9f, 3.9f, 0.0f}, {-1.0f, 4.75f, 0.0f}, {1.0f, 4.75f, 0.0f}, {2.9f, 3.9f, 0.0f}};
+    bar(b, light, grip, 4, 0.42f, 0.42f);
 }
 
-#define GLOBE_LON 14
-#define GLOBE_LAT 7
-#define GLOBE_R 4.0f
-/* Coarse map, cells of about 26 degrees, north to south, west (180W) to east. '#' is land. */
-static const char* const globe_map[GLOBE_LAT] = {
-    "....##........", /* 90N - 64N */
-    ".####.########", /* 64N - 39N */
-    "..###.#######.", /* 39N - 13N */
-    "....#####.###.", /* 13N - 13S */
-    "....##.##..##.", /* 13S - 39S */
-    "....#........#", /* 39S - 64S */
-    "##############", /* 64S - 90S */
+#define GLOBE_LON 10
+#define GLOBE_LAT 6
+#define GLOBE_R 4.6f
+#define GLOBE_LINE_R 1.04f /* the coast lines float a little above the faceted ball */
+
+static v3
+sphere_pt(float lon_deg, float lat_deg, float r) {
+    float lam = lon_deg * (PI_F / 180.0f), phi = lat_deg * (PI_F / 180.0f); /* longitude 0 faces +z */
+    const float tilt = 0.41f;                                              /* 23.5 degrees of axial tilt */
+    v3 p = v3m(r * cosf(phi) * sinf(lam), r * sinf(phi), r * cosf(phi) * cosf(lam));
+    return v3m(p.x * cosf(tilt) - p.y * sinf(tilt), p.x * sinf(tilt) + p.y * cosf(tilt), p.z);
+}
+
+/* Coast lines as closed (lon, lat) loops in degrees, a few points per continent. */
+#define LOOP_END 999.0f
+static const float globe_coast[][2] = {
+    /* North America */
+    {-165, 65}, {-125, 70}, {-95, 72}, {-62, 58}, {-56, 48}, {-76, 35}, {-81, 25}, {-90, 29},
+    {-97, 22}, {-80, 8}, {-105, 20}, {-124, 40}, {-130, 55}, {LOOP_END, 0},
+    /* Greenland */
+    {-55, 60}, {-20, 70}, {-25, 80}, {-60, 82}, {-65, 70}, {LOOP_END, 0},
+    /* South America */
+    {-80, 8}, {-62, 10}, {-35, -6}, {-40, -22}, {-58, -38}, {-68, -52}, {-74, -40}, {-71, -18}, {-81, -5}, {LOOP_END, 0},
+    /* Africa */
+    {-17, 21}, {-10, 35}, {10, 37}, {32, 31}, {43, 12}, {51, 12}, {40, -15}, {20, -35}, {12, -18}, {9, 4}, {-8, 5},
+    {LOOP_END, 0},
+    /* Europe and Asia */
+    {-9, 37}, {-4, 48}, {8, 54}, {5, 62}, {25, 70}, {60, 70}, {100, 77}, {140, 72}, {178, 66}, {155, 58}, {130, 42}, {122, 30},
+    {108, 20}, {100, 2}, {92, 22}, {78, 8}, {66, 25}, {50, 28}, {36, 36}, {15, 40}, {LOOP_END, 0},
+    /* Australia */
+    {114, -22}, {130, -12}, {142, -11}, {153, -26}, {146, -39}, {135, -33}, {115, -34}, {LOOP_END, 0},
+    {LOOP_END, LOOP_END},
 };
 
-static int
-globe_land(int lon, int lat) {
-    lon = ((lon % GLOBE_LON) + GLOBE_LON) % GLOBE_LON;
-    return globe_map[lat][lon] == '#';
-}
-
-static v3
-sphere_pt(int lon, int lat) {
-    float lam = (-PI_F) + 2 * PI_F * lon / GLOBE_LON; /* longitude, 0 faces +z */
-    float phi = PI_F / 2 - PI_F * lat / GLOBE_LAT;
-    return v3m(GLOBE_R * cosf(phi) * sinf(lam), GLOBE_R * sinf(phi), GLOBE_R * cosf(phi) * cosf(lam));
-}
-
-/* Rotate about z by `a` radians (the tilt of the earth's axis) */
-static v3
-tilt_z(v3 p, float a) {
-    return v3m(p.x * cosf(a) - p.y * sinf(a), p.x * sinf(a) + p.y * cosf(a), p.z);
+static void
+globe_line(builder* b, int poly, v3 p0, v3 p1) {
+    v3 mid = norm(add(p0, p1));
+    v3 w = mul(norm(cross(mid, sub(p1, p0))), 0.11f);
+    quad(b, poly, add(p0, w), add(p1, w), sub(p1, w), sub(p0, w), NULL, mid);
 }
 
 static void
 build_globe(builder* b) {
     int sea = poly_new(b, -1, 0xFF2D6EDCu, 0);
-    int land = poly_new(b, -1, 0xFF3CB43Cu, 0);
-    int metal = poly_new(b, -1, 0xFFC8C8D2u, 0);
-    const float tilt = 0.41f; /* 23.5 degrees */
-    const v3 gc = v3m(0.0f, 5.4f, 0.0f);
-
+    int line = poly_new(b, -1, 0xFF3CC83Cu, STRIP_DOUBLE_SIDED);
+    /* a smooth shaded low poly ball */
     for (int lat = 0; lat < GLOBE_LAT; lat++) {
         for (int lon = 0; lon < GLOBE_LON; lon++) {
-            int pm = globe_land(lon, lat) ? land : sea;
-            v3 p00 = add(gc, tilt_z(sphere_pt(lon, lat), tilt));
-            v3 p10 = add(gc, tilt_z(sphere_pt(lon + 1, lat), tilt));
-            v3 p01 = add(gc, tilt_z(sphere_pt(lon, lat + 1), tilt));
-            v3 p11 = add(gc, tilt_z(sphere_pt(lon + 1, lat + 1), tilt));
-            v3 out = sub(mul(add(add(p00, p10), add(p01, p11)), 0.25f), gc);
-            if (lat == 0) { /* the quad collapses to a triangle at the pole */
+            float l0 = -180.0f + 360.0f * lon / GLOBE_LON, l1 = -180.0f + 360.0f * (lon + 1) / GLOBE_LON;
+            float a0 = 90.0f - 180.0f * lat / GLOBE_LAT, a1 = 90.0f - 180.0f * (lat + 1) / GLOBE_LAT;
+            v3 p00 = sphere_pt(l0, a0, GLOBE_R), p10 = sphere_pt(l1, a0, GLOBE_R);
+            v3 p01 = sphere_pt(l0, a1, GLOBE_R), p11 = sphere_pt(l1, a1, GLOBE_R);
+            v3 out = add(add(p00, p10), add(p01, p11));
+            if (lat == 0) {
                 v3 t[3] = {p00, p11, p01};
-                tri(b, pm, t, NULL, NULL, out);
+                v3 n[3] = {norm(p00), norm(p11), norm(p01)};
+                tri(b, sea, t, n, NULL, out);
             } else if (lat == GLOBE_LAT - 1) {
                 v3 t[3] = {p00, p10, p01};
-                tri(b, pm, t, NULL, NULL, out);
+                v3 n[3] = {norm(p00), norm(p10), norm(p01)};
+                tri(b, sea, t, n, NULL, out);
             } else {
-                quad(b, pm, p00, p10, p11, p01, NULL, out);
+                v3 t1[3] = {p00, p10, p11}, t2[3] = {p00, p11, p01};
+                v3 n1[3] = {norm(p00), norm(p10), norm(p11)}, n2[3] = {norm(p00), norm(p11), norm(p01)};
+                tri(b, sea, t1, n1, NULL, out);
+                tri(b, sea, t2, n2, NULL, out);
             }
         }
     }
-    /* the stand: foot, stem and a half ring under the earth (in the x-y plane) */
-    cylinder(b, metal, metal, CAP_TOP, 10, v3m(0, 0, 0), v3m(0, 1, 0), 2.3f, 1.9f, 0.5f);
-    cylinder(b, metal, metal, 0, 6, v3m(0, 0.5f, 0), v3m(0, 1, 0), 0.4f, 0.4f, 0.9f);
-    const int steps = 6;
-    const float ring_r = 4.6f, th = 0.22f;
-    for (int i = 0; i < steps; i++) {
-        float a0 = PI_F * (1.15f + 0.7f * i / steps), a1 = PI_F * (1.15f + 0.7f * (i + 1) / steps);
-        v3 q0 = add(gc, v3m(ring_r * cosf(a0), ring_r * sinf(a0), 0)), q1 = add(gc, v3m(ring_r * cosf(a1), ring_r * sinf(a1), 0));
-        v3 s = v3m(0, 0, th);
-        v3 outd = sub(mul(add(q0, q1), 0.5f), gc);
-        quad(b, metal, add(q0, s), add(q1, s), sub(q1, s), sub(q0, s), NULL, outd); /* outside */
-        quad(b, metal, add(q0, s), add(q1, s), add(q1, mul(norm(sub(q1, gc)), -2 * th)), add(q0, mul(norm(sub(q0, gc)), -2 * th)), NULL,
-             v3m(0, 0, 1)); /* front */
+    /* the map: coast lines as thin ribbons, long edges cut in two so they do not dive into the ball */
+    int start = 0;
+    for (int i = 0;; i++) {
+        if (globe_coast[i][0] == LOOP_END) {
+            if (globe_coast[i][1] == LOOP_END) {
+                break;
+            }
+            int n = i - start;
+            for (int k = 0; k < n; k++) {
+                const float* a = globe_coast[start + k];
+                const float* c = globe_coast[start + (k + 1) % n];
+                float dl = fabsf(c[0] - a[0]), dp = fabsf(c[1] - a[1]);
+                float len = dl > dp ? dl : dp;
+                int cuts = len > 40.0f ? 2 : 1;
+                for (int q = 0; q < cuts; q++) {
+                    float f0 = (float)q / cuts, f1 = (float)(q + 1) / cuts;
+                    globe_line(b, line, sphere_pt(a[0] + (c[0] - a[0]) * f0, a[1] + (c[1] - a[1]) * f0, GLOBE_R * GLOBE_LINE_R),
+                               sphere_pt(a[0] + (c[0] - a[0]) * f1, a[1] + (c[1] - a[1]) * f1, GLOBE_R * GLOBE_LINE_R));
+                }
+            }
+            start = i + 1;
+        }
     }
 }
 
@@ -369,10 +446,11 @@ build_globe(builder* b) {
 static void
 build_case(builder* b, uint32_t spine_c, uint32_t tray_c, uint32_t edge_c, int pal) {
     const float S = 0.75f;
-    const float hw = 6.6f * S, hh = 6.2f * S, hd = 0.5f * S;
-    const float spine_w = 1.0f * S;
-    /* art window on the front: 11.8 x 11.8, leaving the hinge side on the left */
-    const float ax0 = -5.4f * S, ax1 = 6.4f * S, ay0 = -5.9f * S, ay1 = 5.9f * S;
+    /* The PAL case has a wide blue spine band that also shows on the front, the picture fills the rest. */
+    const float hw = (pal ? 6.78f : 6.6f) * S, hh = 6.2f * S, hd = 0.5f * S;
+    const float spine_w = (pal ? 1.5f : 1.0f) * S;
+    /* art window on the front: 11.8 x 11.8 */
+    const float ax0 = pal ? -hw + spine_w : -5.4f * S, ax1 = hw - 0.2f * S, ay0 = -5.9f * S, ay1 = 5.9f * S;
 
     /* polygon order is draw order (the PVR sorts by submission): what lies behind first, the
      * pictures after the solid body, the translucent plastic last */
@@ -393,9 +471,9 @@ build_case(builder* b, uint32_t spine_c, uint32_t tray_c, uint32_t edge_c, int p
     box(b, tray, -hw, -hh, -hd, hw, hh, -hd + 0.15f * S);
     box(b, spine, -hw, -hh, -hd, -hw + spine_w, hh, hd);
     if (pal) {
-        /* white band and a small round mark on the blue spine, in the manner of the PAL cases */
-        box(b, mark, -hw - 0.02f, hh - 2.2f * S, -hd + 0.1f * S, -hw + 0.02f, hh - 1.9f * S, hd - 0.1f * S);
-        box(b, mark, -hw - 0.03f, -0.4f * S, -0.4f * S, -hw + 0.02f, 0.4f * S, 0.4f * S);
+        /* the embossed label panel on the spine, lower part */
+        int label = poly_new(b, -1, 0xFF3C66CCu, 0);
+        box(b, label, -hw - 0.04f, -4.9f * S, -hd + 0.18f * S, -hw + 0.02f, 1.2f * S, hd - 0.18f * S);
     } else {
         box(b, mark, -hw - 0.02f, -hh + 0.6f * S, -hd + 0.15f * S, -hw + 0.02f, hh - 0.6f * S, hd - 0.15f * S);
     }
