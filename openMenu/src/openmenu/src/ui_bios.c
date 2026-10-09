@@ -820,17 +820,18 @@ handle_settings(button_t b) {
         return;
     }
     switch (b) {
+        /* the d-pad as the BIOS Settings cursor table (0x8C037D70): rows wrap, left and right go to BACK */
         case BTN_UP:
-            if (bpage_move(&page, -1)) sound_sfx(BAUDIO_SFX_CURSOR);
+            if (bpage_nav(&page, BPAGE_UP)) sound_sfx(BAUDIO_SFX_CURSOR);
             break;
         case BTN_DOWN:
-            if (bpage_move(&page, 1)) sound_sfx(BAUDIO_SFX_CURSOR);
+            if (bpage_nav(&page, BPAGE_DOWN)) sound_sfx(BAUDIO_SFX_CURSOR);
             break;
         case BTN_LEFT:
+            if (bpage_nav(&page, BPAGE_LEFT)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
         case BTN_RIGHT:
-            if (page.back_selected) break;
-            uis_change(row, b == BTN_LEFT ? -1 : 1);
-            sound_sfx(BAUDIO_SFX_CONFIRM);
+            if (bpage_nav(&page, BPAGE_RIGHT)) sound_sfx(BAUDIO_SFX_CURSOR);
             break;
         case BTN_A:
             if (page.back_selected) {

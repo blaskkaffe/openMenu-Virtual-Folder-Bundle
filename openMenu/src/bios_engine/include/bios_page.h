@@ -55,6 +55,13 @@ int bpage_set_cursor(bpage* p, int row);
 /* Apply selection, icons and visibility; call once per frame after bmenu_update(). */
 void bpage_sync(bpage* p, bpage_row_fn row, void* user);
 
+#define BPAGE_UP 0
+#define BPAGE_DOWN 1
+#define BPAGE_LEFT 2
+#define BPAGE_RIGHT 3
+/* D-pad exactly as the BIOS Settings page's cursor table (0x8C037D70) has it. Returns 1 if the cursor moved. */
+int bpage_nav(bpage* p, int dir);
+
 /* Is the pixel on the BACK marker (bottom left)? */
 int bpage_back_at_px(float x, float y);
 

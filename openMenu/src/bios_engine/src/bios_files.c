@@ -60,24 +60,34 @@ bfiles_set_cursor(bfiles* f, int slot) {
     return 1;
 }
 
+/* The cursor table of the BIOS card picker (0x8C03884C): slot = port * 2 + socket - 1, index 8 is BACK.
+ * Up and down swap the two sockets of a port; left and right keep the socket and step between ports, past
+ * the first or last port the cursor goes to BACK. Order: up, down, left, right. */
+static const signed char grid_table[9][4] = {
+    {1, 1, 8, 2}, {0, 0, 8, 3}, {3, 3, 0, 4}, {2, 2, 1, 5}, {5, 5, 2, 6},
+    {4, 4, 3, 7}, {7, 7, 4, 8}, {6, 6, 5, 8}, {0, 1, 7, 1},
+};
+
+int
+bfiles_nav(bfiles* f, int dir) {
+    int from = f->back_selected ? 8 : f->cursor;
+    int to = grid_table[from][dir];
+    if (to == from) {
+        return 0;
+    }
+    f->back_selected = to == 8;
+    if (to != 8) {
+        f->cursor = to;
+    }
+    return 1;
+}
+
 int
 bfiles_move(bfiles* f, int dx, int dy) {
-    if (f->back_selected) {
-        if (dy < 0 || dx != 0) {
-            f->back_selected = 0;
-            return 1;
-        }
-        return 0;
+    if (dx || dy) {
+        return bfiles_nav(f, dx < 0 ? BFILES_LEFT : (dx > 0 ? BFILES_RIGHT : (dy < 0 ? BFILES_UP : BFILES_DOWN)));
     }
-    if (dy > 0 && f->cursor % 2 == 1) {
-        f->back_selected = 1; /* one step down from the bottom row: the BACK marker */
-        return 1;
-    }
-    int port = f->cursor / 2 + dx, socket = f->cursor % 2 + dy;
-    if (port < 0 || port > 3 || socket < 0 || socket > 1) {
-        return 0;
-    }
-    return bfiles_set_cursor(f, port * 2 + socket);
+    return 0;
 }
 
 void

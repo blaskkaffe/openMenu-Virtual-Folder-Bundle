@@ -65,17 +65,6 @@ bpage_open(bpage* p, bmenu* m, int count) {
 
 int
 bpage_move(bpage* p, int delta) {
-    if (p->back_selected) {
-        if (delta < 0) {
-            p->back_selected = 0;
-            return 1;
-        }
-        return 0;
-    }
-    if (delta > 0 && p->count > 0 && p->cursor == p->count - 1) {
-        p->back_selected = 1; /* one step down from the last row: the BACK marker */
-        return 1;
-    }
     int next = p->cursor + delta;
     if (next < 0) {
         next = 0;
@@ -195,4 +184,41 @@ bpage_draw(bpage* p, const bscene_sink* sink) {
 int
 bpage_back_at_px(float x, float y) {
     return bmenu_back_hit(-17.57812f, -14.25781f, x, y);
+}
+
+/* The cursor table of the BIOS Settings page (0x8C037D70): index 0 is BACK, 1..5 the rows.
+ *   row:  up = previous row (the first wraps to the last), down = next row (the last wraps to the first),
+ *         left and right = BACK
+ *   BACK: up = the row before the last, down / left / right = the last row */
+int
+bpage_nav(bpage* p, int dir) {
+    int n = p->count;
+    if (n <= 0) {
+        return 0;
+    }
+    int from = p->back_selected ? -1 : p->cursor;
+    int to_row = from, to_back = 0;
+    if (p->back_selected) {
+        to_row = dir == BPAGE_UP ? (n > 1 ? n - 2 : 0) : n - 1;
+    } else if (dir == BPAGE_UP) {
+        to_row = from > 0 ? from - 1 : n - 1;
+    } else if (dir == BPAGE_DOWN) {
+        to_row = from < n - 1 ? from + 1 : 0;
+    } else {
+        to_back = 1;
+    }
+    if (to_back) {
+        p->back_selected = 1;
+        return 1;
+    }
+    int changed = p->back_selected || to_row != p->cursor;
+    p->back_selected = 0;
+    p->cursor = to_row;
+    if (p->cursor < p->top) {
+        p->top = p->cursor;
+    }
+    if (p->cursor >= p->top + BPAGE_SLOTS) {
+        p->top = p->cursor - BPAGE_SLOTS + 1;
+    }
+    return changed;
 }

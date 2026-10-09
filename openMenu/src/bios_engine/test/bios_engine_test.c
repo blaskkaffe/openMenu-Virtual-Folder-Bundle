@@ -915,14 +915,17 @@ test_files(const bios_rom* rom) {
     float x, y;
     bmenu_init(&m, rom, NULL);
     bfiles_open(&f, &m, 0);
-    CHECK(f.cursor == 0 && bfiles_move(&f, -1, 0) == 0 && bfiles_move(&f, 0, -1) == 0);
+    CHECK(f.cursor == 0);
+    bfiles_open(&f, &m, 0);
     CHECK(bfiles_move(&f, 0, 1) == 1 && f.cursor == 1); /* A2 */
-    CHECK(bfiles_move(&f, 0, 1) == 1 && f.back_selected); /* below the bottom socket: BACK */
-    CHECK(bfiles_move(&f, 0, 1) == 0);
-    CHECK(bfiles_move(&f, 0, -1) == 1 && !f.back_selected && f.cursor == 1);
+    /* the BIOS card picker table: up and down swap the sockets of a port, left and right step between ports */
+    CHECK(bfiles_nav(&f, BFILES_UP) == 1 && f.cursor == 0 && bfiles_nav(&f, BFILES_DOWN) == 1 && f.cursor == 1);
+    CHECK(bfiles_nav(&f, BFILES_UP) == 1 && bfiles_nav(&f, BFILES_LEFT) == 1 && f.back_selected); /* left of the first port: BACK */
+    CHECK(bfiles_nav(&f, BFILES_RIGHT) == 1 && !f.back_selected && f.cursor == 1); /* BACK, right: A2 */
     CHECK(bfiles_move(&f, 1, 0) == 1 && f.cursor == 3); /* B2 */
-    CHECK(bfiles_move(&f, 2, 0) == 1 && f.cursor == 7); /* D2 */
-    CHECK(bfiles_move(&f, 1, 0) == 0);
+    CHECK(bfiles_move(&f, 1, 0) == 1 && bfiles_move(&f, 1, 0) == 1 && f.cursor == 7); /* D2 */
+    CHECK(bfiles_move(&f, 1, 0) == 1 && f.back_selected); /* right of the last port: BACK */
+    CHECK(bfiles_nav(&f, BFILES_LEFT) == 1 && f.cursor == 7);
     CHECK(bfiles_set_cursor(&f, 4) == 1 && bfiles_set_cursor(&f, 4) == 0 && bfiles_set_cursor(&f, 8) == 0);
     bfiles_card_px(4, &x, &y);
     CHECK(bfiles_slot_at_px(x, y) == 4);
@@ -946,9 +949,14 @@ test_page(const bios_rom* rom) {
     CHECK(p.cursor == 6 && p.top == 3); /* scrolled so the cursor is the last visible row */
     CHECK(bpage_row_in_slot(&p, 0) == 3 && bpage_row_in_slot(&p, 3) == 6);
     CHECK(bpage_move(&p, 100) == 1 && p.cursor == 9 && p.top == 6);
-    CHECK(bpage_move(&p, 1) == 1 && p.back_selected && p.cursor == 9); /* one step down: the BACK marker */
-    CHECK(bpage_move(&p, 1) == 0);
-    CHECK(bpage_move(&p, -1) == 1 && !p.back_selected && p.cursor == 9);
+    /* the BIOS cursor table: rows wrap, left and right go to BACK, BACK goes up to the row before the last, else the last */
+    p.cursor = 9;
+    CHECK(bpage_nav(&p, BPAGE_DOWN) == 1 && p.cursor == 0 && p.top == 0);
+    CHECK(bpage_nav(&p, BPAGE_UP) == 1 && p.cursor == 9 && p.top == 6);
+    CHECK(bpage_nav(&p, BPAGE_LEFT) == 1 && p.back_selected);
+    CHECK(bpage_nav(&p, BPAGE_UP) == 1 && !p.back_selected && p.cursor == 8);
+    CHECK(bpage_nav(&p, BPAGE_RIGHT) == 1 && p.back_selected);
+    CHECK(bpage_nav(&p, BPAGE_DOWN) == 1 && !p.back_selected && p.cursor == 9);
     CHECK(bpage_move(&p, -100) == 1 && p.cursor == 0 && p.top == 0);
     CHECK(bpage_back_at_px(121.0f, 401.0f) && !bpage_back_at_px(320.0f, 200.0f));
     bpage_open(&p, &m, 2); /* fewer rows than slots */

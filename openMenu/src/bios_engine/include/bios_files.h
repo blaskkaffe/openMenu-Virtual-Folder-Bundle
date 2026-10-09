@@ -27,6 +27,13 @@ typedef struct bfiles {
 /* Replace the scene by the card grid with the cursor on `cursor`. */
 void bfiles_open(bfiles* f, bmenu* m, int cursor);
 
+#define BFILES_UP 0
+#define BFILES_DOWN 1
+#define BFILES_LEFT 2
+#define BFILES_RIGHT 3
+/* D-pad as the BIOS card picker's cursor table has it (BACK is reached past the first or last port). */
+int bfiles_nav(bfiles* f, int dir);
+
 /* Move the cursor over the 4x2 grid: dx steps between ports, dy between the two sockets. */
 int bfiles_move(bfiles* f, int dx, int dy);
 int bfiles_set_cursor(bfiles* f, int slot);
