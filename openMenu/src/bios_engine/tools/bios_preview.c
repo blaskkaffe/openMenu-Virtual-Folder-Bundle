@@ -120,6 +120,10 @@ static void
 text(void* user, const bvm_obj* o, float x, float y, float invw) {
     (void)user; (void)invw;
     int x0 = (int)(x - o->text_w / 2.0f), y0 = (int)(y - o->text_h / 2.0f), x1 = x0 + o->text_w, y1 = y0 + o->text_h; /* anchor = centre */
+    if (getenv("BIOS_PREVIEW_NOBOX")) { /* print the text areas instead of outlining them (id x y w h) */
+        fprintf(stderr, "TEXT %x %d %d %d %d\n", o->id, x0, y0, o->text_w, o->text_h);
+        return;
+    }
     for (int i = x0; i < x1; i++) {
         for (int k = 0; k < 2; k++) {
             int yy = k ? y1 - 1 : y0;
@@ -196,7 +200,7 @@ main(int argc, char** argv) {
             bpage_move(&page, 1);
         }
     } else if (script == -3 || script == -4) { /* game list demo: 7 rows; -4 = launch animation at `frames` */
-        blist_open(&list, &menu, 7, 30);
+        blist_open(&list, &menu, getenv("BLIST_SLOTS") ? atoi(getenv("BLIST_SLOTS")) : 7, 30);
         blist_goto(&list, selected);
     } else if (script >= 0) {
         bvm_obj* o = bvm_create(&menu.vm, script, 0x400, 0x2000);

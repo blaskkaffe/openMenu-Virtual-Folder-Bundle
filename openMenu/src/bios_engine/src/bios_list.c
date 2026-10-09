@@ -8,14 +8,14 @@
 #define ROW_Z (-353.515625f)
 
 /* Layout in world units (screen centre = 0,0). */
-#define Y_SPAN 31.0f        /* distance between the first and the last row */
 #define ROW_SX 0.66f        /* the original row bar is about 580 px wide; this makes it 60% of 640 */
-#define ROW_SY 0.62f
+#define ROW_SY 1.0f         /* same height as the rows of the settings screen (about 53 px) */
 #define ANCHOR_X (-7.1f)    /* row bar origin */
 #define ICON_X (-22.6f)
-#define ICON_SCALE 0.14f
-#define TEXT_X (-5.9f)      /* centre of the 300 px text surface */
-#define PILL_X_OFF (7.42f * ROW_SX)
+#define ICON_SCALE 0.16f
+#define TEXT_X (-5.1f)      /* centre of the 300 px text surface */
+#define PILL_X (-6.1f)       /* the lit part of the row: from the disc to the right end */
+#define PILL_SX (ROW_SX * 0.859375f * 1.37f)
 
 /* CD player disc (script 0x1c): position and spin per frame, in the original's angle units */
 #define CD_Z (-378.90625f)
@@ -130,10 +130,21 @@ blist_row_right_px(void) {
     return 320.0f + (ANCHOR_X + 26.8f * ROW_SX) * PX_PER_UNIT;
 }
 
+/* Distance between rows in pixels: the bars are about 53 px high, so 6 rows have a 9 px gap and
+ * 7 rows nearly touch; the rows are centred on the screen. */
+static float
+pitch_px(int slots) {
+    switch (slots) {
+        case 5: return 70.0f;
+        case 6: return 62.0f;
+        default: return 56.0f;
+    }
+}
+
 static float
 row_y(const blist* l, int s) {
-    float pitch = l->slots > 1 ? Y_SPAN / (float)(l->slots - 1) : 0.0f;
-    return Y_SPAN / 2.0f - (float)s * pitch;
+    float pitch = pitch_px(l->slots) / PX_PER_UNIT;
+    return ((float)(l->slots - 1) * 0.5f - (float)s) * pitch;
 }
 
 static void
@@ -213,7 +224,7 @@ blist_sync(blist* l) {
 
         /* rotate a point of the row layout about the screen centre while launching */
         float ax = ANCHOR_X, ay = y;
-        float px = ANCHOR_X + PILL_X_OFF, ix = ICON_X;
+        float px = PILL_X, ix = ICON_X;
         float rot_deg = 0.0f;
         int hide_row = !on;
         if (l->launching && !sel) {
@@ -254,7 +265,7 @@ blist_sync(blist* l) {
             set_hidden(anchor, hide_row || (l->launching && sel));
         }
         if (pill) {
-            set_scale(pill, ROW_SX * 0.859375f, ROW_SY * 0.859375f, 0.859375f);
+            set_scale(pill, PILL_SX, ROW_SY * 0.859375f, 0.859375f);
             pill->var[1] = sel;
             set_hidden(pill, hide_row || (l->launching && sel));
         }
