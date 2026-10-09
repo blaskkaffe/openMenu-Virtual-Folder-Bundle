@@ -26,6 +26,7 @@ void
 bscene_init(bscene* s, const bios_rom* rom) {
     memset(s, 0, sizeof(*s));
     s->rom = rom;
+    s->parts = BSCENE_PART_ALL;
 }
 
 void
@@ -143,7 +144,7 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
     nj_mat4 obj_m;
     nj_mat_object(&obj_m, o->pos, scl, o->rot);
 
-    if (o->flags & BVM_F_MODEL) {
+    if ((o->flags & BVM_F_MODEL) && (s->parts & BSCENE_PART_MODEL)) {
         const nj_object* obj = get_model(s, o->model);
         if (obj) {
             const nj_motion* mo = (o->flags & BVM_F_MOTION) ? get_motion(s, o->model, o->motion, obj->count) : NULL;
@@ -236,7 +237,7 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
         }
     }
 
-    if ((o->flags & BVM_F_TEXT) && o->text_w > 0 && o->text_h > 0 && sink->text) {
+    if ((s->parts & BSCENE_PART_TEXT) && (o->flags & BVM_F_TEXT) && o->text_w > 0 && o->text_h > 0 && sink->text) {
         nj_vec3 anchor = {o->pos[0] + o->text_off[0], o->pos[1] + o->text_off[1], o->pos[2]};
         float sx, sy, iw;
         if (bscene_project(anchor, &sx, &sy, &iw)) {

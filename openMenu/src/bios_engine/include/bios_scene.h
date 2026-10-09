@@ -51,6 +51,12 @@ typedef struct bscene_sink {
     void (*text)(void* user, const bvm_obj* obj, float x, float y, float invw);
 } bscene_sink;
 
+/* What bscene_draw_object() draws of an object. Text goes in a pass of its own after all the
+ * models, so no sprite ends up under a model that is submitted later. */
+#define BSCENE_PART_MODEL 1u
+#define BSCENE_PART_TEXT 2u
+#define BSCENE_PART_ALL (BSCENE_PART_MODEL | BSCENE_PART_TEXT)
+
 #define BSCENE_MODEL_CACHE BIOS_MODEL_COUNT
 #define BSCENE_MOTION_CACHE 16
 
@@ -66,6 +72,7 @@ typedef struct bscene {
     int motion_count;
     nj_mat4 pose[256]; /* scratch: world matrices of the object being drawn */
     int double_alpha;  /* draw objects as if two identical layers were stacked (see bmenu_draw) */
+    unsigned parts;    /* BSCENE_PART_* drawn by bscene_draw_object() */
 } bscene;
 
 void bscene_init(bscene* s, const bios_rom* rom);

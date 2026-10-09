@@ -202,6 +202,10 @@ send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
     cxt.gen.culling = PVR_CULLING_NONE;
     cxt.blend.src = PVR_BLEND_SRCALPHA;
     cxt.blend.dst = PVR_BLEND_INVSRCALPHA;
+    if (text_ptr || !tex) {
+        /* Text and flat panels: their transparent parts must not hide what is drawn later. */
+        cxt.depth.write = PVR_DEPTHWRITE_DISABLE;
+    }
     submit_header(&cxt);
 }
 
