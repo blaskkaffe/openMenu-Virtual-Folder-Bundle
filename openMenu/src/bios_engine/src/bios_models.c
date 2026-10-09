@@ -462,7 +462,8 @@ build_case(builder* b, uint32_t spine_c, uint32_t tray_c, uint32_t edge_c, int p
     int edge = poly_new(b, -1, edge_c, STRIP_DOUBLE_SIDED); /* translucent plastic goes last */
 
     float fuv[4][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}}; /* bottom-left, bottom-right, top-right, top-left */
-    quad(b, front, v3m(ax0, ay0, hd), v3m(ax1, ay0, hd), v3m(ax1, ay1, hd), v3m(ax0, ay1, hd), fuv, v3m(0, 0, 1));
+    const float az = hd - 0.2f * S; /* the picture lies just behind the clear front: 2 mm gap */
+    quad(b, front, v3m(ax0, ay0, az), v3m(ax1, ay0, az), v3m(ax1, ay1, az), v3m(ax0, ay1, az), fuv, v3m(0, 0, 1));
     /* the back picture covers the whole back plate; seen from behind, +x is on the left */
     float buv[4][2] = {{1, 1}, {0, 1}, {0, 0}, {1, 0}};
     float bz = -hd - 0.01f;
@@ -480,12 +481,17 @@ build_case(builder* b, uint32_t spine_c, uint32_t tray_c, uint32_t edge_c, int p
     } else {
         box(b, mark, -hw - 0.02f, -hh + 0.6f * S, -hd + 0.15f * S, -hw + 0.02f, hh - 0.6f * S, hd - 0.15f * S);
     }
-    /* clear plastic: frame of the front lid and the edges */
-    float t = 0.3f * S;
-    box(b, edge, -hw, ay1, -hd, hw, hh, hd);                       /* top, from the edge round to the front */
-    box(b, edge, -hw, -hh, -hd, hw, ay0, hd);                      /* bottom */
-    box(b, edge, ax1, ay0, -hd, hw, ay1, hd);                      /* right */
-    box(b, edge, -hw + spine_w, ay0, hd - t, ax0, ay1, hd);        /* hinge side of the lid */
+    /* clear plastic: the outer faces of the edges and the rim of the front lid. No inner walls, so the
+     * picture does not look like it lies at the bottom of a deep well. */
+    quad(b, edge, v3m(-hw, hh, -hd), v3m(hw, hh, -hd), v3m(hw, hh, hd), v3m(-hw, hh, hd), NULL, v3m(0, 1, 0));     /* top */
+    quad(b, edge, v3m(-hw, -hh, -hd), v3m(hw, -hh, -hd), v3m(hw, -hh, hd), v3m(-hw, -hh, hd), NULL, v3m(0, -1, 0)); /* bottom */
+    quad(b, edge, v3m(hw, -hh, -hd), v3m(hw, hh, -hd), v3m(hw, hh, hd), v3m(hw, -hh, hd), NULL, v3m(1, 0, 0));      /* right */
+    quad(b, edge, v3m(-hw, ay1, hd), v3m(hw, ay1, hd), v3m(hw, hh, hd), v3m(-hw, hh, hd), NULL, v3m(0, 0, 1));      /* front rim, top */
+    quad(b, edge, v3m(-hw, -hh, hd), v3m(hw, -hh, hd), v3m(hw, ay0, hd), v3m(-hw, ay0, hd), NULL, v3m(0, 0, 1));    /* bottom */
+    quad(b, edge, v3m(ax1, ay0, hd), v3m(hw, ay0, hd), v3m(hw, ay1, hd), v3m(ax1, ay1, hd), NULL, v3m(0, 0, 1));    /* right */
+    if (ax0 > -hw + spine_w + 0.001f) {
+        quad(b, edge, v3m(-hw + spine_w, ay0, hd), v3m(ax0, ay0, hd), v3m(ax0, ay1, hd), v3m(-hw + spine_w, ay1, hd), NULL, v3m(0, 0, 1));
+    }
 }
 
 int
