@@ -172,11 +172,16 @@ static serial_remap serial_remap_members[] = {
 
 static const int serials_added = sizeof(serial_remap_members) / sizeof(serial_remap);
 static serial_remap* serial_remap_list = NULL;
+static int serial_remap_ready; /* the table is filled once, on first use (nothing else calls serial_sanitizer_init) */
+
+int serial_sanitizer_init(void);
 
 const char*
 serial_santize_art(const char* id) {
     const serial_remap* item;
     const char* ret = id;
+
+    serial_sanitizer_init();
 
     HASH_FIND_STR(serial_remap_list, id, item);
 
@@ -191,6 +196,8 @@ serial_santize_meta(const char* id) {
     const serial_remap* item;
     const char* ret = id;
 
+    serial_sanitizer_init();
+
     HASH_FIND_STR(serial_remap_list, id, item);
 
     if (item && (item->remap_choice & REMAP_META)) {
@@ -201,6 +208,10 @@ serial_santize_meta(const char* id) {
 
 int
 serial_sanitizer_init(void) {
+    if (serial_remap_ready) {
+        return 0;
+    }
+    serial_remap_ready = 1;
     for (int i = 0; i < serials_added; i++) {
         HASH_ADD_STR(serial_remap_list, ip_serial, &serial_remap_members[i]);
     }

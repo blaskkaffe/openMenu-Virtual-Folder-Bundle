@@ -35,5 +35,6 @@ serial_is_pal(const char* serial) {
     if (letter == 'D') {
         return 1;
     }
-    return !strcmp(rest, "50") && letter != 'T'; /* T8103N50: a European release of an American serial */
+    /* T8103N50, T8103N18: a European release (50, or a language variant like 18) of an American serial */
+    return letter == 'N' && strlen(rest) == 2 && isdigit((unsigned char)rest[0]) && isdigit((unsigned char)rest[1]);
 }

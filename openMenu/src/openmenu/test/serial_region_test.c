@@ -27,7 +27,9 @@ main(void) {
     CHECK("T45001D05", 1);
     CHECK("T13001D", 1);
     CHECK("T8103N50", 1);
+    CHECK("T8103N18", 1);
     CHECK("T8103N", 0);
+    CHECK("T1215M50", 0);
     CHECK("17701D", 1);
     CHECK("17701N", 0);
     CHECK("T40903M", 0);
