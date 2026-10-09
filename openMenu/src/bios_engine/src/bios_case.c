@@ -85,6 +85,11 @@ draw_item(const bcase* c, const bcase_item* it, bscene* s, float cx, float cy, f
     }
     float fly = it->y / BCASE_FLY_PX; /* 0 at rest: lean into the motion while it flies (no roll: it flies straight) */
     rot[0] += 30.0f * (fly > 1.2f ? 1.2f : (fly < -1.2f ? -1.2f : fly));
+    /* nothing to draw once it is completely off the screen (480 px high) */
+    float half = size_px * 0.8f;
+    if (cy + it->y - half > 480.0f || cy + it->y + half < 0.0f) {
+        return;
+    }
     if (bind) {
         bind(user, it->tag);
     }

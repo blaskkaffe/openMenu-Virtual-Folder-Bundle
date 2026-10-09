@@ -6,10 +6,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <arch/timer.h>
 #include <dc/biosfont.h>
 #include <dc/pvr.h>
 #include <fcntl.h>
 #include <kos/fs.h>
+#include <kos/sem.h>
+#include <kos/thread.h>
 
 #include <bios_menu.h>
 #include <bios_list.h>
@@ -58,6 +61,7 @@ static rom_tex logo_tex;
 static text_tex text_texes[MAX_TEXT_ENTRIES];
 static uint32_t frame_no;
 static unsigned tri_count;
+static gfx_stats stats; /* since the last gfx_stats_take() */
 /* Translucent polygons: 1 = drawn in the order they are submitted (no hardware sorting, much
  * cheaper; the menu submits back to front already), 0 = the PVR sorts them per pixel. */
 #ifndef GFX_PRESORT
@@ -145,18 +149,38 @@ typedef struct {
     char key[20]; /* sanitized product id; box art entries start with '#' */
     rom_tex tex;
     int present; /* an entry exists (tex.valid tells if the picture could be loaded) */
+    int loading; /* a job of the loader thread is reading it: do not evict */
     uint32_t last_use;
 } art_entry;
+
+/* Pictures are read from the DATs by a thread of their own (reading the disc takes tens of
+ * milliseconds and used to stall the frame); the main thread only uploads a finished one to video
+ * memory, at most ART_UPLOADS_PER_FRAME per frame. */
+#define ART_JOBS 3
+#define ART_UPLOADS_PER_FRAME 1
+enum { JOB_FREE = 0, JOB_QUEUED, JOB_READING, JOB_DONE, JOB_FAILED };
+typedef struct {
+    volatile int state;
+    char id[20];
+    int box;
+    int entry;
+    uint8_t* buf;
+    uint32_t size; /* bytes of pixel data after the 0x20 byte header */
+    int w, h, fmt;
+    uint32_t us; /* time the thread needed */
+} art_job;
+static art_job art_jobs[ART_JOBS];
+static semaphore_t art_sem;
+static kthread_t* art_thread;
+static int art_started;
 
 static dat_file dat_icon, dat_icon_ex, dat_box, dat_box_ex;
 static int dats_loaded;
 static art_entry art_cache[ART_SLOTS];
-static int art_budget; /* pictures that may still be loaded this frame */
 static char row_product[BLIST_MAX_SLOTS][16];
 static int row_pal[BLIST_MAX_SLOTS]; /* the game of the row is a PAL release: the blue BIOS disc, not the red one */
 static int row_window[BLIST_MAX_SLOTS]; /* title scroll: visible width in px (0 = no scrolling) */
 static int row_offset[BLIST_MAX_SLOTS];
-static uint8_t* art_buf;
 
 static void
 art_load_dats(void) {
@@ -202,39 +226,91 @@ art_parse(const uint8_t* b, int* w, int* h, int* fmt) {
     return (uint32_t)(*w) * (uint32_t)(*h) * 2u;
 }
 
+/* Runs in the loader thread: read the picture `id` of the DAT into the job's buffer. */
 static int
-art_read(const dat_file* d, const char* id, art_entry* e) {
-    if (!d->hash || d->chunk_size > ART_CHUNK_MAX || !DAT_get_offset_by_ID(d, id)) {
+art_read_job(const dat_file* d, art_job* j) {
+    if (!d->hash || d->chunk_size > ART_CHUNK_MAX || !DAT_get_offset_by_ID(d, j->id)) {
         return 0;
     }
-    if (!art_buf) {
-        art_buf = (uint8_t*)memalign(32, ART_CHUNK_MAX);
-        if (!art_buf) {
-            return 0;
-        }
-    }
-    if (!DAT_read_file_by_ID(d, id, art_buf)) {
+    if (!DAT_read_file_by_ID(d, j->id, j->buf)) {
         return 0;
     }
-    int w, h, fmt;
-    uint32_t size = art_parse(art_buf, &w, &h, &fmt);
+    uint32_t size = art_parse(j->buf, &j->w, &j->h, &j->fmt);
     if (!size || size + 0x20 > d->chunk_size) {
         size = d->chunk_size > 0x20 ? d->chunk_size - 0x20 : 0; /* VQ: less data than w*h*2 */
     }
-    if (!size) {
-        return 0;
+    j->size = size;
+    return size != 0;
+}
+
+static void*
+art_worker(void* param) {
+    (void)param;
+    for (;;) {
+        sem_wait(&art_sem);
+        for (int i = 0; i < ART_JOBS; i++) {
+            art_job* j = &art_jobs[i];
+            if (j->state != JOB_QUEUED) {
+                continue;
+            }
+            j->state = JOB_READING;
+            uint64_t t0 = timer_us_gettime64();
+            /* the add-on file wins over the main one */
+            int ok = art_read_job(j->box ? &dat_box_ex : &dat_icon_ex, j) || art_read_job(j->box ? &dat_box : &dat_icon, j);
+            j->us = (uint32_t)(timer_us_gettime64() - t0);
+            j->state = ok ? JOB_DONE : JOB_FAILED;
+        }
     }
-    uint32_t padded = (size + 31u) & ~31u;
-    e->tex.ptr = pvr_mem_malloc(padded);
-    if (!e->tex.ptr) {
-        return 0;
+    return NULL;
+}
+
+static int
+art_start(void) {
+    if (art_started) {
+        return art_thread != NULL;
     }
-    pvr_txr_load(art_buf + 0x20, e->tex.ptr, padded);
-    e->tex.w = w;
-    e->tex.h = h;
-    e->tex.fmt = fmt;
-    e->tex.valid = 1;
-    return 1;
+    art_started = 1;
+    for (int i = 0; i < ART_JOBS; i++) {
+        art_jobs[i].buf = (uint8_t*)memalign(32, ART_CHUNK_MAX);
+        if (!art_jobs[i].buf) {
+            return 0;
+        }
+    }
+    sem_init(&art_sem, 0);
+    art_thread = thd_create(1, art_worker, NULL);
+    if (art_thread) {
+        thd_set_prio(art_thread, PRIO_DEFAULT + 4); /* lower than the menu */
+    }
+    return art_thread != NULL;
+}
+
+/* Main thread, once per frame: upload the pictures the loader has finished. */
+static void
+art_poll(void) {
+    int uploads = 0;
+    for (int i = 0; i < ART_JOBS; i++) {
+        art_job* j = &art_jobs[i];
+        if (j->state == JOB_FAILED) {
+            art_cache[j->entry].loading = 0;
+            j->state = JOB_FREE;
+        } else if (j->state == JOB_DONE && uploads < ART_UPLOADS_PER_FRAME) {
+            art_entry* e = &art_cache[j->entry];
+            uint32_t padded = (j->size + 31u) & ~31u;
+            e->tex.ptr = pvr_mem_malloc(padded);
+            if (e->tex.ptr) {
+                pvr_txr_load(j->buf + 0x20, e->tex.ptr, padded);
+                e->tex.w = j->w;
+                e->tex.h = j->h;
+                e->tex.fmt = j->fmt;
+                e->tex.valid = 1;
+                uploads++;
+            }
+            stats.art_loads++;
+            stats.art_us += j->us;
+            e->loading = 0;
+            j->state = JOB_FREE;
+        }
+    }
 }
 
 static art_entry*
@@ -247,7 +323,7 @@ art_get(const char* product, int box) {
     const char* id = serial_santize_art(product);
     snprintf(key, sizeof(key), "%s%.17s", box ? "#" : "", id);
     art_entry* free_slot = NULL;
-    art_entry* oldest = &art_cache[0];
+    art_entry* oldest = NULL;
     for (int i = 0; i < ART_SLOTS; i++) {
         art_entry* e = &art_cache[i];
         if (e->present && !strcmp(e->key, key)) {
@@ -256,33 +332,41 @@ art_get(const char* product, int box) {
         }
         if (!e->present) {
             free_slot = free_slot ? free_slot : e;
-        } else if (e->last_use < oldest->last_use) {
+        } else if (!e->loading && (!oldest || e->last_use < oldest->last_use)) {
             oldest = e;
         }
     }
-    if (art_budget <= 0) {
-        return NULL; /* load it on a later frame */
+    if (!art_start()) {
+        return NULL;
     }
-    art_budget--;
+    art_job* job = NULL;
+    for (int i = 0; i < ART_JOBS && !job; i++) {
+        job = art_jobs[i].state == JOB_FREE ? &art_jobs[i] : NULL;
+    }
+    if (!job) {
+        return NULL; /* the loader is busy: ask again on a later frame */
+    }
     art_entry* e = free_slot;
     if (!e) {
         e = oldest;
-        if (e->last_use + 2 > frame_no) {
+        if (!e || e->last_use + 2 > frame_no) {
             return NULL; /* every slot is in use: wait */
         }
         if (e->tex.valid) {
             pvr_mem_free(e->tex.ptr);
         }
-        memset(e, 0, sizeof(*e));
     }
     memset(e, 0, sizeof(*e));
     strncpy(e->key, key, sizeof(e->key) - 1);
     e->present = 1;
+    e->loading = 1;
     e->last_use = frame_no;
-    /* the add-on file wins over the main one */
-    if (!art_read(box ? &dat_box_ex : &dat_icon_ex, id, e)) {
-        art_read(box ? &dat_box : &dat_icon, id, e);
-    }
+    strncpy(job->id, id, sizeof(job->id) - 1);
+    job->id[sizeof(job->id) - 1] = '\0';
+    job->box = box;
+    job->entry = (int)(e - art_cache);
+    job->state = JOB_QUEUED;
+    sem_signal(&art_sem);
     return e;
 }
 
@@ -347,10 +431,31 @@ void
 gfx_model_bind_front(const char* product) {
     strncpy(model_front_product, product ? product : "", sizeof(model_front_product) - 1);
     model_front_product[sizeof(model_front_product) - 1] = '\0';
+    memo_ok = 0; /* the same texture reference now means another picture */
 }
+
+/* The last texture looked up: a model draws many triangles with the same one, and finding a game picture
+ * costs a string search. Forgotten whenever pictures come or go. */
+static int memo_ok;
+static bscene_texref memo_ref;
+static rom_tex* memo_tex;
+
+static rom_tex* get_rom_texture_uncached(bscene_texref ref);
 
 static rom_tex*
 get_rom_texture(bscene_texref ref) {
+    if (memo_ok && memo_ref.kind == ref.kind && memo_ref.a == ref.a && memo_ref.b == ref.b) {
+        return memo_tex;
+    }
+    rom_tex* t = get_rom_texture_uncached(ref);
+    memo_ok = 1;
+    memo_ref = ref;
+    memo_tex = t;
+    return t;
+}
+
+static rom_tex*
+get_rom_texture_uncached(bscene_texref ref) {
     /* built-in models: slot 0 shows the box art of the bound game, everything else is plain white */
     if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BMODEL_BASE && ref.a < BMODEL_END) {
         if (ref.b == BMODEL_TEX_FRONT) {
@@ -482,6 +587,7 @@ send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
         cxt.depth.write = PVR_DEPTHWRITE_DISABLE;
     }
     submit_header(&cxt);
+    stats.headers++;
 }
 
 static void
@@ -627,6 +733,12 @@ gfx_triangles(void) {
 }
 
 void
+gfx_stats_take(gfx_stats* out) {
+    *out = stats;
+    memset(&stats, 0, sizeof(stats));
+}
+
+void
 gfx_set_label(uint16_t obj_id, const char* text) {
     for (int i = 0; i < num_labels; i++) {
         if (labels[i].id == obj_id) {
@@ -711,6 +823,7 @@ get_text_texture(const char* str) {
     /* the BIOS way: glyphs drawn with double thickness and a built-in shade (no drop shadow needed) */
     btext_draw(text_canvas, w, GFX_LINE_H, 0, 0, BIOS_FONT_ROM, victim->str, 0xFFFF);
     pvr_txr_load(text_canvas, victim->ptr, (size_t)w * GFX_LINE_H * 2);
+    stats.text_uploads++;
     return victim;
 }
 
@@ -729,12 +842,16 @@ gfx_text(const char* str, float x, float y, float z, uint32_t argb, int shadow) 
     }
     ensure_header(NULL, t->ptr, t->w);
 
-    float w = (float)t->w, h = (float)GFX_LINE_H;
+    /* only the part of the picture that holds text: less to blend, and nothing sticks out over its neighbours */
+    int used = btext_width(clipped) + 3;
+    if (used > t->w) used = t->w;
+    float w = (float)used, h = 26.0f;
+    float u1 = (float)used / (float)t->w, v1 = 26.0f / (float)GFX_LINE_H;
     (void)shadow; /* the glyphs carry their own shade, see btext_blit() */
     send_vertex(x, y, z, 0.0f, 0.0f, argb, 0);
-    send_vertex(x + w, y, z, 1.0f, 0.0f, argb, 0);
-    send_vertex(x, y + h, z, 0.0f, 1.0f, argb, 0);
-    send_vertex(x + w, y + h, z, 1.0f, 1.0f, argb, 1);
+    send_vertex(x + w, y, z, u1, 0.0f, argb, 0);
+    send_vertex(x, y + h, z, 0.0f, v1, argb, 0);
+    send_vertex(x + w, y + h, z, u1, v1, argb, 1);
 }
 
 /* A string shown through a window of `window` pixels, moved `offset` pixels to the left. */
@@ -891,8 +1008,13 @@ void
 gfx_begin_frame(uint32_t top, uint32_t bottom) {
     frame_no++;
     tri_count = 0;
-    art_budget = 2; /* DAT reads stall the frame: at most two pictures per frame */
-    pvr_wait_ready();
+    {
+        uint64_t t0 = timer_us_gettime64();
+        pvr_wait_ready();
+        stats.wait_us += (unsigned)(timer_us_gettime64() - t0);
+    }
+    art_poll();
+    memo_ok = 0;
     /* Where the gradient quad does not draw, show a mid blue instead of black. */
     pvr_set_bg_color(0.45f, 0.60f, 0.80f);
     pvr_scene_begin();

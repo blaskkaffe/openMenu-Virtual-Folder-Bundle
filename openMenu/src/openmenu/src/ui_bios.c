@@ -102,6 +102,8 @@ static int notice_frames;
 static char fps_text[40];
 static int show_debug; /* fps, triangles and the BIOS/sound line: X on the main menu switches them on and off */
 static uint64_t build_us_sum;
+static uint64_t sync_us_sum;
+static char perf_text[2][64]; /* the debug overlay's second and third line */
 static const char* notice_text;
 
 static char status_line[64];
@@ -531,7 +533,9 @@ draw_frame(void) {
         if (screen == SCREEN_MAIN) {
             gfx_text(status_line, TEXT_X, STATUS_Y, 0.5f, 0x80FFFFFFu, 0);
         }
-        gfx_text(fps_text, TEXT_X, FPS_Y, 0.5f, 0x80FFFFFFu, 0);
+        gfx_text(fps_text, TEXT_X, FPS_Y - 56.0f, 0.5f, 0xFFFFFFFFu, 0);
+        gfx_text(perf_text[0], TEXT_X, FPS_Y - 28.0f, 0.5f, 0xFFFFFFFFu, 0);
+        gfx_text(perf_text[1], TEXT_X, FPS_Y, 0.5f, 0xFFFFFFFFu, 0);
     }
     if (notice_frames > 0 && notice_text) {
         gfx_text(notice_text, TEXT_X, screen == SCREEN_MAIN ? NOTICE_Y_MAIN : NOTICE_Y_PANEL, 0.5f, 0xFFFFFFFFu, 1);
@@ -944,6 +948,7 @@ ui_bios_run(const bios_rom* rom) {
     int frames_this_second = 0;
 
     for (;;) {
+        uint64_t logic_t0 = timer_us_gettime64();
         button_t b = input_poll();
         input_mouse(&pointer);
         if (pointer.moved) {
@@ -1009,11 +1014,23 @@ ui_bios_run(const bios_rom* rom) {
             games_sync();
         }
 
+        sync_us_sum += timer_us_gettime64() - logic_t0;
         frames_this_second++;
         if (now - fps_since >= 1000) {
             update_clock();
-            snprintf(fps_text, sizeof(fps_text), "%d fps %u tri b%u ms", frames_this_second, gfx_triangles(),
-                     frames_this_second ? (unsigned)(build_us_sum / 1000 / (uint64_t)frames_this_second) : 0u);
+            gfx_stats gs;
+            gfx_stats_take(&gs);
+            unsigned n = frames_this_second ? (unsigned)frames_this_second : 1u;
+            unsigned sync_t = (unsigned)(sync_us_sum / n / 100u);               /* tenths of a millisecond per frame */
+            unsigned wait_t = gs.wait_us / n / 100u;
+            unsigned total_t = (unsigned)(build_us_sum / n / 100u);
+            unsigned build_t = total_t > wait_t ? total_t - wait_t : 0u;       /* drawing without the wait for the PVR */
+            snprintf(fps_text, sizeof(fps_text), "%d fps  %u tris", frames_this_second, gfx_triangles());
+            snprintf(perf_text[0], sizeof(perf_text[0]), "sync %u.%u build %u.%u wait %u.%u ms", sync_t / 10, sync_t % 10,
+                     build_t / 10, build_t % 10, wait_t / 10, wait_t % 10);
+            snprintf(perf_text[1], sizeof(perf_text[1]), "art %u (%u ms) text %u hdr %u", gs.art_loads, gs.art_us / 1000u,
+                     gs.text_uploads, gs.headers / n);
+            sync_us_sum = 0;
             build_us_sum = 0;
             frames_this_second = 0;
             fps_since = now;

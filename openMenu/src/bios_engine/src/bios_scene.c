@@ -182,7 +182,7 @@ bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent
  * the face is drawn as a circle (a fan inscribed in the square, same texture coordinates): the disc
  * keeps its round shape whatever the picture. */
 #define BSCENE_ROUND_FACE_TEXLIST 0x1000
-#define ROUND_SEGMENTS 32
+#define ROUND_SEGMENTS 20 /* a disc is about 40 px wide: more segments cost triangles and show nothing */
 static void
 draw_round_face(const nj_mesh* mesh, const nj_poly* poly, const nj_mat4* m, uint32_t argb, bscene_texref tex, const bscene_sink* sink) {
     float minx = 1e9f, maxx = -1e9f, miny = 1e9f, maxy = -1e9f, z = 0.0f;

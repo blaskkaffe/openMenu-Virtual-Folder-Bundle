@@ -42,6 +42,16 @@ void gfx_rect(float x, float y, float w, float h, float z, uint32_t argb);
 
 #define GFX_CHAR_W 11 /* BTEXT_ADVANCE: pixels per character (a space is 8) */
 
+/* Counters for the debug overlay, collected since the previous call (which zeroes them). */
+typedef struct gfx_stats {
+    unsigned wait_us;      /* time spent waiting for the previous frame to finish rendering */
+    unsigned art_loads;    /* pictures the loader thread finished */
+    unsigned art_us;       /* ... and the time it needed for them */
+    unsigned text_uploads; /* text pictures made */
+    unsigned headers;      /* texture / state changes sent to the PVR */
+} gfx_stats;
+void gfx_stats_take(gfx_stats* out);
+
 /* Width in pixels of a string as gfx_text() draws it. */
 int gfx_text_width(const char* str);
 #define GFX_LINE_H 32
