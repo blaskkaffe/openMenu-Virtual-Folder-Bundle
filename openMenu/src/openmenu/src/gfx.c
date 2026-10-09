@@ -54,6 +54,12 @@ static unsigned tri_count;
 #define GFX_USE_DR 0
 #endif
 
+/* Translucent polygons: 1 = drawn in the order they are submitted (no hardware sorting, much
+ * cheaper; the menu submits back to front already), 0 = the PVR sorts them per pixel. */
+#ifndef GFX_PRESORT
+#define GFX_PRESORT 1
+#endif
+
 #if GFX_USE_DR
 static pvr_dr_state_t dr_state; /* direct rendering: writes go straight to the store queues */
 static int dr_active;
@@ -102,7 +108,7 @@ gfx_init(const bios_rom* rom) {
         512 * 1024, /* vertex buffer */
         0,          /* no DMA */
         0,          /* no FSAA */
-        0,          /* translucent autosort stays on */
+        GFX_PRESORT, /* 1 = translucent autosort disabled */
         1};         /* one extra set of object pointer blocks */
     return pvr_init(&params);
 }
