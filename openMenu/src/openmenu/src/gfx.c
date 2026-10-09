@@ -46,6 +46,15 @@ static rom_tex logo_tex;
 static text_tex text_texes[MAX_TEXT_ENTRIES];
 static uint32_t frame_no;
 static unsigned tri_count;
+/* Submission method. 0 (default): pvr_prim(), one call per triangle. 1: direct rendering,
+ * writing straight to the store queues; faster in principle, but it broke the translucent
+ * list on real hardware in the first try, so it is opt-in (-DGFX_USE_DR=1) until it is
+ * understood. */
+#ifndef GFX_USE_DR
+#define GFX_USE_DR 0
+#endif
+
+#if GFX_USE_DR
 static pvr_dr_state_t dr_state; /* direct rendering: writes go straight to the store queues */
 static int dr_active;
 
@@ -64,6 +73,10 @@ dr_resume(void) {
         pvr_dr_init(&dr_state);
     }
 }
+#else
+#define dr_suspend() ((void)0)
+#define dr_resume() ((void)0)
+#endif
 
 static struct {
     uint16_t id;
@@ -199,9 +212,21 @@ gfx_load_logo(const char* path) {
 /* ---- Submission --------------------------------------------------------------------- */
 
 static void
+submit_header(pvr_poly_cxt_t* cxt) {
+#if GFX_USE_DR
+    pvr_poly_hdr_t* target = (pvr_poly_hdr_t*)pvr_dr_target(dr_state);
+    pvr_poly_compile(target, cxt);
+    pvr_dr_commit(target);
+#else
+    pvr_poly_hdr_t hdr;
+    pvr_poly_compile(&hdr, cxt);
+    pvr_prim(&hdr, sizeof(hdr));
+#endif
+}
+
+static void
 send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
     pvr_poly_cxt_t cxt;
-    pvr_poly_hdr_t hdr; /* unused: compiled in place in the store queue */
 
     if (tex) {
         pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY, tex->fmt, tex->w, tex->h, tex->ptr, PVR_FILTER_BILINEAR);
@@ -214,10 +239,7 @@ send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
     cxt.gen.culling = PVR_CULLING_NONE;
     cxt.blend.src = PVR_BLEND_SRCALPHA;
     cxt.blend.dst = PVR_BLEND_INVSRCALPHA;
-    pvr_poly_hdr_t* target = (pvr_poly_hdr_t*)pvr_dr_target(dr_state);
-    pvr_poly_compile(target, &cxt);
-    pvr_dr_commit(target);
-    (void)hdr;
+    submit_header(&cxt);
 }
 
 static void
@@ -233,9 +255,34 @@ ensure_header(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
     hdr_valid = 1;
 }
 
+/* Vertices of the polygon being built (a triangle or a quad strip); sent when the one marked
+ * as last arrives, so there is one submission per polygon. */
+static pvr_vertex_t vbuf[4] __attribute__((aligned(32)));
+static int vcount;
+
+static void
+submit_vertices(int n) {
+#if GFX_USE_DR
+    for (int i = 0; i < n; i++) {
+        pvr_vertex_t* t = pvr_dr_target(dr_state);
+        t->flags = vbuf[i].flags;
+        t->x = vbuf[i].x;
+        t->y = vbuf[i].y;
+        t->z = vbuf[i].z;
+        t->u = vbuf[i].u;
+        t->v = vbuf[i].v;
+        t->argb = vbuf[i].argb;
+        t->oargb = 0;
+        pvr_dr_commit(t);
+    }
+#else
+    pvr_prim(vbuf, n * (int)sizeof(pvr_vertex_t));
+#endif
+}
+
 static void
 send_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last) {
-    pvr_vertex_t* vert = pvr_dr_target(dr_state);
+    pvr_vertex_t* vert = &vbuf[vcount++];
     vert->flags = last ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
     vert->x = x;
     vert->y = y;
@@ -244,7 +291,10 @@ send_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last
     vert->v = v;
     vert->argb = argb;
     vert->oargb = 0;
-    pvr_dr_commit(vert);
+    if (last) {
+        submit_vertices(vcount);
+        vcount = 0;
+    }
 }
 
 static void
@@ -432,34 +482,38 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
     pvr_scene_begin();
 
     pvr_poly_cxt_t cxt;
-    pvr_poly_hdr_t hdr;
     pvr_list_begin(PVR_LIST_OP_POLY);
+#if GFX_USE_DR
     pvr_dr_init(&dr_state);
     dr_active = 1;
+#endif
     pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
     cxt.gen.culling = PVR_CULLING_NONE;
-    pvr_poly_hdr_t* target = (pvr_poly_hdr_t*)pvr_dr_target(dr_state);
-    pvr_poly_compile(target, &cxt);
-    pvr_dr_commit(target);
-    (void)hdr;
+    submit_header(&cxt);
     send_vertex(0.0f, 0.0f, BG_Z, 0, 0, top, 0);
     send_vertex(640.0f, 0.0f, BG_Z, 0, 0, top, 0);
     send_vertex(0.0f, 480.0f, BG_Z, 0, 0, bottom, 0);
     send_vertex(640.0f, 480.0f, BG_Z, 0, 0, bottom, 1);
+#if GFX_USE_DR
     pvr_dr_finish();
     dr_active = 0;
+#endif
     pvr_list_finish();
 
     pvr_list_begin(PVR_LIST_TR_POLY);
+#if GFX_USE_DR
     pvr_dr_init(&dr_state);
     dr_active = 1;
+#endif
     hdr_valid = 0;
 }
 
 void
 gfx_end_frame(void) {
+#if GFX_USE_DR
     pvr_dr_finish();
     dr_active = 0;
+#endif
     pvr_list_finish();
     pvr_scene_finish();
 }
