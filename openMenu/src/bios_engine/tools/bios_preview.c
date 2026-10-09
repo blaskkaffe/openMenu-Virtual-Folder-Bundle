@@ -18,6 +18,7 @@
 
 #include "bios_menu.h"
 #include "bios_page.h"
+#include "bios_list.h"
 #include "tex_decode.h"
 
 #define W 640
@@ -59,7 +60,7 @@ lookup(bscene_texref ref) {
     c->ref = ref;
     bios_texture t;
     int ok = (ref.kind == BSCENE_TEX_GBIX) ? bios_texture_find(g_rom, (uint32_t)ref.a, &t) == 0
-                                            : bios_texlist_texture(g_rom, ref.a, ref.b, &t) == 0;
+                                            : bios_texlist_texture(g_rom, ref.a >= 0x1000 ? 61 : ref.a, ref.b, &t) == 0;
     if (ok) {
         c->bmp.w = t.width;
         c->bmp.h = t.height;
@@ -187,12 +188,16 @@ main(int argc, char** argv) {
 
     static bmenu menu;
     static bpage page;
+    static blist list;
     bmenu_init(&menu, &rom, NULL);
     if (script == -2) { /* settings page demo: `selected` = cursor row, 10 rows */
         bpage_open(&page, &menu, 10);
         for (int i = 0; i < selected; i++) {
             bpage_move(&page, 1);
         }
+    } else if (script == -3 || script == -4) { /* game list demo: 7 rows; -4 = launch animation at `frames` */
+        blist_open(&list, &menu, 7, 30);
+        blist_goto(&list, selected);
     } else if (script >= 0) {
         bvm_obj* o = bvm_create(&menu.vm, script, 0x400, 0x2000);
         if (!o) {
@@ -207,6 +212,13 @@ main(int argc, char** argv) {
         bmenu_update(&menu);
         if (script == -2) {
             bpage_sync(&page, demo_row, NULL);
+        }
+        if (script == -3 || script == -4) {
+            if (script == -4 && i == 20) {
+                blist_launch_start(&list);
+            }
+            blist_launch_step(&list);
+            blist_sync(&list);
         }
     }
     if (menu.vm.error) {
@@ -226,7 +238,10 @@ main(int argc, char** argv) {
         }
     }
     bscene_sink sink = {NULL, tri, text};
-    if (script == -2) {
+    if (script == -3 || script == -4) {
+        bscene_draw_background(&menu.bg, &sink);
+        blist_draw(&list, &sink);
+    } else if (script == -2) {
         bscene_draw_background(&menu.bg, &sink);
         bpage_draw(&page, &sink);
     } else {

@@ -2,6 +2,7 @@
  * gfx: PVR backend for the BIOS-style menu, see gfx.h.
  */
 #include <malloc.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -11,7 +12,10 @@
 #include <kos/fs.h>
 
 #include <bios_menu.h>
+#include <bios_list.h>
 #include <bios_page.h>
+#include <backend/dat_format.h>
+#include <texture/serial_sanitize.h>
 
 #include <bios_menu.h>
 
@@ -130,8 +134,174 @@ upload_texture(const bios_texture* t, rom_tex* g) {
     free(staging);
 }
 
+/* ---- Game art (ICON.DAT / BOX.DAT on the menu disc) ---------------------------------------- */
+
+#define ART_SLOTS 20
+#define ART_CHUNK_MAX (160 * 1024)
+
+typedef struct {
+    char key[20]; /* sanitized product id; box art entries start with '#' */
+    rom_tex tex;
+    int present; /* an entry exists (tex.valid tells if the picture could be loaded) */
+    uint32_t last_use;
+} art_entry;
+
+static dat_file dat_icon, dat_icon_ex, dat_box, dat_box_ex;
+static int dats_loaded;
+static art_entry art_cache[ART_SLOTS];
+static int art_budget; /* pictures that may still be loaded this frame */
+static char row_product[BLIST_MAX_SLOTS][16];
+static uint8_t* art_buf;
+
+static void
+art_load_dats(void) {
+    if (dats_loaded) {
+        return;
+    }
+    dats_loaded = 1;
+    DAT_init(&dat_icon);
+    DAT_init(&dat_icon_ex);
+    DAT_init(&dat_box);
+    DAT_init(&dat_box_ex);
+    DAT_load_parse(&dat_icon, "ICON.DAT");
+    DAT_load_parse(&dat_icon_ex, "ICON_EX.DAT");
+    DAT_load_parse(&dat_box, "BOX.DAT");
+    DAT_load_parse(&dat_box_ex, "BOX_EX.DAT");
+}
+
+/* The PVR files in the DATs have a fixed 0x20 byte header (GBIX + PVRT): colour format, layout,
+ * then width and height. Returns the size of the pixel data, 0 if unusable. */
+static uint32_t
+art_parse(const uint8_t* b, int* w, int* h, int* fmt) {
+    int color = b[0x18], layout = b[0x19];
+    *w = b[0x1C] | (b[0x1D] << 8);
+    *h = b[0x1E] | (b[0x1F] << 8);
+    int f = 0;
+    switch (color) {
+        case 0: f = PVR_TXRFMT_ARGB1555; break;
+        case 2: f = PVR_TXRFMT_ARGB4444; break;
+        default: f = PVR_TXRFMT_RGB565; break;
+    }
+    switch (layout) {
+        case 0x01: f |= PVR_TXRFMT_TWIDDLED; break;
+        case 0x03: f |= PVR_TXRFMT_VQ_ENABLE; break;
+        case 0x09: f |= PVR_TXRFMT_NONTWIDDLED; break;
+        case 0x0D: f |= PVR_TXRFMT_TWIDDLED; break;
+        case 0x10: f |= PVR_TXRFMT_VQ_ENABLE | PVR_TXRFMT_NONTWIDDLED; break;
+        default: return 0;
+    }
+    if (*w <= 0 || *h <= 0 || *w > 1024 || *h > 1024) {
+        return 0;
+    }
+    *fmt = f;
+    return (uint32_t)(*w) * (uint32_t)(*h) * 2u;
+}
+
+static int
+art_read(const dat_file* d, const char* id, art_entry* e) {
+    if (!d->hash || d->chunk_size > ART_CHUNK_MAX || !DAT_get_offset_by_ID(d, id)) {
+        return 0;
+    }
+    if (!art_buf) {
+        art_buf = (uint8_t*)memalign(32, ART_CHUNK_MAX);
+        if (!art_buf) {
+            return 0;
+        }
+    }
+    if (!DAT_read_file_by_ID(d, id, art_buf)) {
+        return 0;
+    }
+    int w, h, fmt;
+    uint32_t size = art_parse(art_buf, &w, &h, &fmt);
+    if (!size || size + 0x20 > d->chunk_size) {
+        size = d->chunk_size > 0x20 ? d->chunk_size - 0x20 : 0; /* VQ: less data than w*h*2 */
+    }
+    if (!size) {
+        return 0;
+    }
+    uint32_t padded = (size + 31u) & ~31u;
+    e->tex.ptr = pvr_mem_malloc(padded);
+    if (!e->tex.ptr) {
+        return 0;
+    }
+    pvr_txr_load(art_buf + 0x20, e->tex.ptr, padded);
+    e->tex.w = w;
+    e->tex.h = h;
+    e->tex.fmt = fmt;
+    e->tex.valid = 1;
+    return 1;
+}
+
+static art_entry*
+art_get(const char* product, int box) {
+    char key[20];
+    if (!product || !product[0]) {
+        return NULL;
+    }
+    art_load_dats();
+    const char* id = serial_santize_art(product);
+    snprintf(key, sizeof(key), "%s%.17s", box ? "#" : "", id);
+    art_entry* free_slot = NULL;
+    art_entry* oldest = &art_cache[0];
+    for (int i = 0; i < ART_SLOTS; i++) {
+        art_entry* e = &art_cache[i];
+        if (e->present && !strcmp(e->key, key)) {
+            e->last_use = frame_no;
+            return e;
+        }
+        if (!e->present) {
+            free_slot = free_slot ? free_slot : e;
+        } else if (e->last_use < oldest->last_use) {
+            oldest = e;
+        }
+    }
+    if (art_budget <= 0) {
+        return NULL; /* load it on a later frame */
+    }
+    art_budget--;
+    art_entry* e = free_slot;
+    if (!e) {
+        e = oldest;
+        if (e->last_use + 2 > frame_no) {
+            return NULL; /* every slot is in use: wait */
+        }
+        if (e->tex.valid) {
+            pvr_mem_free(e->tex.ptr);
+        }
+        memset(e, 0, sizeof(*e));
+    }
+    memset(e, 0, sizeof(*e));
+    strncpy(e->key, key, sizeof(e->key) - 1);
+    e->present = 1;
+    e->last_use = frame_no;
+    /* the add-on file wins over the main one */
+    if (!art_read(box ? &dat_box_ex : &dat_icon_ex, id, e)) {
+        art_read(box ? &dat_box : &dat_icon, id, e);
+    }
+    return e;
+}
+
+void
+gfx_art_bind_row(int slot, const char* product) {
+    if (slot >= 0 && slot < BLIST_MAX_SLOTS) {
+        strncpy(row_product[slot], product ? product : "", sizeof(row_product[slot]) - 1);
+        row_product[slot][sizeof(row_product[slot]) - 1] = '\0';
+    }
+}
+
 static rom_tex*
 get_rom_texture(bscene_texref ref) {
+    /* A row disc: texture 0 is the label (the game's art); the rest is the BIOS disc, texlist 61 */
+    if (ref.kind == BSCENE_TEX_TEXLIST && ref.a >= BLIST_TEXLIST_BASE) {
+        int slot = ref.a - BLIST_TEXLIST_BASE;
+        if (ref.b == 0 && slot < BLIST_MAX_SLOTS) {
+            art_entry* e = art_get(row_product[slot], 0);
+            if (e && e->tex.valid) {
+                return &e->tex;
+            }
+        }
+        ref.a = BLIST_DISC_MODEL;
+    }
     if (logo_tex.valid && ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
         return &logo_tex;
     }
@@ -337,6 +507,9 @@ sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
                 p++;
             }
         }
+    } else if (label && obj->id >= BLIST_TEXT_FIRST && obj->id <= BLIST_TEXT_LAST) {
+        /* Game list row: one line, left aligned in the text surface */
+        gfx_text(label, x - (float)obj->text_w / 2.0f, y - (float)obj->text_h / 2.0f, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, 1);
     } else if (label) {
         /* The anchor of a text surface is its centre (checked against the BIOS layout:
          * the caption pills line up with it), so centre the string on it. */
@@ -474,12 +647,27 @@ gfx_rect(float x, float y, float w, float h, float z, uint32_t argb) {
     send_vertex(x + w, y + h, z, 0, 0, argb, 1);
 }
 
+void
+gfx_art_box(const char* product, float x, float y, float w, float h, float z) {
+    art_entry* e = art_get(product, 1);
+    if (e && e->tex.valid) {
+        ensure_header(&e->tex, NULL, 0);
+        send_vertex(x, y, z, 0.0f, 0.0f, 0xFFFFFFFFu, 0);
+        send_vertex(x + w, y, z, 1.0f, 0.0f, 0xFFFFFFFFu, 0);
+        send_vertex(x, y + h, z, 0.0f, 1.0f, 0xFFFFFFFFu, 0);
+        send_vertex(x + w, y + h, z, 1.0f, 1.0f, 0xFFFFFFFFu, 1);
+    } else {
+        gfx_rect(x, y, w, h, z, 0x40FFFFFFu); /* no picture (yet) */
+    }
+}
+
 /* ---- Frames ------------------------------------------------------------------------------ */
 
 void
 gfx_begin_frame(uint32_t top, uint32_t bottom) {
     frame_no++;
     tri_count = 0;
+    art_budget = 2; /* DAT reads stall the frame: at most two pictures per frame */
     pvr_wait_ready();
     /* Where the gradient quad does not draw, show a mid blue instead of black. */
     pvr_set_bg_color(0.45f, 0.60f, 0.80f);

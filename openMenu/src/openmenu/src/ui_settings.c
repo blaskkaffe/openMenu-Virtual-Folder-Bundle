@@ -33,6 +33,8 @@ static const row_def rows[] = {
     {"Game list", "Remember last game", "Start browsing where you left off", &sf_remember_last_game, REMEMBER_LAST_GAME_END + 1,
      on_off},
     {"Starting games", "Boot animation", "What the BIOS shows before a game", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
+    /* stored in the otherwise unused "scroll art" setting (default On) */
+    {"Starting games", "Launch animation", "Discs fly out before a game starts", &sf_scroll_art, 2, on_off},
     {"Starting games", "Exit to BIOS", "How non-game discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
 };
 

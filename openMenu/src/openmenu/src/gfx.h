@@ -41,3 +41,9 @@ void gfx_rect(float x, float y, float w, float h, float z, uint32_t argb);
 
 #define GFX_CHAR_W 12
 #define GFX_LINE_H 32
+
+/* Game art from ICON.DAT / BOX.DAT. Row discs: bind the product of each visible row (slot as in
+ * bios_list) and the renderer puts its icon on the disc label. */
+void gfx_art_bind_row(int slot, const char* product);
+/* Box art of a game as a textured rectangle (a blank frame while it loads or if there is none). */
+void gfx_art_box(const char* product, float x, float y, float w, float h, float z);

@@ -110,3 +110,18 @@ values open a popup list; two-value rows toggle. Rows are defined in `ui_setting
 (label, group, help, save-file variable, choice names). Text column positions
 (`PAGE_TEXT_PAD`, `PAGE_VALUE_X` in `gfx.c`) are guesses to be tuned on hardware.
 Preview without hardware: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.
+
+## Game browser (sketch)
+
+Seven rows in the dense BIOS-settings look (`bios_engine/bios_list`), about 60% of the screen
+width. Each row has the BIOS GD-ROM disc model with the game's icon on its label; the selected
+disc spins like the CD player's. Box art and info (name, product, region, discs, players) are
+shown to the right. Art comes from `ICON.DAT` / `BOX.DAT` (+ `_EX`) and info from `META.DAT` on
+the menu disc, by product code. (The games' own `0GDTEX.PVR` labels cannot be read: only the
+mounted menu image is visible to the console.)
+
+Starting a game: the rows leave in a circle, the selected disc moves to the CD player's place and
+the game starts. Settings > Starting games > Launch animation turns this off (stored in the unused
+"scroll art" save variable, default On). Not animated: starting from the recently played popup.
+Preview: `bios_preview dc_boot.bin out.ppm 60 <row> -3` (list), `... 52 <row> -4` (launch animation).
+Tune on hardware: row layout constants at the top of `bios_list.c`, panel layout in `ui_bios.c`.

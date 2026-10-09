@@ -11,7 +11,10 @@
 
 #include <bios_audio.h>
 #include <bios_menu.h>
+#include <bios_list.h>
 #include <bios_page.h>
+#include <backend/db_list.h>
+#include <kos/fs.h>
 
 #include "gfx.h"
 #include "history.h"
@@ -77,6 +80,9 @@ blend_color(uint32_t from, uint32_t to, int t) {
 static bmenu menu;
 static screen_t screen;
 static bpage page;
+static blist glist;                 /* the game list screen */
+static const gd_item* launch_pending; /* a game waiting for the launch animation to end */
+static int have_meta;               /* META.DAT loaded: players, VMU blocks */
 static int settings_popup;     /* a settings row popup is open */
 static int settings_popup_sel;
 static int games_opened;  /* the game browser has been opened once (last game restored) */
@@ -108,44 +114,111 @@ show_notice(const char* text) {
     notice_frames = NOTICE_FRAMES;
 }
 
+/* ---- Game list -------------------------------------------------------------------------- */
+
+#define INFO_X 438.0f
+#define INFO_W 182.0f
+#define ART_SIZE 140.0f
+#define ART_Y 66.0f
+
+/* Fit the lines of the right panel: `text` cut at spaces into lines of at most `width` characters. */
+static int
+wrap_text(const char* text, int width, char out[][20], int max_lines) {
+    int lines = 0;
+    const char* p = text;
+    while (*p && lines < max_lines) {
+        while (*p == ' ') p++;
+        int len = (int)strlen(p);
+        int take = len <= width ? len : width;
+        if (len > width) {
+            int cut = take;
+            while (cut > 0 && p[cut] != ' ') cut--;
+            if (cut > 0) take = cut;
+        }
+        memcpy(out[lines], p, (size_t)take);
+        out[lines][take] = '\0';
+        p += take;
+        lines++;
+        if (lines == max_lines && *p) {
+            int n = (int)strlen(out[lines - 1]);
+            if (n > width - 2) n = width - 2;
+            strcpy(out[lines - 1] + n, "..");
+        }
+    }
+    return lines;
+}
+
+/* Row texts, disc pictures and the right panel's data for the frame about to be drawn. */
+static void
+games_sync(void) {
+    char line[BPAGE_LABEL_MAX];
+    blist_set_count(&glist, uil_count());
+    blist_set_cursor(&glist, uil_cursor());
+    for (int s = 0; s < glist.slots; s++) {
+        int row = blist_row_in_slot(&glist, s);
+        const gd_item* item = row >= 0 ? uil_item(row) : NULL;
+        line[0] = '\0';
+        if (item) {
+            if (uil_in_chooser()) {
+                snprintf(line, sizeof(line), "Disc %d  %.15s", gd_item_disc_num(item->disc), item->name);
+            } else if (uil_disc_total(item) > 1 && sf_multidisc[0] == MULTIDISC_HIDE) {
+                snprintf(line, sizeof(line), "%.19s (%dd)", item->name, uil_disc_total(item));
+            } else if (strlen(item->name) > 24) {
+                snprintf(line, sizeof(line), "%.22s..", item->name);
+            } else {
+                snprintf(line, sizeof(line), "%s", item->name);
+            }
+        }
+        gfx_set_label((uint16_t)BLIST_TEXT_ID(s), line);
+        gfx_art_bind_row(s, item && !uil_is_folder(item) ? item->product : "");
+    }
+    blist_sync(&glist);
+}
+
 static void
 draw_games(void) {
-    char line[64];
-    int count = uil_count();
-
-    gfx_rect(PANEL_X, PANEL_Y, PANEL_W, (ROWS_Y - PANEL_Y) + UIL_VISIBLE * GFX_LINE_H + 40.0f, 0.4f, 0x90000000u);
-    gfx_text(uil_in_chooser() ? "Select disc" : "Game", TEXT_X, TITLE_Y, 0.5f, 0xFFFFFFFFu, 1);
-
-    if (count <= 0) {
-        gfx_text("No games found.", TEXT_X, ROWS_Y + 4.0f, 0.5f, 0xFFC0C0C0u, 0);
+    char lines[3][20];
+    blist_draw(&glist, gfx_sink());
+    if (uil_count() <= 0) {
+        gfx_text("No games found.", 64.0f, 200.0f, 0.5f, 0xFFFFFFFFu, 1);
         return;
     }
-    for (int row = 0; row < UIL_VISIBLE && uil_top() + row < count; row++) {
-        const gd_item* item = uil_item(uil_top() + row);
-        if (!item) {
-            continue;
-        }
-        float y = ROWS_Y + (float)row * GFX_LINE_H;
-        int selected = (uil_top() + row == uil_cursor());
-        if (selected) {
-            gfx_rect(PANEL_X + 8.0f, y, PANEL_W - 16.0f, (float)GFX_LINE_H, 0.45f, 0x50FFFFFFu);
-        }
-        int discs = uil_in_chooser() ? 1 : (sf_multidisc[0] == MULTIDISC_HIDE ? uil_disc_total(item) : 1);
-        if (discs > 1) {
-            snprintf(line, sizeof(line), "%.34s  (%d discs)", item->name, discs);
-        } else {
-            snprintf(line, sizeof(line), "%s%.40s", uil_is_folder(item) ? "> " : "", item->name);
-        }
-        gfx_text(line, TEXT_X, y, 0.5f, selected ? 0xFFFFFFFFu : 0xFFC0C0C0u, selected);
+    if (glist.launching) {
+        return;
     }
     const gd_item* cur = uil_item(uil_cursor());
-    float hint_y = ROWS_Y + UIL_VISIBLE * GFX_LINE_H + 4.0f;
+    gfx_rect(INFO_X - 6.0f, ART_Y - 8.0f, INFO_W + 12.0f, 366.0f, 0.4f, 0x58000000u);
     if (cur && !uil_is_folder(cur)) {
-        snprintf(line, sizeof(line), "%s  %s  disc %s", cur->product, cur->region, cur->disc);
-        gfx_text(line, TEXT_X, hint_y, 0.5f, 0xFFA0A0A0u, 0);
-    } else {
-        gfx_text("A: open / start   X: recent   B: back", TEXT_X, hint_y, 0.5f, 0xFFA0A0A0u, 0);
+        gfx_art_box(cur->product, INFO_X + (INFO_W - ART_SIZE) / 2.0f, ART_Y, ART_SIZE, ART_SIZE, 0.45f);
+        float y = ART_Y + ART_SIZE + 6.0f;
+        int n = wrap_text(cur->name, 15, lines, 2);
+        for (int i = 0; i < n; i++) {
+            gfx_text(lines[i], INFO_X, y, 0.5f, 0xFFFFFFFFu, 1);
+            y += GFX_LINE_H - 4.0f;
+        }
+        char line[48];
+        snprintf(line, sizeof(line), "%.14s", cur->product);
+        gfx_text(line, INFO_X, y, 0.5f, 0xFFC0C0C0u, 0);
+        y += GFX_LINE_H - 4.0f;
+        int discs = uil_disc_total(cur);
+        if (discs > 1) {
+            snprintf(line, sizeof(line), "%.4s  disc %d/%d", cur->region, gd_item_disc_num(cur->disc), discs);
+        } else {
+            snprintf(line, sizeof(line), "%.4s", cur->region);
+        }
+        gfx_text(line, INFO_X, y, 0.5f, 0xFFC0C0C0u, 0);
+        y += GFX_LINE_H - 4.0f;
+        struct db_item* meta = NULL;
+        if (have_meta && !db_get_meta(cur->product, &meta) && meta) {
+            snprintf(line, sizeof(line), "%.14s", db_format_nplayers_str(meta->num_players));
+            gfx_text(line, INFO_X, y, 0.5f, 0xFFC0C0C0u, 0);
+        }
+    } else if (cur) {
+        gfx_text("Folder", INFO_X, ART_Y, 0.5f, 0xFFFFFFFFu, 1);
     }
+    gfx_text("A: start", INFO_X, 340.0f, 0.5f, 0xFFA0A0A0u, 0);
+    gfx_text("X: recent", INFO_X, 366.0f, 0.5f, 0xFFA0A0A0u, 0);
+    gfx_text("B: back", INFO_X, 392.0f, 0.5f, 0xFFA0A0A0u, 0);
 }
 
 #define POPUP_X 120.0f
@@ -296,6 +369,8 @@ handle_main(button_t b) {
                         uil_goto_real(row);
                     }
                 }
+                blist_open(&glist, &menu, UIL_VISIBLE, uil_count());
+                blist_set_cursor(&glist, uil_cursor());
                 screen = SCREEN_GAMES;
             } else if (menu.selected == ICON_SETTINGS) {
                 sound_sfx(BAUDIO_SFX_ENTER);
@@ -367,13 +442,23 @@ handle_games(button_t b) {
         }
         return;
     }
+    if (launch_pending) {
+        return; /* the launch animation is running */
+    }
     uil_result r = uil_button(b, &game);
     if (r == UIL_LAUNCH) {
-        launch_disc(game); /* only returns if the launch failed */
-        sound_sfx(BAUDIO_SFX_ERROR);
-        show_notice("Could not start the game");
+        if (sf_scroll_art[0] == SCROLL_ART_ON) { /* "Launch animation" setting */
+            sound_sfx(BAUDIO_SFX_ENTER);
+            launch_pending = game;
+            blist_launch_start(&glist);
+        } else {
+            launch_disc(game); /* only returns if the launch failed */
+            sound_sfx(BAUDIO_SFX_ERROR);
+            show_notice("Could not start the game");
+        }
     } else if (r == UIL_EXIT) {
         sound_sfx(BAUDIO_SFX_CANCEL);
+        bmenu_show_main(&menu, ICON_GAME);
         screen = SCREEN_MAIN;
     } else if (r == UIL_REDRAW) {
         sound_sfx(b == BTN_A || b == BTN_START ? BAUDIO_SFX_CONFIRM : (b == BTN_B ? BAUDIO_SFX_CANCEL : BAUDIO_SFX_CURSOR));
@@ -462,6 +547,14 @@ ui_bios_run(const bios_rom* rom) {
     }
 
     gfx_load_logo("/cd/LOGO.PVR"); /* optional replacement of the Dreamcast logo */
+    /* game info (players, VMU blocks) comes from META.DAT on the menu disc; db_load_DAT needs it */
+    file_t meta_fd = fs_open("/cd/META.DAT", O_RDONLY);
+    if (meta_fd != FILEHND_INVALID) {
+        fs_close(meta_fd);
+        db_load_DAT();
+        have_meta = 1;
+    }
+
     sound_init(rom);
     snprintf(status_line, sizeof(status_line), "BIOS %s  %s", rom->revision, sound_status());
 
@@ -514,10 +607,20 @@ ui_bios_run(const bios_rom* rom) {
             if (fade_step < FADE_STEPS) {
                 fade_step++;
             }
+            if (launch_pending && blist_launch_step(&glist)) {
+                const gd_item* g = launch_pending;
+                launch_pending = NULL;
+                launch_disc(g); /* only returns if the launch failed */
+                blist_launch_cancel(&glist);
+                sound_sfx(BAUDIO_SFX_ERROR);
+                show_notice("Could not start the game");
+            }
         }
 
         if (screen == SCREEN_SETTINGS) {
             settings_sync();
+        } else if (screen == SCREEN_GAMES) {
+            games_sync();
         }
 
         frames_this_second++;

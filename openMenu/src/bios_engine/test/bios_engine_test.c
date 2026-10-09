@@ -13,6 +13,7 @@
 #include "bios_rom.h"
 #include "bios_vm.h"
 #include "dcbg.h"
+#include "bios_list.h"
 #include "bios_page.h"
 #include "bios_scene.h"
 #include "nj_model.h"
@@ -699,6 +700,32 @@ test_real_rom(const char* path) {
 }
 
 static void
+test_list(const bios_rom* rom) {
+    static bmenu m;
+    static blist l;
+    bmenu_init(&m, rom, NULL);
+    blist_open(&l, &m, 7, 20);
+    CHECK(l.slots == 7 && l.cursor == 0);
+    CHECK(blist_move(&l, 20) == 1 && l.cursor == 19 && l.top == 13);
+    CHECK(blist_row_in_slot(&l, 6) == 19);
+    blist_set_cursor(&l, 3);
+    CHECK(l.cursor == 3 && l.top == 3);
+    blist_set_count(&l, 5); /* shorter list: everything fits */
+    CHECK(l.top == 0 && l.cursor == 3 && blist_row_in_slot(&l, 5) == -1);
+    blist_goto(&l, 4);
+    blist_launch_start(&l);
+    int steps = 0;
+    while (!blist_launch_step(&l) && steps < 1000) {
+        blist_sync(&l);
+        steps++;
+    }
+    CHECK(steps > 20 && steps < 100);
+    blist_launch_cancel(&l);
+    CHECK(!l.launching);
+    bmenu_free(&m);
+}
+
+static void
 test_page(const bios_rom* rom) {
     static bmenu m;
     static bpage p;
@@ -746,6 +773,7 @@ main(void) {
     test_audio();
     test_scene(&rom);
     test_page(&rom);
+    test_list(&rom);
 
     const char* real = getenv("BIOS_ROM_FILE");
     if (real && *real) {
