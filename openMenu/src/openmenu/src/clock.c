@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <time.h>
 
-#include <dc/rtc.h>
+#include <arch/rtc.h>
 
 #include "clock.h"
 #include "clock_math.h"
