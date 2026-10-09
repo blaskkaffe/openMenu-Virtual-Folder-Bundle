@@ -917,7 +917,9 @@ test_files(const bios_rom* rom) {
     bfiles_open(&f, &m, 0);
     CHECK(f.cursor == 0 && bfiles_move(&f, -1, 0) == 0 && bfiles_move(&f, 0, -1) == 0);
     CHECK(bfiles_move(&f, 0, 1) == 1 && f.cursor == 1); /* A2 */
+    CHECK(bfiles_move(&f, 0, 1) == 1 && f.back_selected); /* below the bottom socket: BACK */
     CHECK(bfiles_move(&f, 0, 1) == 0);
+    CHECK(bfiles_move(&f, 0, -1) == 1 && !f.back_selected && f.cursor == 1);
     CHECK(bfiles_move(&f, 1, 0) == 1 && f.cursor == 3); /* B2 */
     CHECK(bfiles_move(&f, 2, 0) == 1 && f.cursor == 7); /* D2 */
     CHECK(bfiles_move(&f, 1, 0) == 0);
@@ -944,8 +946,11 @@ test_page(const bios_rom* rom) {
     CHECK(p.cursor == 6 && p.top == 3); /* scrolled so the cursor is the last visible row */
     CHECK(bpage_row_in_slot(&p, 0) == 3 && bpage_row_in_slot(&p, 3) == 6);
     CHECK(bpage_move(&p, 100) == 1 && p.cursor == 9 && p.top == 6);
+    CHECK(bpage_move(&p, 1) == 1 && p.back_selected && p.cursor == 9); /* one step down: the BACK marker */
     CHECK(bpage_move(&p, 1) == 0);
+    CHECK(bpage_move(&p, -1) == 1 && !p.back_selected && p.cursor == 9);
     CHECK(bpage_move(&p, -100) == 1 && p.cursor == 0 && p.top == 0);
+    CHECK(bpage_back_at_px(121.0f, 401.0f) && !bpage_back_at_px(320.0f, 200.0f));
     bpage_open(&p, &m, 2); /* fewer rows than slots */
     CHECK(bpage_row_in_slot(&p, 1) == 1 && bpage_row_in_slot(&p, 2) == -1);
     bpage_sync(&p, NULL, NULL);

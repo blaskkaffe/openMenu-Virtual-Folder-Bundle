@@ -105,6 +105,11 @@ load_files(void) {
 }
 
 void
+uif_set_pal(int pal) {
+    grid.pal = pal;
+}
+
+void
 uif_open(bmenu* m) {
     menu = m;
     int first = 0;
@@ -180,7 +185,11 @@ int
 uif_handle(button_t b) {
     switch (state) {
         case FS_GRID:
-            if (b == BTN_A || b == BTN_START) {
+            if ((b == BTN_A || b == BTN_START) && grid.back_selected) {
+                sound_sfx(BAUDIO_SFX_CANCEL);
+                gfx_dyn_free_all();
+                return 1;
+            } else if (b == BTN_A || b == BTN_START) {
                 if (grid.present[grid.cursor]) {
                     src_slot = grid.cursor;
                     file_cursor = file_top = 0;
@@ -680,6 +689,11 @@ uif_draw(void) {
 void
 uif_hover(float x, float y) {
     if (state == FS_GRID || state == FS_DEST) {
+        if (bfiles_back_at_px(x, y)) {
+            if (!grid.back_selected) sound_sfx(BAUDIO_SFX_CURSOR);
+            grid.back_selected = 1;
+            return;
+        }
         int slot = bfiles_slot_at_px(x, y);
         if (slot >= 0 && bfiles_set_cursor(&grid, slot)) {
             sound_sfx(BAUDIO_SFX_CURSOR);

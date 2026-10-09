@@ -457,11 +457,7 @@ blist_draw(blist* l, const bscene_sink* sink) {
     bmenu* m = l->m;
     /* the BACK marker as the BIOS script effect colours it (fx 0x8C021CD0): arrow and frame only light up when selected,
      * and the frame blinks yellow for 16 frames, dark for 16 */
-    const uint32_t arrow = l->back_selected ? (l->pal_console ? 0xD02020F0u : 0xD0F02000u) : 0u;
-    const uint32_t frame = l->back_selected && ((l->anim / 16) & 1) == 0 ? 0xFFFFFF00u : 0xC0404040u;
-    m->scene.ovr[0].model = 0, m->scene.ovr[0].node = 1, m->scene.ovr[0].poly = 0, m->scene.ovr[0].argb = arrow;
-    m->scene.ovr[1].model = 0, m->scene.ovr[1].node = 2, m->scene.ovr[1].poly = 0, m->scene.ovr[1].argb = frame;
-    m->scene.ovr_n = 2;
+    bmenu_back_style(m, l->back_selected, l->anim, l->pal_console);
     for (int pass = 0; pass < 2; pass++) {
         m->scene.parts = passes[pass];
         for (int i = 0; i < m->vm.count; i++) {

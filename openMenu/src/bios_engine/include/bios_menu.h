@@ -55,6 +55,13 @@ int bmenu_select(bmenu* m, int i);
 /* D-pad on the 2x2 icon grid. Returns 1 if the selection changed. */
 int bmenu_move(bmenu* m, bmenu_dir dir);
 
+/* The BACK marker (object 0x1110, script 6) as the BIOS script effect (0x8C021CD0) colours it: the arrow and the
+ * frame only light up while it is selected, and the frame blinks yellow for 16 frames and dark for 16. `anim` counts
+ * frames; call before drawing. `pal` picks the arrow colour of the PAL console. */
+void bmenu_back_style(bmenu* m, int selected, int anim, int pal);
+/* Is the pixel (px, py) on a BACK marker placed at (x, y) world units? */
+int bmenu_back_hit(float x, float y, float px, float py);
+
 void bmenu_update(bmenu* m);                          /* one 60 Hz frame */
 void bmenu_draw(bmenu* m, const bscene_sink* sink);   /* background layers, then all objects */
 

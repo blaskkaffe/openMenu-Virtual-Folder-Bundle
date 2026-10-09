@@ -238,6 +238,9 @@ max(0, -N.Ldir) * light_diffuse * material_diffuse)`, alpha = material diffuse a
 white scaled by 0.3 (`nj_view_set_pos_rot(1.4, 0.3, 0)`: 0.3 diffuse, 1.4 specular), global ambient 0.5
 (`nj_set_screen_params(.5,.5,.5)`). Material defaults (0x8C0A5A34): ambient 0, diffuse 0.5, specular 0.5, power 6.
 Strip flag 0x04 skips the global ambient, 0x02 the specular term (specular goes into the offset colour, not used
-by the type 64 handler). Vertices that carry their own colour are not lit. Implemented in `bios_lit()`
+by the type 64 handler; done here as an additive highlight 1.4 * (N.L)^n, n = the specular alpha byte). Vertices that carry their own colour are not lit.
+Nothing is normalised (njInitMatrix(.., 8, 0)): the normal is multiplied by the object's matrix M and the light direction by
+M transposed (0x8C0A5B08), so N.L = (M n) . (row 2 of M). Open: the clock's gold bells still come out darker than on the console.
+BACK marker: selectable (one step down from the last row) on the game list, Settings and the File card grid. Implemented in `bios_lit()`
 (`bios_scene.c`); colours picked by scripts (panel accent, BACK overrides) are shown unlit. Specular and fog are
 not done.

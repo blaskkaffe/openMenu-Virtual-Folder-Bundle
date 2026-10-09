@@ -10,6 +10,7 @@
 
 /* Show the screen (replaces the scene of `menu`). */
 void uif_open(bmenu* menu);
+void uif_set_pal(int pal); /* PAL console: the BACK arrow colour; call after uif_open() */
 
 /* One button. Returns 1 when the screen is left (back to the main menu). */
 int uif_handle(button_t b);

@@ -18,6 +18,9 @@ extern "C" {
 typedef struct bfiles {
     bmenu* m;
     int cursor;
+    int back_selected; /* the cursor is on the BACK marker, one step down from the bottom row of sockets */
+    int anim;
+    int pal;
     int present[BFILES_SLOTS];
 } bfiles;
 
@@ -38,6 +41,7 @@ void bfiles_card_px(int slot, float* x, float* y);
 void bfiles_title_px(float* x, float* y);
 void bfiles_plate_px(float* x, float* y);
 int bfiles_slot_at_px(float x, float y); /* -1 if none */
+int bfiles_back_at_px(float x, float y);
 
 #ifdef __cplusplus
 }

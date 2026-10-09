@@ -32,6 +32,9 @@ typedef struct bpage {
     int count;  /* rows in the list */
     int cursor; /* selected row */
     int top;    /* first visible row */
+    int back_selected; /* the cursor is on the BACK marker, one step down from the last row */
+    int anim;   /* frames since the page opened, for the BACK marker's blink */
+    int pal;    /* PAL console: the BACK arrow colour */
 } bpage;
 
 typedef struct bpage_row {
@@ -51,6 +54,9 @@ int bpage_set_cursor(bpage* p, int row);
 
 /* Apply selection, icons and visibility; call once per frame after bmenu_update(). */
 void bpage_sync(bpage* p, bpage_row_fn row, void* user);
+
+/* Is the pixel on the BACK marker (bottom left)? */
+int bpage_back_at_px(float x, float y);
 
 /* Row shown in slot `slot`, -1 if the slot is empty. */
 int bpage_row_in_slot(const bpage* p, int slot);

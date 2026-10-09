@@ -102,8 +102,9 @@ static int notice_frames;
 static char fps_text[40];
 static int show_debug; /* fps, triangles and the BIOS/sound line: X on the main menu switches them on and off */
 static uint64_t build_us_sum;
+static uint64_t phase_us[3]; /* begin frame, background, everything else drawn (summed per second) */
 static uint64_t sync_us_sum;
-static char perf_text[2][64]; /* the debug overlay's second and third line */
+static char perf_text[3][64]; /* the debug overlay's second and third line */
 static const char* notice_text;
 
 static char status_line[64];
@@ -503,11 +504,14 @@ draw_frame(void) {
         bottom = blend_color(START_COLOR, bottom, fade_step);
     }
     gfx_begin_frame(top, bottom);
+    uint64_t t1 = timer_us_gettime64();
+    phase_us[0] += t1 - t0;
 
     if (screen == SCREEN_MAIN) {
         if (!(held & CONT_X)) {
             bscene_draw_background(&menu.bg, gfx_sink());
         }
+        phase_us[1] += timer_us_gettime64() - t1;
         if (!(held & CONT_Y)) {
             bmenu_draw_objects(&menu, gfx_sink());
         }
@@ -536,11 +540,13 @@ draw_frame(void) {
         gfx_text(fps_text, TEXT_X, FPS_Y - 56.0f, 0.5f, 0xFFFFFFFFu, 0);
         gfx_text(perf_text[0], TEXT_X, FPS_Y - 28.0f, 0.5f, 0xFFFFFFFFu, 0);
         gfx_text(perf_text[1], TEXT_X, FPS_Y, 0.5f, 0xFFFFFFFFu, 0);
+        gfx_text(perf_text[2], TEXT_X, FPS_Y + 28.0f, 0.5f, 0xFFFFFFFFu, 0);
     }
     if (notice_frames > 0 && notice_text) {
         gfx_text(notice_text, TEXT_X, screen == SCREEN_MAIN ? NOTICE_Y_MAIN : NOTICE_Y_PANEL, 0.5f, 0xFFFFFFFFu, 1);
     }
     draw_pointer();
+    phase_us[2] += timer_us_gettime64() - t0;
     build_us_sum += timer_us_gettime64() - t0;
     gfx_end_frame();
 }
@@ -580,10 +586,12 @@ handle_main(button_t b) {
             } else if (menu.selected == ICON_FILES) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 uif_open(&menu);
+                uif_set_pal(console_is_pal());
                 screen = SCREEN_FILES;
             } else if (menu.selected == ICON_SETTINGS) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 bpage_open(&page, &menu, uis_count());
+                page.pal = console_is_pal();
                 settings_popup = 0;
                 screen = SCREEN_SETTINGS;
             } else {
@@ -724,6 +732,7 @@ enter_datetime(void) {
 static void
 leave_datetime(void) {
     bpage_open(&page, &menu, uis_count());
+    page.pal = console_is_pal();
     page.cursor = saved_page_cursor;
     page.top = saved_page_top;
     screen = SCREEN_SETTINGS;
@@ -819,11 +828,14 @@ handle_settings(button_t b) {
             break;
         case BTN_LEFT:
         case BTN_RIGHT:
+            if (page.back_selected) break;
             uis_change(row, b == BTN_LEFT ? -1 : 1);
             sound_sfx(BAUDIO_SFX_CONFIRM);
             break;
         case BTN_A:
-            if (uis_action(row) == UIS_ACTION_DATETIME) {
+            if (page.back_selected) {
+                leave_settings();
+            } else if (uis_action(row) == UIS_ACTION_DATETIME) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 enter_datetime();
             } else if (uis_action(row) == UIS_ACTION_ABOUT) {
@@ -902,6 +914,11 @@ apply_hover(void) {
         }
         case SCREEN_FILES: uif_hover(ux, uy); break;
         case SCREEN_SETTINGS: {
+            if (bpage_back_at_px(ux, uy)) {
+                if (!page.back_selected) sound_sfx(BAUDIO_SFX_CURSOR);
+                page.back_selected = 1;
+                break;
+            }
             int row = bpage_row_in_slot(&page, bpage_slot_at_px(&page, ux, uy));
             if (row >= 0 && bpage_set_cursor(&page, row)) sound_sfx(BAUDIO_SFX_CURSOR);
             break;
@@ -953,16 +970,6 @@ ui_bios_run(const bios_rom* rom) {
         input_mouse(&pointer);
         if (pointer.moved) {
             apply_hover();
-        }
-        if (b == BTN_A && screen == SCREEN_SETTINGS && !settings_popup && !about_open && pointer.visible) {
-            /* a click on the BACK marker (bottom left, as the BIOS' settings page places it) goes back */
-            float ux = (float)pointer.x, uy = (float)pointer.y;
-            if (sf_aspect[0] == ASPECT_WIDE) {
-                ux = 320.0f + (ux - 320.0f) / 0.75f;
-            }
-            if (ux >= 80.0f && ux <= 165.0f && uy >= 360.0f && uy <= 445.0f) {
-                b = BTN_B;
-            }
         }
         int typed = input_typed_char();
         if (typed && screen == SCREEN_GAMES && !recent_open && !launch_pending && uil_jump_to_letter(typed)) {
@@ -1040,6 +1047,13 @@ ui_bios_run(const bios_rom* rom) {
                      build_t / 10, build_t % 10, wait_t / 10, wait_t % 10);
             snprintf(perf_text[1], sizeof(perf_text[1]), "art %u (%u ms) text %u hdr %u", gs.art_loads, gs.art_us / 1000u,
                      gs.text_uploads, gs.headers / n);
+            {
+                unsigned beg = (unsigned)(phase_us[0] / n / 100u), bg = (unsigned)(phase_us[1] / n / 100u),
+                         all = (unsigned)(phase_us[2] / n / 100u);
+                snprintf(perf_text[2], sizeof(perf_text[2]), "begin %u.%u bg %u.%u drawn %u.%u ms", beg / 10, beg % 10, bg / 10,
+                         bg % 10, all / 10, all % 10);
+                phase_us[0] = phase_us[1] = phase_us[2] = 0;
+            }
             sync_us_sum = 0;
             build_us_sum = 0;
             frames_this_second = 0;

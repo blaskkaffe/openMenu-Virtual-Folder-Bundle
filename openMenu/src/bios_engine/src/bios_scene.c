@@ -11,6 +11,7 @@
 #define MAX_MESH_VERTS 4096 /* nj_model never produces more */
 
 /* Lighting: see bios_lit(). */
+#define LIGHT_AMBIENT_256 128 /* global ambient light 0.5 */
 #define STRIP_IGNORE_LIGHT 0x01
 #define STRIP_IGNORE_AMBIENT 0x04
 #define STRIP_DOUBLE_SIDED 0x10
@@ -132,11 +133,23 @@ shade(uint32_t base, const int* off) {
  * directional light along the view axis; ambient_light 0.5, diffuse_light 0.3. The alpha is the
  * material's diffuse alpha. nl is N.L in 0..256. */
 static uint32_t
-bios_lit(uint32_t diffuse, uint32_t ambient, int nl) {
+bios_lit(uint32_t diffuse, uint32_t ambient, uint32_t specular, int nl) {
     uint32_t out = diffuse & 0xFF000000u;
+    int spec = 0; /* 1.4 * (N.L)^power, power = the specular colour's alpha byte, in 1/256 */
+    if (specular) {
+        int power = (int)(specular >> 24);
+        float i = (float)nl / 256.0f, k = 1.0f;
+        for (int n = 0; n < power && n < 64 && k > 0.002f && k < 8.0f; n++) {
+            k *= i;
+        }
+        spec = (int)(k * 1.4f * 256.0f);
+    }
     for (int sh = 0; sh <= 16; sh += 8) {
         int a = (int)((ambient >> sh) & 255), d = (int)((diffuse >> sh) & 255);
-        int c = (a * 128 + ((d * nl) >> 8) * 77) >> 8; /* 0.5 and 0.3 in 1/256 */
+        int c = (a * LIGHT_AMBIENT_256 + ((d * nl) >> 8) * 77) >> 8; /* ambient and 0.3 in 1/256 */
+        if (spec) {
+            c += (int)((specular >> sh) & 255) * spec >> 8;
+        }
         out |= (uint32_t)clamp255(c) << sh;
     }
     return out;
@@ -290,10 +303,16 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         nj_vec3 w = nj_mat_apply(&m, src);
                         scratch_ok[i] = (uint8_t)bscene_project(w, &scratch_x[i], &scratch_y[i], &scratch_w[i]);
                         {
+                            /* The BIOS does not normalise: the normal is multiplied by the object's matrix M and the
+                             * light direction (0, 0, -1) by its transpose (0x8C0A5B08), so N.L = (M n) . (row 2 of M),
+                             * which grows with the square of the object's scale. */
                             float nl = 1.0f;
                             if (vx->has_nrm) {
-                                nl = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
-                                nl = nl > 0.0f ? (nl > 1.0f ? 1.0f : nl) : 0.0f;
+                                float nx = m.m[0][0] * vx->nrm.x + m.m[0][1] * vx->nrm.y + m.m[0][2] * vx->nrm.z;
+                                float ny = m.m[1][0] * vx->nrm.x + m.m[1][1] * vx->nrm.y + m.m[1][2] * vx->nrm.z;
+                                float nz = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
+                                nl = nx * m.m[2][0] + ny * m.m[2][1] + nz * m.m[2][2];
+                                nl = nl > 0.0f ? (nl > 8.0f ? 8.0f : nl) : 0.0f;
                             }
                             scratch_n[i] = (int16_t)(s->fullbright ? 256 : (int)(nl * 256.0f));
                         }
@@ -347,6 +366,8 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                     }
                     int lit = !(poly->strip_flags & STRIP_IGNORE_LIGHT);
                     const uint32_t amb = (poly->has_ambient && !(poly->strip_flags & STRIP_IGNORE_AMBIENT)) ? shade(poly->ambient, offs) : 0;
+                    /* the specular term (strip flag 0x02 switches it off); 0 = none */
+                    const uint32_t spc = (poly->has_specular && !(poly->strip_flags & 0x02) && (poly->specular >> 24)) ? poly->specular : 0;
                     int cull = !(poly->strip_flags & STRIP_DOUBLE_SIDED);
                     for (int t = 0; t < poly->ntris; t++) {
                         bscene_vtx v[3];
@@ -375,7 +396,7 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                                 }
                             }
                             if (lit && poly->has_diffuse && !forced && !s->fullbright && mesh->verts[c->idx].has_nrm) {
-                                v[k].argb = bios_lit(base, amb, scratch_n[c->idx]);
+                                v[k].argb = bios_lit(base, amb, spc, scratch_n[c->idx]);
                             } else {
                                 v[k].argb = base;
                             }

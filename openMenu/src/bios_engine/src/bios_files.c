@@ -16,6 +16,8 @@ static const float row_y[2] = {-2.34375f, -13.671875f};
 void
 bfiles_open(bfiles* f, bmenu* m, int cursor) {
     f->m = m;
+    f->back_selected = 0;
+    f->anim = 0;
     f->cursor = cursor < 0 || cursor >= BFILES_SLOTS ? 0 : cursor;
     for (int i = 0; i < BFILES_SLOTS; i++) {
         f->present[i] = 0;
@@ -46,6 +48,11 @@ bfiles_open(bfiles* f, bmenu* m, int cursor) {
 
 int
 bfiles_set_cursor(bfiles* f, int slot) {
+    if (f->back_selected && slot >= 0 && slot < BFILES_SLOTS) {
+        f->back_selected = 0;
+        f->cursor = slot;
+        return 1;
+    }
     if (slot < 0 || slot >= BFILES_SLOTS || slot == f->cursor) {
         return 0;
     }
@@ -55,6 +62,17 @@ bfiles_set_cursor(bfiles* f, int slot) {
 
 int
 bfiles_move(bfiles* f, int dx, int dy) {
+    if (f->back_selected) {
+        if (dy < 0 || dx != 0) {
+            f->back_selected = 0;
+            return 1;
+        }
+        return 0;
+    }
+    if (dy > 0 && f->cursor % 2 == 1) {
+        f->back_selected = 1; /* one step down from the bottom row: the BACK marker */
+        return 1;
+    }
     int port = f->cursor / 2 + dx, socket = f->cursor % 2 + dy;
     if (port < 0 || port > 3 || socket < 0 || socket > 1) {
         return 0;
@@ -65,6 +83,7 @@ bfiles_move(bfiles* f, int dx, int dy) {
 void
 bfiles_sync(bfiles* f) {
     bvm* vm = &f->m->vm;
+    f->anim++;
     for (int i = 0; i < BFILES_SLOTS; i++) {
         bvm_obj* c = bvm_find(vm, ID_CARD(i));
         if (!c) {
@@ -72,7 +91,7 @@ bfiles_sync(bfiles* f) {
         }
         c->flags |= BVM_F_COLOUR;
         float pulse = (float)((f->m->frames / 4) % 8 < 4 ? 0.0f : 0.12f); /* the selected card flashes */
-        if (i == f->cursor) {
+        if (i == f->cursor && !f->back_selected) {
             c->color[0] = 0.0f;
             c->color[1] = c->color[2] = 0.30f + pulse;
             c->color[3] = -0.10f;
@@ -90,6 +109,7 @@ void
 bfiles_draw(bfiles* f, const bscene_sink* sink) {
     static const unsigned passes[2] = {BSCENE_PART_MODEL, BSCENE_PART_TEXT};
     bmenu* m = f->m;
+    bmenu_back_style(m, f->back_selected, f->anim, f->pal);
     for (int pass = 0; pass < 2; pass++) {
         m->scene.parts = passes[pass];
         for (int i = 0; i < m->vm.count; i++) {
@@ -128,4 +148,9 @@ bfiles_slot_at_px(float x, float y) {
         }
     }
     return -1;
+}
+
+int
+bfiles_back_at_px(float x, float y) {
+    return bmenu_back_hit(-21.09375f, -13.67188f, x, y);
 }

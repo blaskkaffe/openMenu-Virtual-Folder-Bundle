@@ -214,6 +214,16 @@ demo_row(void* user, int index, bpage_row* out) {
     out->icon = index < 4 ? BPAGE_ICON_BIOS(index) : BPAGE_ICON_DIGIT(index - 4);
 }
 
+static void
+bench_tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
+    (void)user; (void)v; (void)ref;
+}
+
+static void
+bench_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
+    (void)user; (void)obj; (void)x; (void)y; (void)invw;
+}
+
 int
 main(int argc, char** argv) {
     if (argc < 3) {
@@ -369,6 +379,16 @@ main(int argc, char** argv) {
         fprintf(stderr, "script error %d at %#x\n", menu.vm.error, menu.vm.error_pc);
     }
 
+    if (getenv("BIOS_PREVIEW_BENCH")) { /* time the scene building of the main menu: no pixels, for gprof */
+        int n = atoi(getenv("BIOS_PREVIEW_BENCH"));
+        bscene_sink null_sink = {NULL, bench_tri, bench_text};
+        for (int i = 0; i < n; i++) {
+            bmenu_update(&menu);
+            bscene_draw_background(&menu.bg, &null_sink);
+            bmenu_draw_objects(&menu, &null_sink);
+        }
+        return 0;
+    }
     uint32_t top, bottom;
     dcbg_gradient(&menu.bg, &top, &bottom);
     for (int y = 0; y < H; y++) {

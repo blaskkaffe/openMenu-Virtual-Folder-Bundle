@@ -114,3 +114,19 @@ bmenu_draw(bmenu* m, const bscene_sink* sink) {
     bscene_draw_background(&m->bg, sink);
     bmenu_draw_objects(m, sink);
 }
+
+void
+bmenu_back_style(bmenu* m, int selected, int anim, int pal) {
+    const uint32_t arrow = selected ? (pal ? 0xD02020F0u : 0xD0F02000u) : 0u;
+    const uint32_t frame = selected && ((anim / 16) & 1) == 0 ? 0xFFFFFF00u : 0xC0404040u;
+    m->scene.ovr[0].model = 0, m->scene.ovr[0].node = 1, m->scene.ovr[0].poly = 0, m->scene.ovr[0].argb = arrow;
+    m->scene.ovr[1].model = 0, m->scene.ovr[1].node = 2, m->scene.ovr[1].poly = 0, m->scene.ovr[1].argb = frame;
+    m->scene.ovr_n = 2;
+}
+
+int
+bmenu_back_hit(float x, float y, float px, float py) {
+    const float px_per_unit = 11.32f; /* 4000 / 353.5: pixels per world unit at the BACK marker's depth */
+    float cx = 320.0f + x * px_per_unit, cy = 240.0f - y * px_per_unit;
+    return px >= cx - 34.0f && px <= cx + 34.0f && py >= cy - 34.0f && py <= cy + 34.0f;
+}

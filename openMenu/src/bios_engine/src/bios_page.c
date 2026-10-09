@@ -36,6 +36,8 @@ bpage_open(bpage* p, bmenu* m, int count) {
     p->count = count < 0 ? 0 : count;
     p->cursor = 0;
     p->top = 0;
+    p->back_selected = 0;
+    p->anim = 0;
     bvm_kill_all(&m->vm);
     bvm_create(&m->vm, 6, 0x1110, PRIO);
     for (int i = 0; i < BPAGE_SLOTS; i++) {
@@ -63,6 +65,17 @@ bpage_open(bpage* p, bmenu* m, int count) {
 
 int
 bpage_move(bpage* p, int delta) {
+    if (p->back_selected) {
+        if (delta < 0) {
+            p->back_selected = 0;
+            return 1;
+        }
+        return 0;
+    }
+    if (delta > 0 && p->count > 0 && p->cursor == p->count - 1) {
+        p->back_selected = 1; /* one step down from the last row: the BACK marker */
+        return 1;
+    }
     int next = p->cursor + delta;
     if (next < 0) {
         next = 0;
@@ -85,6 +98,12 @@ bpage_move(bpage* p, int delta) {
 
 int
 bpage_set_cursor(bpage* p, int row) {
+    if (p->back_selected) {
+        p->back_selected = 0;
+        if (row == p->cursor) {
+            return 1;
+        }
+    }
     return bpage_move(p, row - p->cursor);
 }
 
@@ -97,6 +116,7 @@ bpage_row_in_slot(const bpage* p, int slot) {
 void
 bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
     bvm* vm = &p->m->vm;
+    p->anim++;
     for (int s = 0; s < BPAGE_SLOTS; s++) {
         int row = bpage_row_in_slot(p, s);
         bvm_obj* anchor = bvm_find(vm, slots[s].anchor_id);
@@ -104,7 +124,7 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
         bvm_obj* icon = bvm_find(vm, slots[s].icon_id);
         bvm_obj* text = bvm_find(vm, slots[s].text_id);
         int on = row >= 0;
-        int sel = on && row == p->cursor;
+        int sel = on && row == p->cursor && !p->back_selected;
         if (anchor) {
             anchor->flags = on ? (anchor->flags & ~(uint32_t)BVM_F_HIDE) : (anchor->flags | BVM_F_HIDE);
         }
@@ -162,6 +182,7 @@ void
 bpage_draw(bpage* p, const bscene_sink* sink) {
     static const unsigned passes[2] = {BSCENE_PART_MODEL, BSCENE_PART_TEXT};
     bmenu* m = p->m;
+    bmenu_back_style(m, p->back_selected, p->anim, p->pal);
     for (int pass = 0; pass < 2; pass++) {
         m->scene.parts = passes[pass];
         for (int i = 0; i < m->vm.count; i++) {
@@ -169,4 +190,9 @@ bpage_draw(bpage* p, const bscene_sink* sink) {
         }
     }
     m->scene.parts = BSCENE_PART_ALL;
+}
+
+int
+bpage_back_at_px(float x, float y) {
+    return bmenu_back_hit(-17.57812f, -14.25781f, x, y);
 }
