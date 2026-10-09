@@ -151,6 +151,8 @@ static int dats_loaded;
 static art_entry art_cache[ART_SLOTS];
 static int art_budget; /* pictures that may still be loaded this frame */
 static char row_product[BLIST_MAX_SLOTS][16];
+static int row_window[BLIST_MAX_SLOTS]; /* title scroll: visible width in px (0 = no scrolling) */
+static int row_offset[BLIST_MAX_SLOTS];
 static uint8_t* art_buf;
 
 static void
@@ -477,6 +479,8 @@ find_label(uint16_t id) {
     return NULL;
 }
 
+static void text_windowed(const char* str, float x, float y, float z, uint32_t argb, int window, int offset);
+
 static void
 sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
     (void)user;
@@ -508,8 +512,14 @@ sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
             }
         }
     } else if (label && obj->id >= BLIST_TEXT_FIRST && obj->id <= BLIST_TEXT_LAST) {
-        /* Game list row: one line, left aligned in the text surface */
-        gfx_text(label, x - (float)obj->text_w / 2.0f, y - (float)obj->text_h / 2.0f, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, 1);
+        /* Game list row: one line, left aligned in the text surface; a long selected title scrolls */
+        int slot = obj->id - BLIST_TEXT_FIRST;
+        float lx = x - (float)obj->text_w / 2.0f, ly = y - (float)obj->text_h / 2.0f;
+        if (slot >= 0 && slot < BLIST_MAX_SLOTS && row_window[slot] > 0 && (int)strlen(label) * GFX_CHAR_W > row_window[slot]) {
+            text_windowed(label, lx, ly, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, row_window[slot], row_offset[slot]);
+        } else {
+            gfx_text(label, lx, ly, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, 1);
+        }
     } else if (label) {
         /* The anchor of a text surface is its centre (checked against the BIOS layout:
          * the caption pills line up with it), so centre the string on it. */
@@ -635,6 +645,41 @@ gfx_text(const char* str, float x, float y, float z, uint32_t argb, int shadow) 
         send_vertex(x + ox + w, y + ox, z, 1.0f, 0.0f, col, 0);
         send_vertex(x + ox, y + ox + h, z, 0.0f, 1.0f, col, 0);
         send_vertex(x + ox + w, y + ox + h, z, 1.0f, 1.0f, col, 1);
+    }
+}
+
+/* A string shown through a window of `window` pixels, moved `offset` pixels to the left. */
+static void
+text_windowed(const char* str, float x, float y, float z, uint32_t argb, int window, int offset) {
+    char clipped[MAX_TEXT_CHARS + 1];
+    strncpy(clipped, str, MAX_TEXT_CHARS);
+    clipped[MAX_TEXT_CHARS] = '\0';
+    text_tex* t = get_text_texture(clipped);
+    if (!t) {
+        return;
+    }
+    int full = (int)strlen(clipped) * GFX_CHAR_W;
+    if (offset < 0) offset = 0;
+    if (offset > full - window) offset = full > window ? full - window : 0;
+    int win = window < full ? window : full;
+    float u0 = (float)offset / (float)t->w, u1 = (float)(offset + win) / (float)t->w;
+    ensure_header(NULL, t->ptr, t->w);
+    float w = (float)win, h = (float)GFX_LINE_H;
+    for (int pass = 0; pass < 2; pass++) {
+        float ox = pass == 0 ? 2.0f : 0.0f;
+        uint32_t col = pass == 0 ? ((argb >> 24) / 2u) << 24 : argb;
+        send_vertex(x + ox, y + ox, z, u0, 0.0f, col, 0);
+        send_vertex(x + ox + w, y + ox, z, u1, 0.0f, col, 0);
+        send_vertex(x + ox, y + ox + h, z, u0, 1.0f, col, 0);
+        send_vertex(x + ox + w, y + ox + h, z, u1, 1.0f, col, 1);
+    }
+}
+
+void
+gfx_set_row_scroll(int slot, int window_px, int offset_px) {
+    if (slot >= 0 && slot < BLIST_MAX_SLOTS) {
+        row_window[slot] = window_px;
+        row_offset[slot] = offset_px;
     }
 }
 

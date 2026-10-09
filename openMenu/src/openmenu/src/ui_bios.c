@@ -148,6 +148,15 @@ wrap_text(const char* text, int width, char out[][20], int max_lines) {
     return lines;
 }
 
+/* Scrolling of a long selected title: wait, scroll to the end, wait, start over. */
+#define MARQUEE_HOLD 60  /* frames at each end */
+#define MARQUEE_PX_PER_FRAME 1
+#define TITLE_WINDOW 300       /* pixels available for a title */
+#define TITLE_WINDOW_MULTI 232 /* ... on a multi-disc row, which has the disc pill */
+
+static const gd_item* marquee_item;
+static int marquee_frame;
+
 /* Row texts, disc pictures and the right panel's data for the frame about to be drawn. */
 static void
 games_sync(void) {
@@ -162,13 +171,32 @@ games_sync(void) {
         if (item) {
             multi = !uil_is_folder(item) && uil_disc_total(item) > 1;
             size_t keep = multi ? 19 : 24; /* a multi-disc row has the disc pill at its right end */
-            if (strlen(item->name) > keep) {
+            if (row == uil_cursor() && !glist.launching) {
+                snprintf(line, sizeof(line), "%.41s", item->name); /* the selected title scrolls if it is long */
+            } else if (strlen(item->name) > keep) {
                 snprintf(line, sizeof(line), "%.*s..", (int)keep - 2, item->name);
             } else {
                 snprintf(line, sizeof(line), "%s", item->name);
             }
         }
         glist.multi[s] = multi;
+        gfx_set_row_scroll(s, 0, 0);
+        if (item && row == uil_cursor() && !glist.launching) {
+            int window = multi ? TITLE_WINDOW_MULTI : TITLE_WINDOW;
+            int width = (int)strlen(line) * GFX_CHAR_W;
+            if (item != marquee_item) {
+                marquee_item = item;
+                marquee_frame = 0;
+            }
+            if (width > window) {
+                int travel = width - window;
+                int moving = travel / MARQUEE_PX_PER_FRAME;
+                int t = marquee_frame % (2 * MARQUEE_HOLD + moving);
+                int offset = t < MARQUEE_HOLD ? 0 : (t < MARQUEE_HOLD + moving ? (t - MARQUEE_HOLD) * MARQUEE_PX_PER_FRAME : travel);
+                gfx_set_row_scroll(s, window, offset);
+                marquee_frame++;
+            }
+        }
         if (multi) {
             int picked = row == uil_cursor() ? uil_disc_index() : 0;
             char num[12];

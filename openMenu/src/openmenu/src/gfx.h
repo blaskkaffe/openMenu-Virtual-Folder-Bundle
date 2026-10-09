@@ -48,3 +48,7 @@ void gfx_rect(float x, float y, float w, float h, float z, uint32_t argb);
 void gfx_art_bind_row(int slot, const char* product);
 /* Box art of a game as a textured rectangle (a blank frame while it loads or if there is none). */
 void gfx_art_box(const char* product, float x, float y, float w, float h, float z);
+
+/* Game list row `slot`: show its title through a window of `window_px` pixels, moved left by
+ * `offset_px` (a scrolling title). window_px 0 shows the title as it is. */
+void gfx_set_row_scroll(int slot, int window_px, int offset_px);

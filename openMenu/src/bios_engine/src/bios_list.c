@@ -18,13 +18,18 @@
 #define BAR_MIDDLE_F 0.638f
 #define ICON_X (-22.6f)
 #define ICON_SCALE 0.125f /* the disc is as big as the Settings icons (about 40 px) */
-#define TEXT_X (-5.1f)      /* centre of the 300 px text surface */
-#define PILL_X (-6.1f)       /* the lit part of the row: from the disc to the right end */
-#define PILL_SX 0.777f /* the lit part of the row: model 33 stretched from the disc to the right end */
+#define TEXT_X (-4.8f)      /* centre of the 300 px text surface */
+/* The lit part of the row (model 33, 36.9 units wide with 0.4 chamfered ends) runs from just left of
+ * the text to the right end of the bar; its middle is shortened so the ends keep their shape. */
+#define PILL_X (-5.45f)
+#define PILL_CAP_L (-17.1f)
+#define PILL_CAP_R 19.0f
+#define PILL_F 0.9086f
+#define PILL_SCALE 0.859375f
 /* disc selector of multi-disc games: a small pill at the right end of the row, with the shiny
  * side of a CD and the disc number */
-#define SPILL_X 5.1f
-#define SPILL_SX 0.172f
+#define SPILL_X 16.98f
+#define SPILL_F 0.183f
 #define MINI_X 3.3f
 #define MINI_SCALE 0.0625f
 #define NUM_TEXT_X 7.9f /* the text script offsets its text by -1.37 */
@@ -307,11 +312,11 @@ blist_sync(blist* l) {
             set_scale(anchor, 0.8671875f, ROW_SY * 0.8671875f, 0.8671875f);
         }
         if (pill) {
-            set_scale(pill, PILL_SX, ROW_SY * 0.859375f, 0.859375f);
+            set_scale(pill, PILL_SCALE, ROW_SY * PILL_SCALE, PILL_SCALE);
             pill->var[1] = 1; /* the selected row is lit */
         }
         if (spill) {
-            set_scale(spill, SPILL_SX, ROW_SY * 0.859375f * 0.85f, 0.859375f);
+            set_scale(spill, PILL_SCALE, ROW_SY * PILL_SCALE * 0.85f, PILL_SCALE);
             spill->var[1] = sel;
         }
         if (mini) {
@@ -395,10 +400,23 @@ blist_draw(blist* l, const bscene_sink* sink) {
             const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
             m->scene.fullbright = o->id >= ID_MINI(0) && o->id < ID_MINI(BLIST_MAX_SLOTS);
             m->scene.no_decals = o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(BLIST_BUTTONS);
-            m->scene.stretch_on = o->id >= ID_ANCHOR(0) && o->id < ID_ANCHOR(BLIST_MAX_SLOTS);
-            m->scene.stretch_a = BAR_CAP_L;
-            m->scene.stretch_b = BAR_CAP_R;
-            m->scene.stretch_f = BAR_MIDDLE_F;
+            /* shorten bars and pills along x without squeezing their ends */
+            m->scene.stretch_on = 1;
+            if (o->id >= ID_ANCHOR(0) && o->id < ID_ANCHOR(BLIST_MAX_SLOTS)) {
+                m->scene.stretch_a = BAR_CAP_L;
+                m->scene.stretch_b = BAR_CAP_R;
+                m->scene.stretch_f = BAR_MIDDLE_F;
+            } else if (o->id >= ID_PILL(0) && o->id < ID_PILL(BLIST_MAX_SLOTS)) {
+                m->scene.stretch_a = PILL_CAP_L;
+                m->scene.stretch_b = PILL_CAP_R;
+                m->scene.stretch_f = PILL_F;
+            } else if (o->id >= ID_SPILL(0) && o->id < ID_SPILL(BLIST_MAX_SLOTS)) {
+                m->scene.stretch_a = PILL_CAP_L;
+                m->scene.stretch_b = PILL_CAP_R;
+                m->scene.stretch_f = SPILL_F;
+            } else {
+                m->scene.stretch_on = 0;
+            }
             bscene_draw_object(&m->scene, o, sink);
         }
     }
