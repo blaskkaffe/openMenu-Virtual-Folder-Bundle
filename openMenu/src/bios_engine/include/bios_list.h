@@ -70,6 +70,8 @@ int blist_slot_at_px(const blist* l, float x, float y);
 
 /* Right edge of the rows (pixels). */
 float blist_row_right_px(void);
+/* Top of the first and bottom of the last row bar in pixels (what a side panel lines up with). */
+void blist_rows_extent_px(const blist* l, float* top, float* bottom);
 
 #ifdef __cplusplus
 }

@@ -8,7 +8,7 @@
 
 #include "input.h"
 
-#define UIL_VISIBLE 6 /* rows of the game list screen (bios_list) */
+#define UIL_VISIBLE 5 /* rows of the game list screen (bios_list) */
 
 typedef enum {
     UIL_NONE,    /* nothing changed */

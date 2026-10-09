@@ -367,7 +367,9 @@ main(int argc, char** argv) {
                 bcase_step(&bc);
             }
             { /* flat rounded panel in the colour of the row bars (as the app's gfx_rrect) */
-                float x = 432.0f, y = 58.0f, w = 194.0f, h = 326.0f, r = 9.0f;
+                float pt, pb;
+                blist_rows_extent_px(&list, &pt, &pb);
+                float x = 432.0f, y = pt, w = 194.0f, h = pb - pt, r = 9.0f;
                 float cxs[4] = {x + w - r, x + r, x + r, x + w - r}, cys[4] = {y + r, y + r, y + h - r, y + h - r};
                 float dxs[4] = {1, -1, -1, 1}, dys[4] = {-1, -1, 1, 1};
                 float rect[3][4] = {{x + r, y, w - 2 * r, r}, {x, y + r, w, h - 2 * r}, {x + r, y + h - r, w - 2 * r, r}};
@@ -392,7 +394,7 @@ main(int argc, char** argv) {
                     }
                 }
             }
-            bcase_draw(&bc, &menu.scene, 529.0f, 141.0f, 150.0f, NULL, NULL, &sink);
+            bcase_draw(&bc, &menu.scene, 529.0f, 8.0f + 75.0f + ({float t_, b_; blist_rows_extent_px(&list, &t_, &b_); t_;}), 150.0f, NULL, NULL, &sink);
         }
     } else if (script == -2) {
         bscene_draw_background(&menu.bg, &sink);

@@ -40,6 +40,7 @@
 #define BACK_SCALE 1.0f
 #define BUTTON_Y (-14.84375f)
 #define ID_BUTTON(i) ((uint16_t)(0x1301 + (i)))
+#define Y_CENTER_5 3.53f /* five rows: centred at y = 200 px */
 #define Y_CENTER 2.47f /* the rows sit above the buttons: centred at y = 212 px */
 
 /* CD player disc (script 0x1c): position and spin per frame, in the original's angle units */
@@ -190,6 +191,12 @@ blist_slot_at_px(const blist* l, float x, float y) {
     return -1;
 }
 
+void
+blist_rows_extent_px(const blist* l, float* top, float* bottom) {
+    *top = 240.0f - row_y(l, 0) * PX_PER_UNIT - 26.5f; /* the bars are about 53 px high */
+    *bottom = 240.0f - row_y(l, l->slots - 1) * PX_PER_UNIT + 26.5f;
+}
+
 float
 blist_row_right_px(void) {
     return 320.0f + (ANCHOR_X + (BAR_CAP_L + (BAR_CAP_R - BAR_CAP_L) * BAR_MIDDLE_F + 1.0f) * 0.8671875f) * PX_PER_UNIT;
@@ -200,7 +207,7 @@ blist_row_right_px(void) {
 static float
 pitch_px(int slots) {
     switch (slots) {
-        case 5: return 70.0f;
+        case 5: return 62.0f;
         case 6: return 58.0f;
         default: return 56.0f;
     }
@@ -209,7 +216,8 @@ pitch_px(int slots) {
 static float
 row_y(const blist* l, int s) {
     float pitch = pitch_px(l->slots) / PX_PER_UNIT;
-    return Y_CENTER + ((float)(l->slots - 1) * 0.5f - (float)s) * pitch;
+    /* five rows are lifted a little: more room above the BACK marker and below the last row */
+    return (l->slots == 5 ? Y_CENTER_5 : Y_CENTER) + ((float)(l->slots - 1) * 0.5f - (float)s) * pitch;
 }
 
 static void

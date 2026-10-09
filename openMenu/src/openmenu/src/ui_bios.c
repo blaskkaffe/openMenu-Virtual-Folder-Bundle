@@ -129,7 +129,6 @@ show_notice(const char* text) {
 #define INFO_X 438.0f
 #define INFO_W 182.0f
 #define ART_SIZE 140.0f
-#define ART_Y 66.0f
 
 /* Fit the lines of the right panel: `text` cut at spaces into lines of at most `width` characters. */
 static int
@@ -301,19 +300,22 @@ draw_games(void) {
     }
     const gd_item* cur = uil_item(uil_cursor());
     draw_button_text(cur);
-    gfx_rrect(INFO_X - 6.0f, ART_Y - 8.0f, INFO_W + 12.0f, 326.0f, 9.0f, 0.4f, 0xB25A5AA0u); /* the colour, alpha and corner radius of the row bars */
-    bcase_draw(&gcase, &menu.scene, INFO_X + INFO_W / 2.0f, ART_Y + ART_SIZE / 2.0f, ART_SIZE + 10.0f, case_bind, NULL, gfx_sink());
+    float panel_top, panel_bottom;
+    blist_rows_extent_px(&glist, &panel_top, &panel_bottom);
+    const float art_y = panel_top + 8.0f;
+    gfx_rrect(INFO_X - 6.0f, panel_top, INFO_W + 12.0f, panel_bottom - panel_top, 9.0f, 0.4f, 0xB25A5AA0u); /* the colour, alpha and corner radius of the row bars */
+    bcase_draw(&gcase, &menu.scene, INFO_X + INFO_W / 2.0f, art_y + ART_SIZE / 2.0f, ART_SIZE + 10.0f, case_bind, NULL, gfx_sink());
     if (cur && !uil_is_folder(cur)) {
-        float y = ART_Y + ART_SIZE + 6.0f;
+        float y = art_y + ART_SIZE + 6.0f;
         int n = wrap_text(cur->name, 15, lines, 3);
         for (int i = 0; i < n; i++) {
             gfx_text(lines[i], INFO_X, y, 0.5f, 0xFFFFFFFFu, 1);
             y += GFX_LINE_H - 4.0f;
         }
     } else if (cur) {
-        gfx_text("Folder", INFO_X, ART_Y, 0.5f, 0xFFFFFFFFu, 1);
+        gfx_text("Folder", INFO_X, art_y, 0.5f, 0xFFFFFFFFu, 1);
     }
-    gfx_text("A:go X:recent", INFO_X, 350.0f, 0.5f, 0xFFA0A0A0u, 0); /* B is the BACK marker */
+    gfx_text("A:go X:recent", INFO_X, panel_bottom - 34.0f, 0.5f, 0xFFA0A0A0u, 0); /* B is the BACK marker */
 }
 
 #define POPUP_X 120.0f
