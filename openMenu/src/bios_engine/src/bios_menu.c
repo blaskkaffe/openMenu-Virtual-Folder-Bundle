@@ -94,9 +94,16 @@ bmenu_draw_objects(bmenu* m, const bscene_sink* sink) {
     static const unsigned passes[2] = {BSCENE_PART_MODEL, BSCENE_PART_TEXT};
     for (int pass = 0; pass < 2; pass++) {
         m->scene.parts = passes[pass];
+        /* the BIOS has the PVR sort its translucent polygons per pixel (autosort); without it the models go
+         * through the CPU sorter */
+        const int cpu_sort = pass == 0 && !m->hw_autosort;
+        const bscene_sink* to = cpu_sort ? bscene_sort_begin(sink) : sink;
         for (int i = 0; i < m->vm.count; i++) {
             const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
-            bscene_draw_object(&m->scene, o, sink);
+            bscene_draw_object(&m->scene, o, to);
+        }
+        if (cpu_sort) {
+            bscene_sort_end();
         }
     }
     m->scene.parts = BSCENE_PART_ALL;

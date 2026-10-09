@@ -241,4 +241,12 @@ reaches textured strips, as the PVR offset colour (`bscene_vtx.oargb`, `cxt.gen.
 eval flag 0x08 are hidden. Code: `bios_lit()`, `bios_offset()` in `bios_scene.c`. Main screen: every icon is drawn twice (0x200.. and 0x300..,
 alpha -90/256 each), pills alpha -50/256, header rgb -30/256.
 Colours picked by scripts that are not a constant material (panel accent, BACK overrides) are shown unlit.
+
+Sorting: the BIOS lets the PVR sort translucent polygons per pixel (autosort). Where an icon's parts and its two
+copies overlap (d-pad on the body, the copy 0.04 behind), any per-triangle CPU order leaves artefacts, so the main
+screen switches the PVR to autosort for its frames (`gfx_set_autosort`, CMake `GFX_MAIN_AUTOSORT`, default 1) and
+sends the objects unsorted (`bmenu.hw_autosort`). Other screens keep the build default (`GFX_PRESORT`). The PC
+preview composites the main menu per pixel the same way (`BIOS_PREVIEW_PRESORT=1` for submission order). Checked:
+`BIOS_PREVIEW_FLAT=1 bios_preview dc_boot.bin out.ppm 120 -1` matches the reference render of `menu3d_ref.py`
+within one level on every icon and pill pixel.
 BACK marker: selectable on the game list, Settings (BIOS cursor table 0x8C037D70) and the File card grid (0x8C03884C).

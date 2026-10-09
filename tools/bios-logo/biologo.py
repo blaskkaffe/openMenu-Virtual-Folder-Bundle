@@ -4,7 +4,8 @@
 The launcher looks for LOGO.PVR next to OPENMENU.INI (the root of the openMenu disc image).
 If it is there, the picture replaces the logo; if not, the logo from the console's BIOS is used.
 
-  biologo.py extract dc_boot.bin logo.png   save the BIOS logo as PNG, as a starting point
+  biologo.py extract dc_boot.bin logo.png   save the BIOS logo (with the swirl) as PNG, as a starting point
+  biologo.py extract-plain dc_boot.bin logo.png   the plain logo European consoles show
   biologo.py convert logo.png LOGO.PVR      make LOGO.PVR from a PNG
 
 The logo area is 4:1; the picture is resized to 128x32 (transparent areas stay transparent).
@@ -37,9 +38,11 @@ def convert(src, dst):
     print("wrote", dst, "(%d bytes)" % (len(gbix) + len(pvrt) + len(payload)))
 
 
-def extract(rom, dst):
+def extract(rom, dst, plain=False):
     d = open(rom, "rb").read()
-    off = 0x7C970  # GBIX 114, the logo of the header bar (menu image of BIOS 1.01c/d, 1.022, 1.032)
+    # GBIX 114, the logo of the header bar (menu image of BIOS 1.01c/d, 1.022, 1.032): 0x7C970 is the plain
+    # logo; the BIOS moves the pointer 0xD1E0 on, to the logo with the swirl, unless the console is European.
+    off = 0x7C970 if plain or d[0x89B50:0x89B54] != b"GBIX" else 0x89B50
     if d[off:off + 4] != b"GBIX":
         sys.exit("this does not look like a supported boot ROM")
     p = d.find(b"PVRT", off, off + 0x20)
@@ -62,8 +65,11 @@ def extract(rom, dst):
     print("wrote", dst, "%dx%d" % (w, h))
 
 
-if __name__ == "__main__" and len(sys.argv) == 4 and sys.argv[1] in ("extract", "convert"):
-    (extract if sys.argv[1] == "extract" else convert)(sys.argv[2], sys.argv[3])
+if __name__ == "__main__" and len(sys.argv) == 4 and sys.argv[1] in ("extract", "extract-plain", "convert"):
+    if sys.argv[1] == "convert":
+        convert(sys.argv[2], sys.argv[3])
+    else:
+        extract(sys.argv[2], sys.argv[3], plain=sys.argv[1] == "extract-plain")
 else:
     print(__doc__)
     sys.exit(2)

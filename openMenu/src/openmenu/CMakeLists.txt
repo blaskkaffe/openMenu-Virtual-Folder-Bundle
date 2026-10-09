@@ -33,6 +33,8 @@ add_executable(openmenu ${OPENMENU_SOURCES})
 
 set(GFX_PRESORT 1 CACHE STRING "Draw translucent polygons in submission order instead of PVR autosort")
 target_compile_definitions(openmenu PRIVATE GFX_PRESORT=${GFX_PRESORT})
+set(GFX_MAIN_AUTOSORT 1 CACHE STRING "Main menu: let the PVR sort translucent polygons per pixel, as the BIOS does (exact look of the icons)")
+target_compile_definitions(openmenu PRIVATE GFX_MAIN_AUTOSORT=${GFX_MAIN_AUTOSORT})
 
 # Pass version string as compile definition
 target_compile_definitions(openmenu PRIVATE OPENMENU_BUILD_VERSION="${OPENMENU_VERSION}")

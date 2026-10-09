@@ -4,22 +4,26 @@
 #include "bios_scene.h"
 
 #include <math.h>
-
+#include <stdlib.h>
 #include <string.h>
 
 #define NEAR_Z (-1.0f) /* anything closer than this to the camera plane is dropped */
 #define MAX_MESH_VERTS 4096 /* nj_model never produces more */
 
-/* Lighting: see bios_lit(). */
-#define LIGHT_AMBIENT_256 128 /* global ambient light 0.5 */
+/* Lighting, as the BIOS sets it up (gui_main 0x8C0105D4): one directional light along the view axis,
+ * njSetLightIntensity(light, spc 1.4, dif 0.3, amb 0), njSetAmbient(0.5, 0.5, 0.5). See bios_lit(). */
+#define LIGHT_AMBIENT 0.5f
+#define LIGHT_DIFFUSE 0.3f
+#define LIGHT_SPECULAR 1.4f
 #define STRIP_IGNORE_LIGHT 0x01
+#define STRIP_IGNORE_SPECULAR 0x02
 #define STRIP_IGNORE_AMBIENT 0x04
 #define STRIP_DOUBLE_SIDED 0x10
 #define STRIP_ENV 0x40 /* environment mapping: u, v come from the vertex normal, not from the file */
 
 /* Per-object scratch for projected vertices (the engine is single threaded). */
 static float scratch_x[MAX_MESH_VERTS], scratch_y[MAX_MESH_VERTS], scratch_w[MAX_MESH_VERTS];
-static int16_t scratch_n[MAX_MESH_VERTS]; /* N.L per vertex, 0..256 (256 when the vertex has no normal) */
+static float scratch_d[MAX_MESH_VERTS]; /* d = max(0, -(L.N)) per vertex (1 when the vertex has no normal) */
 static float scratch_eu[MAX_MESH_VERTS], scratch_ev[MAX_MESH_VERTS]; /* environment map u, v per vertex */
 static uint8_t scratch_ok[MAX_MESH_VERTS];
 
@@ -28,7 +32,6 @@ bscene_init(bscene* s, const bios_rom* rom) {
     memset(s, 0, sizeof(*s));
     s->rom = rom;
     s->parts = BSCENE_PART_ALL;
-    s->amb_k = 256;
 }
 
 void
@@ -100,59 +103,59 @@ bscene_project(nj_vec3 p, float* sx, float* sy, float* invw) {
     return 1;
 }
 
-/* Integer colour maths on purpose: on the SH-4 a float to unsigned conversion is a slow library
- * call, and this runs for every corner of every triangle. */
-static int
-clamp255(int v) {
-    return v < 0 ? 0 : (v > 255 ? 255 : v);
+/* Colours are worked out in floats as the BIOS does and packed with a float to *signed* int conversion
+ * (ftrc, cheap on the SH-4; float to unsigned is a slow library call there). */
+typedef struct {
+    float a, r, g, b;
+} fcolour;
+
+static float
+clamp01(float v) {
+    return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
 }
 
-/* Constant material offsets (a, r, g, b in 0..1 units) as 0..255 integers. */
-static void
-offsets_to_int(const float* offs, int out[4]) {
-    for (int i = 0; i < 4; i++) {
-        out[i] = (int)(offs[i] * 255.0f);
-    }
-}
-
-/* Base colour plus the object's constant material offsets. */
+/* The BIOS packs a lit colour with clamp to 0..1, times 255, truncate (0x8C0DF07C). */
 static uint32_t
-shade(uint32_t base, const int* off) {
-    if (!off) {
-        return base;
-    }
-    int a = clamp255((int)(base >> 24) + off[0]);
-    int r = clamp255((int)((base >> 16) & 255) + off[1]);
-    int g = clamp255((int)((base >> 8) & 255) + off[2]);
-    int b = clamp255((int)(base & 255) + off[3]);
-    return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+pack(fcolour c) {
+    return ((uint32_t)(int)(clamp01(c.a) * 255.0f) << 24) | ((uint32_t)(int)(clamp01(c.r) * 255.0f) << 16)
+         | ((uint32_t)(int)(clamp01(c.g) * 255.0f) << 8) | (uint32_t)(int)(clamp01(c.b) * 255.0f);
 }
 
-/* The BIOS lit-vertex colour (strip handler 0x8c0cad88, light code 0x8c098d00): per channel
- * ambient_light * material ambient + diffuse_light * max(0, N.L) * material diffuse, with one
- * directional light along the view axis; ambient_light 0.5, diffuse_light 0.3. The alpha is the
- * material's diffuse alpha. nl is N.L in 0..256. */
-static uint32_t
-bios_lit(uint32_t diffuse, uint32_t ambient, int nl) {
-    uint32_t out = diffuse & 0xFF000000u;
-    for (int sh = 0; sh <= 16; sh += 8) {
-        int a = (int)((ambient >> sh) & 255), d = (int)((diffuse >> sh) & 255);
-        int c = (a * LIGHT_AMBIENT_256 + ((d * nl) >> 8) * 77) >> 8; /* ambient and 0.3 in 1/256 */
-        out |= (uint32_t)clamp255(c) << sh;
+/* A material colour as the BIOS keeps it: ARGB bytes / 255 (0x8C0A1D08) plus the object's constant material.
+ * The BIOS runs in offset-material mode, njControl3D(0x20) (merge at 0x8C094C52): diffuse += constant, and the
+ * ambient colour is replaced by that diffuse, so the ambient chunks in the files never take part. */
+static fcolour
+material(uint32_t argb, const float* offs) {
+    fcolour c = {(float)(argb >> 24) * (1.0f / 255.0f), (float)((argb >> 16) & 255) * (1.0f / 255.0f),
+                 (float)((argb >> 8) & 255) * (1.0f / 255.0f), (float)(argb & 255) * (1.0f / 255.0f)};
+    if (offs) {
+        c.a += offs[0];
+        c.r += offs[1];
+        c.g += offs[2];
+        c.b += offs[3];
     }
-    return out;
+    return c;
+}
+
+/* The BIOS lit-vertex colour (0x8C098D60, directional light 0x8C0989D8):
+ *     rgb = 0.5 * M.rgb (unless the strip ignores ambient) + 0.3 * d * M.rgb,   alpha = M.a
+ * with d = max(0, -(L.N)), L = (0, 0, -1) in view space. */
+static uint32_t
+bios_lit(fcolour m, int ambient, float d) {
+    float k = (ambient ? LIGHT_AMBIENT : 0.0f) + LIGHT_DIFFUSE * d;
+    fcolour c = {m.a, m.r * k, m.g * k, m.b * k};
+    return pack(c);
 }
 
 /* The specular term of a textured strip, the PVR offset colour (0x8C098968): 1.4 * spec.rgb * (d * d)^P[n], n = the
- * specular colour's alpha byte. Untextured strips never show it. nl is d in 1/256. Returns 0xFF000000 | rgb. */
+ * specular colour's alpha byte. Untextured strips never show it. Returns 0xFF000000 | rgb, 0 for none. */
 static uint32_t
-bios_offset(uint32_t specular, int nl) {
+bios_offset(uint32_t specular, float d) {
     static const float P[17] = {0, 0.5f, 1, 1.5f, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128};
     int n = (int)(specular >> 24);
-    float e = n < 17 ? P[n] : 128.0f, x = (float)nl / 256.0f;
-    x *= x;
+    float e = n < 17 ? P[n] : 128.0f, x = d * d;
     float k = 1.0f;
-    if (nl <= 0) {
+    if (d <= 0.0f) {
         return 0;
     }
     if (e > 0.0f) {
@@ -164,20 +167,9 @@ bios_offset(uint32_t specular, int nl) {
             k *= sqrtf(x);
         }
     }
-    int f = (int)(k * 1.4f * 256.0f);
-    uint32_t out = 0xFF000000u;
-    for (int sh = 0; sh <= 16; sh += 8) {
-        out |= (uint32_t)clamp255(((int)((specular >> sh) & 255) * f) >> 8) << sh;
-    }
-    return out;
-}
-
-/* Alpha of two layers of the same translucent surface on top of each other. */
-static uint32_t
-double_alpha(uint32_t argb) {
-    uint32_t a = argb >> 24;
-    a = a + (((255 - a) * a) / 255);
-    return (argb & 0x00FFFFFFu) | (a << 24);
+    fcolour c = {1.0f, (float)((specular >> 16) & 255) * (LIGHT_SPECULAR / 255.0f) * k,
+                 (float)((specular >> 8) & 255) * (LIGHT_SPECULAR / 255.0f) * k, (float)(specular & 255) * (LIGHT_SPECULAR / 255.0f) * k};
+    return pack(c);
 }
 
 void
@@ -286,12 +278,7 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
             const nj_motion* mo = (o->flags & BVM_F_MOTION) ? get_motion(s, o->model, o->motion, obj->count) : NULL;
             nj_mat4* world = s->pose;
             nj_object_pose(obj, mo, o->motion_tw.cur, world);
-            int off_i[4];
-            const int* offs = NULL;
-            if (o->flags & BVM_F_COLOUR) {
-                offsets_to_int(o->color, off_i);
-                offs = off_i;
-            }
+            const float* offs = (o->flags & BVM_F_COLOUR) ? o->color : NULL; /* constant material (a, r, g, b) */
 
             for (int n = 0; n < obj->count; n++) {
                 const nj_mesh* mesh = obj->nodes[n].mesh;
@@ -324,12 +311,12 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         {
                             /* 0x8C0989D8 with the light (0, 0, -1) in view space: d = max(0, nz) of the transformed normal,
                              * not renormalised (the object's scale counts) */
-                            float nl = 1.0f;
+                            float d = 1.0f;
                             if (vx->has_nrm) {
-                                nl = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
-                                nl = nl > 0.0f ? (nl > 8.0f ? 8.0f : nl) : 0.0f;
+                                d = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
+                                d = d > 0.0f ? d : 0.0f;
                             }
-                            scratch_n[i] = (int16_t)(s->fullbright ? 256 : (int)(nl * 256.0f));
+                            scratch_d[i] = s->fullbright ? 1.0f : d;
                         }
                         if (vx->has_nrm) {
                             /* the normal in view space picks the point of the picture (a sphere map) */
@@ -360,7 +347,8 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         tex.a = o->texlist;
                         tex.b = poly->tex;
                     }
-                    uint32_t poly_argb = poly->has_diffuse ? shade(poly->diffuse, offs) : 0;
+                    const fcolour mat = material(poly->has_diffuse ? poly->diffuse : 0u, offs);
+                    uint32_t poly_argb = poly->has_diffuse ? pack(mat) : 0;
                     int forced = 0; /* a colour the scripts pick is shown as it is */
                     if (s->panel_on && p == 0) {
                         poly_argb = s->panel_accent; /* the rim */
@@ -372,19 +360,13 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                             forced = 1;
                         }
                     }
-                    if (poly->has_diffuse && s->double_alpha) {
-                        poly_argb = double_alpha(poly_argb);
-                    }
                     if (poly->tex == 0 && o->texlist >= BSCENE_ROUND_FACE_TEXLIST && poly->has_uv && poly->ntris == 2) {
                         draw_round_face(mesh, poly, &m, poly_argb, tex, sink);
                         continue;
                     }
                     int lit = !(poly->strip_flags & STRIP_IGNORE_LIGHT);
-                    /* the BIOS runs with constant-material mode 0x20 on (init: FUN_8c099808(0x20)): after every material chunk
-                     * the diffuse colour plus the object's constant colour is copied over the ambient colour (0x8C094D22), so
-                     * the ambient chunks in the files never take part */
-                    const uint32_t amb = (poly->has_diffuse && !(poly->strip_flags & STRIP_IGNORE_AMBIENT)) ? poly_argb : 0;
-                    const int spec_on = poly->tex >= 0 && poly->has_specular && !(poly->strip_flags & 0x02);
+                    const int amb_on = !(poly->strip_flags & STRIP_IGNORE_AMBIENT);
+                    const int spec_on = poly->tex >= 0 && poly->has_specular && !(poly->strip_flags & STRIP_IGNORE_SPECULAR);
                     int cull = !(poly->strip_flags & STRIP_DOUBLE_SIDED);
                     for (int t = 0; t < poly->ntris; t++) {
                         bscene_vtx v[3];
@@ -407,16 +389,13 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                                 base = poly_argb;
                             } else {
                                 const nj_vertex* vx = &mesh->verts[c->idx];
-                                base = shade(vx->has_col ? vx->col : 0xFFFFFFFFu, offs);
-                                if (s->double_alpha) {
-                                    base = double_alpha(base);
-                                }
+                                base = pack(material(vx->has_col ? vx->col : 0xFFFFFFFFu, offs));
                             }
                             v[k].oargb = 0;
                             if (lit && poly->has_diffuse && !forced && !s->fullbright && mesh->verts[c->idx].has_nrm) {
-                                v[k].argb = bios_lit(base, amb, scratch_n[c->idx]);
+                                v[k].argb = bios_lit(mat, amb_on, scratch_d[c->idx]);
                                 if (spec_on) {
-                                    v[k].oargb = bios_offset(poly->specular, scratch_n[c->idx]);
+                                    v[k].oargb = bios_offset(poly->specular, scratch_d[c->idx]);
                                 }
                             } else {
                                 v[k].argb = base;
@@ -490,4 +469,75 @@ void
 bscene_draw_background(const dcbg_state* bg, const bscene_sink* sink) {
     draw_mesh(&bg->swirl, &bg->swirl_obj, sink); /* object 0x120, drawn first (higher priority value) */
     draw_mesh(&bg->water, &bg->water_obj, sink); /* object 0x121 */
+}
+
+/* ---- translucent sorting (see bscene_sort_begin) ----------------------------------------------- */
+
+typedef struct {
+    bscene_vtx v[3];
+    bscene_texref tex;
+} sort_tri;
+
+static sort_tri sort_buf[BSCENE_SORT_MAX];
+typedef struct {
+    float key;
+    int idx;
+} sort_key;
+
+static sort_key sort_keys[BSCENE_SORT_MAX];
+static int sort_n;
+static const bscene_sink* sort_out;
+static bscene_sink sort_sink;
+
+static void
+sort_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
+    (void)user;
+    if (sort_n >= BSCENE_SORT_MAX) {
+        sort_out->triangle(sort_out->user, v, tex);
+        return;
+    }
+    sort_tri* t = &sort_buf[sort_n];
+    memcpy(t->v, v, sizeof(t->v));
+    t->tex = tex;
+    sort_keys[sort_n].key = v[0].invw + v[1].invw + v[2].invw; /* larger 1/w = nearer */
+    sort_keys[sort_n].idx = sort_n;
+    sort_n++;
+}
+
+static void
+sort_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
+    (void)user;
+    if (sort_out->text) {
+        sort_out->text(sort_out->user, obj, x, y, invw);
+    }
+}
+
+static int
+sort_cmp(const void* a, const void* b) {
+    const sort_key* ka = (const sort_key*)a;
+    const sort_key* kb = (const sort_key*)b;
+    if (ka->key != kb->key) {
+        return ka->key < kb->key ? -1 : 1; /* far (small 1/w) first */
+    }
+    return ka->idx - kb->idx; /* same depth: keep the order they came in */
+}
+
+const bscene_sink*
+bscene_sort_begin(const bscene_sink* out) {
+    sort_out = out;
+    sort_n = 0;
+    sort_sink.user = NULL;
+    sort_sink.triangle = sort_triangle;
+    sort_sink.text = sort_text;
+    return &sort_sink;
+}
+
+void
+bscene_sort_end(void) {
+    qsort(sort_keys, (size_t)sort_n, sizeof(sort_keys[0]), sort_cmp);
+    for (int i = 0; i < sort_n; i++) {
+        const sort_tri* t = &sort_buf[sort_keys[i].idx];
+        sort_out->triangle(sort_out->user, t->v, t->tex);
+    }
+    sort_n = 0;
 }

@@ -41,6 +41,10 @@ typedef struct bmenu {
     dcbg_state bg;
     int selected;
     int frames;
+    /* 1 when the translucent polygons are sorted per pixel by the PVR (autosort, as the BIOS draws its menu):
+     * the objects are then sent in their own order. 0 (presort): they go through the CPU sorter instead,
+     * far to near by triangle, which is close but not exact where the parts of a model overlap. */
+    int hw_autosort;
 } bmenu;
 
 void bmenu_init(bmenu* m, const bios_rom* rom, const bvm_host* host);
@@ -66,7 +70,7 @@ void bmenu_update(bmenu* m);                          /* one 60 Hz frame */
 void bmenu_draw(bmenu* m, const bscene_sink* sink);   /* background layers, then all objects */
 
 /* The objects only, every one of them as the BIOS draws it: each icon twice (objects 0x200+i and 0x300+i, two layers of
- * about 60% make the 84% seen on screen). */
+ * about 60% make the 84% seen on screen). See hw_autosort for the order they are sent in. */
 void bmenu_draw_objects(bmenu* m, const bscene_sink* sink);
 
 #ifdef __cplusplus

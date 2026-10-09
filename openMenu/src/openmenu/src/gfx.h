@@ -18,6 +18,12 @@ int gfx_init(const bios_rom* rom);
 void gfx_begin_frame(uint32_t top_argb, uint32_t bottom_argb);
 void gfx_end_frame(void);
 
+/* How the PVR orders translucent polygons from the next gfx_begin_frame() on: 1 = autosort (sorted per pixel by
+ * depth, as the BIOS draws its menus; needed where the parts of a 3D model overlap), 0 = presort (blended in the
+ * order they are sent, cheaper). The default comes from GFX_PRESORT. */
+void gfx_set_autosort(int on);
+int gfx_autosort(void);
+
 const bscene_sink* gfx_sink(void);
 
 /* Replace the "Dreamcast" logo of the header bar by a .PVR file (GBIX optional, 16-bit

@@ -84,8 +84,6 @@ typedef struct bscene {
     int panel_on;
     float panel_fx, panel_fy;
     uint32_t panel_accent;
-    float light_x, light_y, light_z; /* unit vector from the surface toward the light (x right, y up, z toward the viewer); all 0 = straight along the view axis */
-    int amb_k; /* how much of the material's ambient colour is the lowest the light can make a surface, 256 = all */
     /* material colours replaced while an object of `model` is drawn (the BIOS script effects that recolour a model:
      * the BACK marker's arrow and frame). node and poly index into the model. */
     struct {
@@ -93,9 +91,7 @@ typedef struct bscene {
         uint32_t argb;
     } ovr[4];
     int ovr_n;
-    uint64_t ambient_models; /* bit n: model n never gets darker than its materials' ambient colours (see amb_k) */
     int fullbright; /* no shading by the light (the gold reverse of a disc looks shinier) */
-    int double_alpha;  /* draw objects as if two identical layers were stacked (see bmenu_draw) */
     unsigned parts;    /* BSCENE_PART_* drawn by bscene_draw_object() */
 } bscene;
 
@@ -122,6 +118,16 @@ void bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t a
 void bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], const bscene_sink* sink);
 
 void bscene_draw_background(const dcbg_state* bg, const bscene_sink* sink);
+
+/* Translucent sorting. The BIOS lets the PVR sort its translucent polygons (auto-sort), so where the parts of a
+ * model, or the two copies of a main-menu icon, overlap, the farther one is always blended first. The console build
+ * runs the PVR in presort mode (cheaper: polygons are blended in the order they are sent), so the main menu sends its
+ * models through this sorter instead: triangles are collected and passed on far to near (by 1/w, ties keep their
+ * order). bscene_sort_begin() returns the sink to draw into; bscene_sort_end() sends everything to `out`. If more than
+ * BSCENE_SORT_MAX triangles arrive, the ones that do not fit go straight through unsorted. Not reentrant. */
+#define BSCENE_SORT_MAX 3072
+const bscene_sink* bscene_sort_begin(const bscene_sink* out);
+void bscene_sort_end(void);
 
 /* Screen position of a world point under the BIOS camera. Returns 0 if it is behind the camera. */
 int bscene_project(nj_vec3 p, float* sx, float* sy, float* invw);

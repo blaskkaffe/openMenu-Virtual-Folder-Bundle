@@ -48,6 +48,13 @@ typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCRE
 
 enum { ICON_GAME, ICON_FILES, ICON_MUSIC, ICON_SETTINGS };
 
+#ifndef GFX_MAIN_AUTOSORT
+#define GFX_MAIN_AUTOSORT 1
+#endif
+#ifndef GFX_PRESORT
+#define GFX_PRESORT 1
+#endif
+
 static const char* const icon_names[BMENU_ICONS] = {"Play", "File", "Music", "Settings"};
 
 #define NOTICE_FRAMES 150
@@ -521,6 +528,13 @@ draw_frame(void) {
     if (fade_step < FADE_STEPS) {
         top = blend_color(START_COLOR, top, fade_step < 0 ? 0 : fade_step);
         bottom = blend_color(START_COLOR, bottom, fade_step < 0 ? 0 : fade_step);
+    }
+    /* The BIOS draws its main menu with the PVR sorting the translucent polygons per pixel: where an icon's parts and
+     * its two copies overlap, the farther layer is always blended first. Other screens keep the build's default. */
+    {
+        int hw = screen == SCREEN_MAIN ? GFX_MAIN_AUTOSORT : !GFX_PRESORT;
+        gfx_set_autosort(hw);
+        menu.hw_autosort = hw;
     }
     gfx_begin_frame(top, bottom);
     uint64_t t1 = timer_us_gettime64();

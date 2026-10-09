@@ -326,6 +326,39 @@ bios_texlist_count(const bios_rom* rom, int idx) {
     return n > 64 ? 0 : (int)n;
 }
 
+static uint32_t
+texlist_texture_addr(const bios_rom* rom, int idx, int k) {
+    uint32_t t = bios_texlist_addr(rom, idx);
+    if (!t || k < 0 || k >= bios_texlist_count(rom, idx)) {
+        return 0;
+    }
+    uint32_t names = bios_rom_u32(rom, t - BIOS_ROM_RAM_BASE);
+    if (!bios_rom_ptr(rom, names + 12u * (uint32_t)k, 12)) {
+        return 0;
+    }
+    uint32_t info = bios_rom_u32(rom, names + 12u * (uint32_t)k - BIOS_ROM_RAM_BASE);
+    if (!bios_rom_ptr(rom, info, 4)) {
+        return 0;
+    }
+    return bios_rom_u32(rom, info - BIOS_ROM_RAM_BASE);
+}
+
+int
+bios_header_logo(const bios_rom* rom, int region, bios_texture* out) {
+    uint32_t plain = texlist_texture_addr(rom, 7, 0);
+    if (!plain || bios_texture_at(rom, plain, out) != 0) {
+        return -1;
+    }
+    if (region != BIOS_REGION_EUROPE) {
+        bios_texture swirl;
+        if (bios_texture_at(rom, plain + 0xD1E0u, &swirl) == 0 && swirl.gbix == out->gbix && swirl.width == out->width
+            && swirl.height == out->height) {
+            *out = swirl;
+        }
+    }
+    return 0;
+}
+
 int
 bios_texlist_texture(const bios_rom* rom, int idx, int k, bios_texture* out) {
     uint32_t t = bios_texlist_addr(rom, idx);

@@ -67,6 +67,7 @@ static gfx_stats stats; /* since the last gfx_stats_take() */
 #ifndef GFX_PRESORT
 #define GFX_PRESORT 1
 #endif
+static int autosort = !GFX_PRESORT; /* see gfx_set_autosort */
 
 static struct {
     uint16_t id;
@@ -500,8 +501,15 @@ get_rom_texture_uncached(bscene_texref ref) {
     g->b = ref.b;
 
     bios_texture t;
-    int ok = (ref.kind == BSCENE_TEX_GBIX) ? bios_texture_find(g_rom, (uint32_t)ref.a, &t) == 0
-                                            : bios_texlist_texture(g_rom, ref.a, ref.b, &t) == 0;
+    int ok;
+    if (ref.kind == BSCENE_TEX_GBIX) {
+        ok = bios_texture_find(g_rom, (uint32_t)ref.a, &t) == 0;
+    } else if (ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
+        /* the logo with the swirl, or the plain one on a European console, as the BIOS picks it */
+        ok = bios_header_logo(g_rom, *(volatile uint8_t*)0x8C000072 & 0xF, &t) == 0;
+    } else {
+        ok = bios_texlist_texture(g_rom, ref.a, ref.b, &t) == 0;
+    }
     if (!ok || t.data_size == 0) {
         return NULL;
     }
@@ -1019,6 +1027,9 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
     }
     art_poll();
     memo_ok = 0;
+    /* The tile matrix of the buffer the TA fills next carries the sort mode; set it every frame so both
+     * buffers follow when it changes. */
+    pvr_set_presort_mode(!autosort);
     /* Where the gradient quad does not draw, show a mid blue instead of black. */
     pvr_set_bg_color(0.45f, 0.60f, 0.80f);
     pvr_scene_begin();
@@ -1039,6 +1050,16 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
 
     pvr_list_begin(PVR_LIST_TR_POLY);
     hdr_valid = 0;
+}
+
+void
+gfx_set_autosort(int on) {
+    autosort = on ? 1 : 0;
+}
+
+int
+gfx_autosort(void) {
+    return autosort;
 }
 
 void
