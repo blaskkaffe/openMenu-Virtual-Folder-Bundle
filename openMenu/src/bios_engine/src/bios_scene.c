@@ -365,7 +365,10 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         continue;
                     }
                     int lit = !(poly->strip_flags & STRIP_IGNORE_LIGHT);
-                    const uint32_t amb = (poly->has_ambient && !(poly->strip_flags & STRIP_IGNORE_AMBIENT)) ? shade(poly->ambient, offs) : 0;
+                    /* the BIOS runs with constant-material mode 0x20 on (init: FUN_8c099808(0x20)): after every material chunk
+                     * the diffuse colour plus the object's constant colour is copied over the ambient colour (0x8C094D22), so
+                     * the ambient chunks in the files never take part */
+                    const uint32_t amb = (poly->has_diffuse && !(poly->strip_flags & STRIP_IGNORE_AMBIENT)) ? poly_argb : 0;
                     /* the specular term (strip flag 0x02 switches it off); 0 = none */
                     const uint32_t spc = (poly->has_specular && !(poly->strip_flags & 0x02) && (poly->specular >> 24)) ? poly->specular : 0;
                     int cull = !(poly->strip_flags & STRIP_DOUBLE_SIDED);
