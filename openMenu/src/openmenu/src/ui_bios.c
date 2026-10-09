@@ -29,11 +29,12 @@
 #include "ui_bios.h"
 #include <backend/gd_list.h>
 
+#include "ui_files.h"
 #include "ui_list.h"
 #include "ui_settings.h"
 #include "video.h"
 
-typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME } screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILES } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
  * longer; the animations were written for that rate. */
@@ -294,6 +295,7 @@ static uint32_t
 screen_accent(void) {
     switch (screen) {
         case SCREEN_GAMES: return BMENU_ACCENT_GAME;
+        case SCREEN_FILES: return BMENU_ACCENT_FILES;
         case SCREEN_SETTINGS:
         case SCREEN_DATETIME: return BMENU_ACCENT_SETTINGS;
         default: return BMENU_ACCENT_MAIN;
@@ -470,6 +472,9 @@ draw_frame(void) {
     } else if (screen == SCREEN_DATETIME) {
         bscene_draw_background(&menu.bg, gfx_sink());
         draw_datetime();
+    } else if (screen == SCREEN_FILES) {
+        bscene_draw_background(&menu.bg, gfx_sink());
+        uif_draw();
     } else {
         bscene_draw_background(&menu.bg, gfx_sink());
         if (screen == SCREEN_GAMES) {
@@ -520,6 +525,10 @@ handle_main(button_t b) {
                 blist_open(&glist, &menu, UIL_VISIBLE, uil_count());
                 blist_set_cursor(&glist, uil_cursor());
                 screen = SCREEN_GAMES;
+            } else if (menu.selected == ICON_FILES) {
+                sound_sfx(BAUDIO_SFX_ENTER);
+                uif_open(&menu);
+                screen = SCREEN_FILES;
             } else if (menu.selected == ICON_SETTINGS) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 bpage_open(&page, &menu, uis_count());
@@ -808,6 +817,7 @@ apply_hover(void) {
             }
             break;
         }
+        case SCREEN_FILES: uif_hover(ux, uy); break;
         case SCREEN_SETTINGS: {
             int row = bpage_row_in_slot(&page, bpage_slot_at_px(&page, ux, uy));
             if (row >= 0 && bpage_set_cursor(&page, row)) sound_sfx(BAUDIO_SFX_CURSOR);
@@ -870,6 +880,11 @@ ui_bios_run(const bios_rom* rom) {
             handle_games(b);
         } else if (screen == SCREEN_DATETIME) {
             handle_datetime(b);
+        } else if (screen == SCREEN_FILES) {
+            if (uif_handle(b)) {
+                bmenu_show_main(&menu, ICON_FILES);
+                screen = SCREEN_MAIN;
+            }
         } else {
             handle_settings(b);
         }
@@ -909,6 +924,8 @@ ui_bios_run(const bios_rom* rom) {
             settings_sync();
         } else if (screen == SCREEN_DATETIME) {
             bdt_sync(&dtedit);
+        } else if (screen == SCREEN_FILES) {
+            uif_sync();
         } else if (screen == SCREEN_GAMES) {
             games_sync();
         }

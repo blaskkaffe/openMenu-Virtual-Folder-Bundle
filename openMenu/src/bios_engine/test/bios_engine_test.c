@@ -14,6 +14,7 @@
 #include "bios_vm.h"
 #include "dcbg.h"
 #include "bios_datetime.h"
+#include "bios_files.h"
 #include "bios_list.h"
 #include "bios_page.h"
 #include "bios_scene.h"
@@ -768,6 +769,28 @@ test_datetime(const bios_rom* rom) {
 }
 
 static void
+test_files(const bios_rom* rom) {
+    static bmenu m;
+    static bfiles f;
+    float x, y;
+    bmenu_init(&m, rom, NULL);
+    bfiles_open(&f, &m, 0);
+    CHECK(f.cursor == 0 && bfiles_move(&f, -1, 0) == 0 && bfiles_move(&f, 0, -1) == 0);
+    CHECK(bfiles_move(&f, 0, 1) == 1 && f.cursor == 1); /* A2 */
+    CHECK(bfiles_move(&f, 0, 1) == 0);
+    CHECK(bfiles_move(&f, 1, 0) == 1 && f.cursor == 3); /* B2 */
+    CHECK(bfiles_move(&f, 2, 0) == 1 && f.cursor == 7); /* D2 */
+    CHECK(bfiles_move(&f, 1, 0) == 0);
+    CHECK(bfiles_set_cursor(&f, 4) == 1 && bfiles_set_cursor(&f, 4) == 0 && bfiles_set_cursor(&f, 8) == 0);
+    bfiles_card_px(4, &x, &y);
+    CHECK(bfiles_slot_at_px(x, y) == 4);
+    CHECK(bfiles_slot_at_px(5.0f, 5.0f) == -1);
+    f.present[4] = 1;
+    bfiles_sync(&f);
+    bmenu_free(&m);
+}
+
+static void
 test_page(const bios_rom* rom) {
     static bmenu m;
     static bpage p;
@@ -817,6 +840,7 @@ main(void) {
     test_page(&rom);
     test_list(&rom);
     test_datetime(&rom);
+    test_files(&rom);
 
     const char* real = getenv("BIOS_ROM_FILE");
     if (real && *real) {

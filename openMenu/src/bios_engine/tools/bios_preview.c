@@ -20,6 +20,7 @@
 #include "bios_page.h"
 #include "bios_list.h"
 #include "bios_datetime.h"
+#include "bios_files.h"
 #include "tex_decode.h"
 
 #define W 640
@@ -218,6 +219,15 @@ main(int argc, char** argv) {
         o->rot_tw[2].cur = (int32_t)((float)selected * 65536.0f / 360.0f);
         o->rot_tw[2].step = 0;
         bmenu_update(&menu);
+    } else if (script == -9) { /* memory card grid of the File screen: `selected` = cursor; cards in A1, B1, B2 */
+        static bfiles bf;
+        bfiles_open(&bf, &menu, selected);
+        bf.present[0] = bf.present[2] = bf.present[3] = 1;
+        for (int i = 0; i < 60; i++) {
+            bmenu_update(&menu);
+            bfiles_sync(&bf);
+        }
+        menu.vm.error = 0;
     } else if (script == -8) { /* window panel with the accent of screen `selected` (0 orange 1 green 2 blue 3 magenta 4 grey) */
     } else if (script == -5) { /* the GD-ROM disc model seen from behind, large */
         bvm_obj* o = bvm_create(&menu.vm, 0x4e, 0x500, 0x2000);
@@ -240,7 +250,7 @@ main(int argc, char** argv) {
     } else {
         bmenu_show_main(&menu, selected);
     }
-    for (int i = 0; i < (script == -5 || script == -7 || script == -8 ? 0 : frames); i++) {
+    for (int i = 0; i < (script == -5 || script == -7 || script == -8 || script == -9 ? 0 : frames); i++) {
         bmenu_update(&menu);
         if (script == -2) {
             bpage_sync(&page, demo_row, NULL);
@@ -274,7 +284,10 @@ main(int argc, char** argv) {
         }
     }
     bscene_sink sink = {NULL, tri, text};
-    if (script == -8) {
+    if (script == -9) {
+        bscene_draw_background(&menu.bg, &sink);
+        bmenu_draw_objects(&menu, &sink);
+    } else if (script == -8) {
         static const uint32_t acc[5] = {0xFFE07000u, 0xFF00E070u, 0xFF0070E0u, 0xFFE00070u, 0xFFE0E0E0u};
         bscene_draw_background(&menu.bg, &sink);
         bscene_draw_panel(&menu.scene, 82.0f, 97.0f, 476.0f, 286.0f, acc[selected % 5], &sink);

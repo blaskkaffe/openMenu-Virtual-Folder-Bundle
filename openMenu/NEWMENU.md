@@ -156,3 +156,14 @@ Window panels: the BIOS draws its windows with model 39 (four corners moved apar
 dark translucent body, rim in the screen's accent colour: Game orange, Settings magenta). The date
 editor, the About box and the popups use it now (`bscene_draw_panel`). In the editor the green ovals
 are drawn under the names of the buttons, which start over the right half of the oval.
+
+## Files screen (sketch2)
+
+Main menu > Files: the BIOS memory card grid (`bios_engine/bios_files`: ports A-D, sockets 1 and 2,
+the card plate with the free blocks, BACK). Cards present are solid, empty sockets faded, the
+selected card flashes. A on a card lists its files in a green window (`ui_files.c`): A opens the
+file menu (Copy, Delete, Cancel), copy asks for the destination card (same checks and messages as
+the BIOS: card not ready, full, one VMU game per card, same name exists), delete asks first, the
+"do not remove the card" box is shown while a copy or delete runs. File access is `vmu_files.c`
+(KOS vmufs). Not yet: the file icons (VMS header bitmaps), copying a group of files, memory reset
+(format) and the card's own icon.

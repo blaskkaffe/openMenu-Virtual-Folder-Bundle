@@ -21,9 +21,11 @@ set(OPENMENU_SOURCES
         src/sound.c
         src/ui_bios.c
         src/ui_fallback.c
+        src/ui_files.c
         src/ui_list.c
         src/ui_settings.c
         src/video.c
+        src/vmu_files.c
         src/backend/gdemu_sdk.c
 )
 
