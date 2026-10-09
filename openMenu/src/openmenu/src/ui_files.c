@@ -518,7 +518,7 @@ uif_sync(void) {
 
 static void
 text_centered(const char* s, float cx, float y, float z, uint32_t color) {
-    gfx_text(s, cx - (float)strlen(s) * GFX_CHAR_W / 2.0f, y, z, color, 1);
+    gfx_text(s, cx - (float)gfx_text_width(s) / 2.0f, y, z, color, 1);
 }
 
 static void

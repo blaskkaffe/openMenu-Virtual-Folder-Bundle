@@ -17,12 +17,14 @@
 #define LIGHT_AMBIENT 0.5f
 #define LIGHT_DIFFUSE 0.5f
 #define STRIP_IGNORE_LIGHT 0x01
+#define STRIP_IGNORE_AMBIENT 0x04
 #define STRIP_DOUBLE_SIDED 0x10
 #define STRIP_ENV 0x40 /* environment mapping: u, v come from the vertex normal, not from the file */
 
 /* Per-object scratch for projected vertices (the engine is single threaded). */
 static float scratch_x[MAX_MESH_VERTS], scratch_y[MAX_MESH_VERTS], scratch_w[MAX_MESH_VERTS];
 static int16_t scratch_l[MAX_MESH_VERTS]; /* light factor per vertex, 0..256 */
+static int16_t scratch_n[MAX_MESH_VERTS]; /* N.L per vertex, 0..256 (256 when the vertex has no normal) */
 static float scratch_eu[MAX_MESH_VERTS], scratch_ev[MAX_MESH_VERTS]; /* environment map u, v per vertex */
 static uint8_t scratch_ok[MAX_MESH_VERTS];
 
@@ -31,6 +33,8 @@ bscene_init(bscene* s, const bios_rom* rom) {
     memset(s, 0, sizeof(*s));
     s->rom = rom;
     s->parts = BSCENE_PART_ALL;
+    s->amb_k = 256;
+    s->ambient_models = 1ull << 3; /* the alarm clock: its gold bells are lit from the front only and went olive */
 }
 
 void
@@ -293,6 +297,10 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         int light = 256;
                         if (vx->has_nrm) {
                             float nz = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
+                            if (s->light_y != 0.0f) { /* light from above the camera: tilt it by light_y */
+                                float ny = m.m[1][0] * vx->nrm.x + m.m[1][1] * vx->nrm.y + m.m[1][2] * vx->nrm.z;
+                                nz = nz * s->light_z + ny * s->light_y;
+                            }
                             nz = nz > 0.0f ? (nz > 1.0f ? 1.0f : nz) : 0.0f;
                             light = (int)((LIGHT_AMBIENT + LIGHT_DIFFUSE * nz) * 256.0f);
                             light = light > 256 ? 256 : light;
@@ -301,6 +309,14 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                             light = 256;
                         }
                         scratch_l[i] = (int16_t)light;
+                        {
+                            float nl = 1.0f;
+                            if (vx->has_nrm) {
+                                nl = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
+                                nl = nl > 0.0f ? (nl > 1.0f ? 1.0f : nl) : 0.0f;
+                            }
+                            scratch_n[i] = (int16_t)(s->fullbright ? 256 : (int)(nl * 256.0f));
+                        }
                         if (vx->has_nrm) {
                             /* the normal in view space picks the point of the picture (a sphere map) */
                             float nx = m.m[0][0] * vx->nrm.x + m.m[0][1] * vx->nrm.y + m.m[0][2] * vx->nrm.z;
@@ -342,6 +358,9 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         continue;
                     }
                     int lit = !(poly->strip_flags & STRIP_IGNORE_LIGHT);
+                    const int use_ambient = (s->ambient_models >> (o->model & 63) & 1) && o->model < 64 && poly->has_diffuse && poly->has_ambient && !(poly->strip_flags & STRIP_IGNORE_AMBIENT);
+                    const uint32_t amb = use_ambient ? shade(poly->ambient, offs) : 0;
+                    const int amb_k = s->amb_k; /* 0..256 */
                     int cull = !(poly->strip_flags & STRIP_DOUBLE_SIDED);
                     for (int t = 0; t < poly->ntris; t++) {
                         bscene_vtx v[3];
@@ -369,7 +388,20 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                                     base = double_alpha(base);
                                 }
                             }
-                            v[k].argb = lit ? scale_rgb(base, scratch_l[c->idx]) : base;
+                            if (lit && use_ambient && mesh->verts[c->idx].has_nrm) {
+                                /* the lit colour, but never darker than the material's own ambient colour: the faces of
+                                 * the clock's gold bells that turn away from the light stay gold instead of olive */
+                                uint32_t d = scale_rgb(base, scratch_l[c->idx]);
+                                int r = (int)((d >> 16) & 255), g = (int)((d >> 8) & 255), bl = (int)(d & 255);
+                                int ar = (int)((amb >> 16) & 255) * amb_k >> 8, ag = (int)((amb >> 8) & 255) * amb_k >> 8,
+                                    ab = (int)(amb & 255) * amb_k >> 8;
+                                r = r > ar ? r : ar;
+                                g = g > ag ? g : ag;
+                                bl = bl > ab ? bl : ab;
+                                v[k].argb = (base & 0xFF000000u) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)bl;
+                            } else {
+                                v[k].argb = lit ? scale_rgb(base, scratch_l[c->idx]) : base;
+                            }
                         }
                         if (ok && cull) {
                             /* Front faces are counter-clockwise in view space (all the menu models are

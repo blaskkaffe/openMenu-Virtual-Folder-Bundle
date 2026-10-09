@@ -265,6 +265,13 @@ main(int argc, char** argv) {
     static blist list;
     static bdt dt;
     bmenu_init(&menu, &rom, NULL);
+
+    if (getenv("BIOS_PREVIEW_LIGHT")) { /* "y,z" direction components */
+        sscanf(getenv("BIOS_PREVIEW_LIGHT"), "%f,%f", &menu.scene.light_y, &menu.scene.light_z);
+    }
+    if (getenv("BIOS_PREVIEW_AMB")) { /* amb_k, 0..256 */
+        sscanf(getenv("BIOS_PREVIEW_AMB"), "%d", &menu.scene.amb_k);
+    }
     if (script == -2) { /* settings page demo: `selected` = cursor row, 10 rows */
         bpage_open(&page, &menu, 10);
         for (int i = 0; i < selected; i++) {

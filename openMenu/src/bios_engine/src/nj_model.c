@@ -259,9 +259,21 @@ parse_plist(reader* r, uint32_t a, nj_mesh* m) {
         uint32_t size = rd_u16(r, a + 2);
         uint32_t body = a + 4;
         if (t >= 16 && t <= 31) {
+            /* material chunk: the colours present follow in the order diffuse, ambient, specular */
+            uint32_t at = body;
             if (t & 1) {
-                state.diffuse = rd_u32(r, body);
+                state.diffuse = rd_u32(r, at);
                 state.has_diffuse = 1;
+                at += 4;
+            }
+            if (t & 2) {
+                state.ambient = rd_u32(r, at);
+                state.has_ambient = 1;
+                at += 4;
+            }
+            if (t & 4) {
+                state.specular = rd_u32(r, at);
+                state.has_specular = 1;
             }
             a = body + size * 2;
             continue;

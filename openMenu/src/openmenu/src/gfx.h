@@ -33,14 +33,17 @@ unsigned gfx_triangles(void);
 void gfx_set_label(uint16_t obj_id, const char* text);
 
 /* Draw `str` with its top-left corner at (x, y). Strings are cut to 42 characters.
- * `shadow` draws a dark copy 2 px down-right first. */
+ * `shadow` is ignored: the BIOS glyphs carry their own shade. */
 void gfx_text(const char* str, float x, float y, float z, uint32_t argb, int shadow);
 
 /* Flat translucent rectangle, plain or with rounded corners of radius r. */
 void gfx_rrect(float x, float y, float w, float h, float r, float z, uint32_t argb);
 void gfx_rect(float x, float y, float w, float h, float z, uint32_t argb);
 
-#define GFX_CHAR_W 12
+#define GFX_CHAR_W 11 /* BTEXT_ADVANCE: pixels per character (a space is 8) */
+
+/* Width in pixels of a string as gfx_text() draws it. */
+int gfx_text_width(const char* str);
 #define GFX_LINE_H 32
 
 /* Game art from ICON.DAT / BOX.DAT. Row discs: bind the product of each visible row (slot as in

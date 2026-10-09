@@ -83,6 +83,9 @@ typedef struct bscene {
     int panel_on;
     float panel_fx, panel_fy;
     uint32_t panel_accent;
+    float light_y, light_z; /* direction of the light toward the scene (y up); 0, 0 means straight along the view axis */
+    int amb_k; /* how much of the material's ambient colour is the lowest the light can make a surface, 256 = all */
+    uint64_t ambient_models; /* bit n: model n never gets darker than its materials' ambient colours (see amb_k) */
     int fullbright; /* no shading by the light (the gold reverse of a disc looks shinier) */
     int double_alpha;  /* draw objects as if two identical layers were stacked (see bmenu_draw) */
     unsigned parts;    /* BSCENE_PART_* drawn by bscene_draw_object() */

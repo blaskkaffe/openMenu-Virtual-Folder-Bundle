@@ -13,6 +13,7 @@
 
 #include <bios_menu.h>
 #include <bios_list.h>
+#include <bios_text.h>
 #include <bios_models.h>
 #include <bios_page.h>
 #include <backend/dat_format.h>
@@ -598,7 +599,7 @@ sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
         /* Game list row: one line, left aligned in the text surface; a long selected title scrolls */
         int slot = obj->id - BLIST_TEXT_FIRST;
         float lx = x - (float)obj->text_w / 2.0f, ly = y - (float)obj->text_h / 2.0f;
-        if (slot >= 0 && slot < BLIST_MAX_SLOTS && row_window[slot] > 0 && (int)strlen(label) * GFX_CHAR_W > row_window[slot]) {
+        if (slot >= 0 && slot < BLIST_MAX_SLOTS && row_window[slot] > 0 && gfx_text_width(label) > row_window[slot]) {
             text_windowed(label, lx, ly, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, row_window[slot], row_offset[slot]);
         } else {
             gfx_text(label, lx, ly, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, 1);
@@ -606,7 +607,7 @@ sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
     } else if (label) {
         /* The anchor of a text surface is its centre (checked against the BIOS layout:
          * the caption pills line up with it), so centre the string on it. */
-        float w = (float)strlen(label) * GFX_CHAR_W;
+        float w = (float)gfx_text_width(label);
         int header = obj->id == BMENU_ID_HEADER; /* dark text on the light header bar, as in the BIOS */
         gfx_text(label, x - w / 2.0f, y - (float)GFX_LINE_H / 2.0f, invw + TEXT_Z_BIAS, header ? 0xFF303030u : 0xFFFFFFFFu,
                  !header);
@@ -643,6 +644,13 @@ gfx_set_label(uint16_t obj_id, const char* text) {
 }
 
 /* ---- Text ------------------------------------------------------------------------------- */
+
+#define BIOS_FONT_ROM ((const uint8_t*)0xA0100020u) /* what syscall_font_address() returns */
+
+int
+gfx_text_width(const char* str) {
+    return btext_width(str);
+}
 
 static int
 pow2_at_least(int v) {
@@ -700,7 +708,8 @@ get_text_texture(const char* str) {
     victim->last_frame = frame_no;
 
     memset(text_canvas, 0, (size_t)w * GFX_LINE_H * 2);
-    bfont_draw_str_ex(text_canvas, (uint32_t)w, 0xFFFF, 0, 16, 0, victim->str);
+    /* the BIOS way: glyphs drawn with double thickness and a built-in shade (no drop shadow needed) */
+    btext_draw(text_canvas, w, GFX_LINE_H, 0, 0, BIOS_FONT_ROM, victim->str, 0xFFFF);
     pvr_txr_load(text_canvas, victim->ptr, (size_t)w * GFX_LINE_H * 2);
     return victim;
 }
@@ -721,14 +730,11 @@ gfx_text(const char* str, float x, float y, float z, uint32_t argb, int shadow) 
     ensure_header(NULL, t->ptr, t->w);
 
     float w = (float)t->w, h = (float)GFX_LINE_H;
-    for (int pass = shadow ? 0 : 1; pass < 2; pass++) {
-        float ox = pass == 0 ? 2.0f : 0.0f;
-        uint32_t col = pass == 0 ? ((argb >> 24) / 2u) << 24 : argb; /* black, half alpha */
-        send_vertex(x + ox, y + ox, z, 0.0f, 0.0f, col, 0);
-        send_vertex(x + ox + w, y + ox, z, 1.0f, 0.0f, col, 0);
-        send_vertex(x + ox, y + ox + h, z, 0.0f, 1.0f, col, 0);
-        send_vertex(x + ox + w, y + ox + h, z, 1.0f, 1.0f, col, 1);
-    }
+    (void)shadow; /* the glyphs carry their own shade, see btext_blit() */
+    send_vertex(x, y, z, 0.0f, 0.0f, argb, 0);
+    send_vertex(x + w, y, z, 1.0f, 0.0f, argb, 0);
+    send_vertex(x, y + h, z, 0.0f, 1.0f, argb, 0);
+    send_vertex(x + w, y + h, z, 1.0f, 1.0f, argb, 1);
 }
 
 /* A string shown through a window of `window` pixels, moved `offset` pixels to the left. */
@@ -741,21 +747,17 @@ text_windowed(const char* str, float x, float y, float z, uint32_t argb, int win
     if (!t) {
         return;
     }
-    int full = (int)strlen(clipped) * GFX_CHAR_W;
+    int full = gfx_text_width(clipped);
     if (offset < 0) offset = 0;
     if (offset > full - window) offset = full > window ? full - window : 0;
     int win = window < full ? window : full;
     float u0 = (float)offset / (float)t->w, u1 = (float)(offset + win) / (float)t->w;
     ensure_header(NULL, t->ptr, t->w);
     float w = (float)win, h = (float)GFX_LINE_H;
-    for (int pass = 0; pass < 2; pass++) {
-        float ox = pass == 0 ? 2.0f : 0.0f;
-        uint32_t col = pass == 0 ? ((argb >> 24) / 2u) << 24 : argb;
-        send_vertex(x + ox, y + ox, z, u0, 0.0f, col, 0);
-        send_vertex(x + ox + w, y + ox, z, u1, 0.0f, col, 0);
-        send_vertex(x + ox, y + ox + h, z, u0, 1.0f, col, 0);
-        send_vertex(x + ox + w, y + ox + h, z, u1, 1.0f, col, 1);
-    }
+    send_vertex(x, y, z, u0, 0.0f, argb, 0);
+    send_vertex(x + w, y, z, u1, 0.0f, argb, 0);
+    send_vertex(x, y + h, z, u0, 1.0f, argb, 0);
+    send_vertex(x + w, y + h, z, u1, 1.0f, argb, 1);
 }
 
 void

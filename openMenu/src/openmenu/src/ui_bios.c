@@ -100,6 +100,7 @@ static int recent_open;   /* recently played popup */
 static int recent_row;
 static int notice_frames;
 static char fps_text[40];
+static int show_debug; /* fps, triangles and the BIOS/sound line: X on the main menu switches them on and off */
 static uint64_t build_us_sum;
 static const char* notice_text;
 
@@ -228,7 +229,7 @@ games_sync(void) {
         gfx_set_row_scroll(s, 0, 0);
         if (item && row == uil_cursor() && !glist.launching) {
             int window = multi ? TITLE_WINDOW_MULTI : TITLE_WINDOW;
-            int width = (int)strlen(line) * GFX_CHAR_W;
+            int width = gfx_text_width(line);
             if (item != marquee_item) {
                 marquee_item = item;
                 marquee_frame = 0;
@@ -282,7 +283,7 @@ draw_button_text(const gd_item* cur) {
         if (text[i][0]) {
             float x, y;
             blist_button_center_px(i, &x, &y);
-            gfx_text(text[i], x - (float)strlen(text[i]) * GFX_CHAR_W / 2.0f, y - (float)GFX_LINE_H / 2.0f, 0.5f, 0xFFFFFFFFu, 1);
+            gfx_text(text[i], x - (float)gfx_text_width(text[i]) / 2.0f, y - (float)GFX_LINE_H / 2.0f, 0.5f, 0xFFFFFFFFu, 1);
         }
     }
 }
@@ -440,7 +441,7 @@ draw_datetime(void) {
     char text[24];
     bscene_draw_panel(&menu.scene, BDT_PANEL_X, BDT_PANEL_Y, BDT_PANEL_W, BDT_PANEL_H, screen_accent(), gfx_sink());
     for (int i = 0; i < 4; i++) {
-        gfx_text(help[i], 320.0f - (float)strlen(help[i]) * GFX_CHAR_W / 2.0f, BDT_PANEL_Y + 12.0f + (float)i * 26.0f, 0.5f,
+        gfx_text(help[i], 320.0f - (float)gfx_text_width(help[i]) / 2.0f, BDT_PANEL_Y + 12.0f + (float)i * 26.0f, 0.5f,
                  0xFFFFFFFFu, 1);
     }
     bdt_draw(&dtedit, gfx_sink());
@@ -517,10 +518,12 @@ draw_frame(void) {
             }
         }
     }
-    if (screen == SCREEN_MAIN) {
-        gfx_text(status_line, TEXT_X, STATUS_Y, 0.5f, 0x80FFFFFFu, 0);
+    if (show_debug) {
+        if (screen == SCREEN_MAIN) {
+            gfx_text(status_line, TEXT_X, STATUS_Y, 0.5f, 0x80FFFFFFu, 0);
+        }
+        gfx_text(fps_text, TEXT_X, FPS_Y, 0.5f, 0x80FFFFFFu, 0);
     }
-    gfx_text(fps_text, TEXT_X, FPS_Y, 0.5f, 0x80FFFFFFu, 0);
     if (notice_frames > 0 && notice_text) {
         gfx_text(notice_text, TEXT_X, screen == SCREEN_MAIN ? NOTICE_Y_MAIN : NOTICE_Y_PANEL, 0.5f, 0xFFFFFFFFu, 1);
     }
@@ -532,6 +535,9 @@ draw_frame(void) {
 static void
 handle_main(button_t b) {
     switch (b) {
+        case BTN_X:
+            show_debug = !show_debug;
+            break;
         case BTN_UP:
             if (bmenu_move(&menu, BMENU_UP)) sound_sfx(BAUDIO_SFX_CURSOR);
             break;

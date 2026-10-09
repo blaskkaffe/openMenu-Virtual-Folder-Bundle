@@ -39,6 +39,10 @@ typedef struct nj_poly {
     int tex;              /* texture slot within the texlist, -1 when untextured */
     uint32_t diffuse;     /* ARGB, valid when has_diffuse */
     uint8_t has_diffuse;
+    uint32_t ambient;     /* ARGB, valid when has_ambient (material chunk bit 1) */
+    uint32_t specular;    /* ARGB, valid when has_specular (material chunk bit 2) */
+    uint8_t has_ambient;
+    uint8_t has_specular;
     uint8_t has_uv;
     uint8_t blend;        /* blend chunk flags (src/dst alpha modes), 0 when absent */
     uint8_t strip_flags;  /* flag byte of the strip chunk header (culling, double side...) */

@@ -18,6 +18,7 @@
 #include "bios_list.h"
 #include "bios_models.h"
 #include "bios_case.h"
+#include "bios_text.h"
 #include "bios_page.h"
 #include "bios_scene.h"
 #include "nj_model.h"
@@ -875,6 +876,39 @@ test_case(const bios_rom* rom) {
 }
 
 static void
+test_text(void) {
+    uint8_t glyph[BTEXT_GLYPH_BYTES] = {0};
+    glyph[0] = 0x80; /* the top-left pixel */
+    uint16_t canvas[16 * 8] = {0};
+    btext_blit(canvas, 16, 8, 2, 1, glyph, 0xFFFF);
+    /* colour at x, x+1 and below x; shade (a quarter of the brightness) down-right of that */
+    CHECK(canvas[1 * 16 + 2] == 0xFFFF && canvas[1 * 16 + 3] == 0xFFFF && canvas[2 * 16 + 2] == 0xFFFF);
+    CHECK(canvas[2 * 16 + 3] == 0xF333 && canvas[2 * 16 + 4] == 0xF333);
+    CHECK(canvas[1 * 16 + 4] == 0 && canvas[3 * 16 + 2] == 0);
+    CHECK(btext_shade(0xFCCC) == 0xF333);
+
+    /* a neighbouring pixel overwrites the shade of the first one, as in the BIOS */
+    glyph[0] = 0xC0;
+    memset(canvas, 0, sizeof(canvas));
+    btext_blit(canvas, 16, 8, 2, 1, glyph, 0xFFFF);
+    CHECK(canvas[2 * 16 + 3] == 0xFFFF && canvas[1 * 16 + 4] == 0xFFFF && canvas[2 * 16 + 4] == 0xF333 && canvas[2 * 16 + 5] == 0xF333);
+    /* bit 11 is the first pixel of the second row of the pair */
+    memset(glyph, 0, sizeof(glyph));
+    glyph[1] = 0x08;
+    memset(canvas, 0, sizeof(canvas));
+    btext_blit(canvas, 16, 8, 0, 0, glyph, 0xFFFF);
+    CHECK(canvas[1 * 16 + 0] == 0xFFFF && canvas[0 * 16 + 0] == 0);
+    /* clipping at the canvas edge does not write outside */
+    btext_blit(canvas, 16, 8, 14, 7, glyph, 0xFFFF);
+    btext_blit(canvas, 16, 8, -5, -5, glyph, 0xFFFF);
+
+    CHECK(btext_width("ab c") == 11 + 11 + 8 + 11);
+    CHECK(btext_glyph((const uint8_t*)0, 33) == (const uint8_t*)(1 * BTEXT_GLYPH_BYTES));
+    CHECK(btext_glyph((const uint8_t*)0, 160) == (const uint8_t*)(96 * BTEXT_GLYPH_BYTES));
+    CHECK(btext_glyph((const uint8_t*)0, 1) == (const uint8_t*)(288 * BTEXT_GLYPH_BYTES));
+}
+
+static void
 test_files(const bios_rom* rom) {
     static bmenu m;
     static bfiles f;
@@ -949,6 +983,7 @@ main(void) {
     test_files(&rom);
     test_models(&rom);
     test_case(&rom);
+    test_text();
 
     const char* real = getenv("BIOS_ROM_FILE");
     if (real && *real) {
