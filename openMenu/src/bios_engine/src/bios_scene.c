@@ -10,12 +10,7 @@
 #define NEAR_Z (-1.0f) /* anything closer than this to the camera plane is dropped */
 #define MAX_MESH_VERTS 4096 /* nj_model never produces more */
 
-/* The BIOS lights its models with one directional light that shines along the view
- * direction (0, 0, -1), plus an ambient term (nj_set_screen_params(0.5, 0.5, 0.5) in the
- * menu init). The colour is the material colour times (ambient + diffuse * N.L). The exact
- * light intensities live in data I could not pin down, so the split below is a tuned guess. */
-#define LIGHT_AMBIENT 0.5f
-#define LIGHT_DIFFUSE 0.5f
+/* Lighting: see bios_lit(). */
 #define STRIP_IGNORE_LIGHT 0x01
 #define STRIP_IGNORE_AMBIENT 0x04
 #define STRIP_DOUBLE_SIDED 0x10
@@ -23,7 +18,6 @@
 
 /* Per-object scratch for projected vertices (the engine is single threaded). */
 static float scratch_x[MAX_MESH_VERTS], scratch_y[MAX_MESH_VERTS], scratch_w[MAX_MESH_VERTS];
-static int16_t scratch_l[MAX_MESH_VERTS]; /* light factor per vertex, 0..256 */
 static int16_t scratch_n[MAX_MESH_VERTS]; /* N.L per vertex, 0..256 (256 when the vertex has no normal) */
 static float scratch_eu[MAX_MESH_VERTS], scratch_ev[MAX_MESH_VERTS]; /* environment map u, v per vertex */
 static uint8_t scratch_ok[MAX_MESH_VERTS];
@@ -34,7 +28,6 @@ bscene_init(bscene* s, const bios_rom* rom) {
     s->rom = rom;
     s->parts = BSCENE_PART_ALL;
     s->amb_k = 256;
-    s->ambient_models = 1ull << 3; /* the alarm clock: its gold bells are lit from the front only and went olive */
 }
 
 void
@@ -134,16 +127,19 @@ shade(uint32_t base, const int* off) {
     return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
-/* Multiply the colour channels (not the alpha) by f / 256. */
+/* The BIOS lit-vertex colour (strip handler 0x8c0cad88, light code 0x8c098d00): per channel
+ * ambient_light * material ambient + diffuse_light * max(0, N.L) * material diffuse, with one
+ * directional light along the view axis; ambient_light 0.5, diffuse_light 0.3. The alpha is the
+ * material's diffuse alpha. nl is N.L in 0..256. */
 static uint32_t
-scale_rgb(uint32_t argb, int f) {
-    if (f >= 256) {
-        return argb;
+bios_lit(uint32_t diffuse, uint32_t ambient, int nl) {
+    uint32_t out = diffuse & 0xFF000000u;
+    for (int sh = 0; sh <= 16; sh += 8) {
+        int a = (int)((ambient >> sh) & 255), d = (int)((diffuse >> sh) & 255);
+        int c = (a * 128 + ((d * nl) >> 8) * 77) >> 8; /* 0.5 and 0.3 in 1/256 */
+        out |= (uint32_t)clamp255(c) << sh;
     }
-    uint32_t r = (((argb >> 16) & 255) * (uint32_t)f) >> 8;
-    uint32_t g = (((argb >> 8) & 255) * (uint32_t)f) >> 8;
-    uint32_t b = ((argb & 255) * (uint32_t)f) >> 8;
-    return (argb & 0xFF000000u) | (r << 16) | (g << 8) | b;
+    return out;
 }
 
 /* Alpha of two layers of the same translucent surface on top of each other. */
@@ -293,23 +289,6 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         }
                         nj_vec3 w = nj_mat_apply(&m, src);
                         scratch_ok[i] = (uint8_t)bscene_project(w, &scratch_x[i], &scratch_y[i], &scratch_w[i]);
-                        /* only the z of the rotated normal matters for a light along the view axis */
-                        int light = 256;
-                        if (vx->has_nrm) {
-                            float nz = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
-                            if (s->light_x != 0.0f || s->light_y != 0.0f) { /* a light that is not along the view axis */
-                                float nx = m.m[0][0] * vx->nrm.x + m.m[0][1] * vx->nrm.y + m.m[0][2] * vx->nrm.z;
-                                float ny = m.m[1][0] * vx->nrm.x + m.m[1][1] * vx->nrm.y + m.m[1][2] * vx->nrm.z;
-                                nz = nz * s->light_z + ny * s->light_y + nx * s->light_x;
-                            }
-                            nz = nz > 0.0f ? (nz > 1.0f ? 1.0f : nz) : 0.0f;
-                            light = (int)((LIGHT_AMBIENT + LIGHT_DIFFUSE * nz) * 256.0f);
-                            light = light > 256 ? 256 : light;
-                        }
-                        if (s->fullbright) {
-                            light = 256;
-                        }
-                        scratch_l[i] = (int16_t)light;
                         {
                             float nl = 1.0f;
                             if (vx->has_nrm) {
@@ -348,12 +327,15 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         tex.b = poly->tex;
                     }
                     uint32_t poly_argb = poly->has_diffuse ? shade(poly->diffuse, offs) : 0;
+                    int forced = 0; /* a colour the scripts pick is shown as it is */
                     if (s->panel_on && p == 0) {
                         poly_argb = s->panel_accent; /* the rim */
+                        forced = 1;
                     }
                     for (int k = 0; k < s->ovr_n; k++) {
                         if (s->ovr[k].model == o->model && s->ovr[k].node == n && s->ovr[k].poly == p) {
                             poly_argb = s->ovr[k].argb;
+                            forced = 1;
                         }
                     }
                     if (poly->has_diffuse && s->double_alpha) {
@@ -364,9 +346,7 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         continue;
                     }
                     int lit = !(poly->strip_flags & STRIP_IGNORE_LIGHT);
-                    const int use_ambient = (s->ambient_models >> (o->model & 63) & 1) && o->model < 64 && poly->has_diffuse && poly->has_ambient && !(poly->strip_flags & STRIP_IGNORE_AMBIENT);
-                    const uint32_t amb = use_ambient ? shade(poly->ambient, offs) : 0;
-                    const int amb_k = s->amb_k; /* 0..256 */
+                    const uint32_t amb = (poly->has_ambient && !(poly->strip_flags & STRIP_IGNORE_AMBIENT)) ? shade(poly->ambient, offs) : 0;
                     int cull = !(poly->strip_flags & STRIP_DOUBLE_SIDED);
                     for (int t = 0; t < poly->ntris; t++) {
                         bscene_vtx v[3];
@@ -394,19 +374,10 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                                     base = double_alpha(base);
                                 }
                             }
-                            if (lit && use_ambient && mesh->verts[c->idx].has_nrm) {
-                                /* the lit colour, but never darker than the material's own ambient colour: the faces of
-                                 * the clock's gold bells that turn away from the light stay gold instead of olive */
-                                uint32_t d = scale_rgb(base, scratch_l[c->idx]);
-                                int r = (int)((d >> 16) & 255), g = (int)((d >> 8) & 255), bl = (int)(d & 255);
-                                int ar = (int)((amb >> 16) & 255) * amb_k >> 8, ag = (int)((amb >> 8) & 255) * amb_k >> 8,
-                                    ab = (int)(amb & 255) * amb_k >> 8;
-                                r = r > ar ? r : ar;
-                                g = g > ag ? g : ag;
-                                bl = bl > ab ? bl : ab;
-                                v[k].argb = (base & 0xFF000000u) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)bl;
+                            if (lit && poly->has_diffuse && !forced && !s->fullbright && mesh->verts[c->idx].has_nrm) {
+                                v[k].argb = bios_lit(base, amb, scratch_n[c->idx]);
                             } else {
-                                v[k].argb = lit ? scale_rgb(base, scratch_l[c->idx]) : base;
+                                v[k].argb = base;
                             }
                         }
                         if (ok && cull) {

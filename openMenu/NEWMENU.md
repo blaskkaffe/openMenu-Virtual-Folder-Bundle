@@ -229,14 +229,15 @@ motion is an ease-out of 26% of the remaining way per frame (about 15 frames), t
 At rest it tilts slowly about all axes (periods roughly 9, 12 and 15 s), each game with its own phase and
 direction. Folders show no case. Preview: `bios_preview dc_boot.bin out.ppm 5 <frames> -11`.
 
-## Lighting of the models (open)
+## Lighting of the models
 
-What is known from the decompile: every vertex has a normal (chunk type 0x29), every material carries diffuse,
-ambient and specular colours (`nj_poly.diffuse/ambient/specular`), strip flag bits are 0x01 ignore light,
-0x02 ignore specular, 0x04 ignore ambient, 0x08 use alpha, 0x10 double sided, 0x40 environment map. The vertex
-handlers (table at ROM 0xE3618) transform positions and normals; the colour is made in the strip handlers
-(0x8C0C....-0x8C0D....), not yet reverse engineered. Current approximation: colour = diffuse * (0.5 + 0.5 N.L) with the
-light along the view axis, plus `ambient_models` (the clock keeps its ambient colour). Tests showed that
-colour = ambient + diffuse * N.L washes out the buttons, controller and panels, and that a light from the upper
-left (scene.light_x/y/z, preview `BIOS_PREVIEW_LIGHT=x,y,z`) gives the left-bright shading seen on the original's VMU and
-controller. Needs either the strip handlers read to the end, or same-exposure photos of one model at a time.
+Read from the SH-4 code (lit strip handler 0x8C0CAD88, light code 0x8C098D00/0x8C098D60/0x8C0989D8, setup 0x8C098F14):
+per vertex with a normal, per colour channel, `rgb = global_ambient * material_ambient + sum over lights(
+max(0, -N.Ldir) * light_diffuse * material_diffuse)`, alpha = material diffuse alpha, clamped 0..1 and packed
+(0x8C0DF07C). The menu has one directional light, direction (0, 0, -1) in view space (a headlight), light colour
+white scaled by 0.3 (`nj_view_set_pos_rot(1.4, 0.3, 0)`: 0.3 diffuse, 1.4 specular), global ambient 0.5
+(`nj_set_screen_params(.5,.5,.5)`). Material defaults (0x8C0A5A34): ambient 0, diffuse 0.5, specular 0.5, power 6.
+Strip flag 0x04 skips the global ambient, 0x02 the specular term (specular goes into the offset colour, not used
+by the type 64 handler). Vertices that carry their own colour are not lit. Implemented in `bios_lit()`
+(`bios_scene.c`); colours picked by scripts (panel accent, BACK overrides) are shown unlit. Specular and fog are
+not done.
