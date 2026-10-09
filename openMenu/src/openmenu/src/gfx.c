@@ -46,42 +46,10 @@ static rom_tex logo_tex;
 static text_tex text_texes[MAX_TEXT_ENTRIES];
 static uint32_t frame_no;
 static unsigned tri_count;
-/* Submission method. 0 (default): pvr_prim(), one call per triangle. 1: direct rendering,
- * writing straight to the store queues; faster in principle, but it broke the translucent
- * list on real hardware in the first try, so it is opt-in (-DGFX_USE_DR=1) until it is
- * understood. */
-#ifndef GFX_USE_DR
-#define GFX_USE_DR 0
-#endif
-
 /* Translucent polygons: 1 = drawn in the order they are submitted (no hardware sorting, much
  * cheaper; the menu submits back to front already), 0 = the PVR sorts them per pixel. */
 #ifndef GFX_PRESORT
 #define GFX_PRESORT 1
-#endif
-
-#if GFX_USE_DR
-static pvr_dr_state_t dr_state; /* direct rendering: writes go straight to the store queues */
-static int dr_active;
-
-/* pvr_txr_load() uses the store queues too, which direct rendering holds locked: give them
- * back around texture uploads that happen while a frame is being built. */
-static void
-dr_suspend(void) {
-    if (dr_active) {
-        pvr_dr_finish();
-    }
-}
-
-static void
-dr_resume(void) {
-    if (dr_active) {
-        pvr_dr_init(&dr_state);
-    }
-}
-#else
-#define dr_suspend() ((void)0)
-#define dr_resume() ((void)0)
 #endif
 
 static struct {
@@ -217,17 +185,31 @@ gfx_load_logo(const char* path) {
 
 /* ---- Submission --------------------------------------------------------------------- */
 
+/* Headers and vertices are collected here and sent with a few large pvr_prim() calls: each call
+ * locks the store queues, which cost more than the triangles themselves when done per polygon. */
+#define CMD_SLOTS 2048
+static pvr_vertex_t cmdbuf[CMD_SLOTS] __attribute__((aligned(32)));
+static int cmd_n;
+
+static void
+cmd_flush(void) {
+    if (cmd_n) {
+        pvr_prim(cmdbuf, cmd_n * (int)sizeof(pvr_vertex_t));
+        cmd_n = 0;
+    }
+}
+
+static void
+cmd_reserve(int slots) {
+    if (cmd_n + slots > CMD_SLOTS) {
+        cmd_flush();
+    }
+}
+
 static void
 submit_header(pvr_poly_cxt_t* cxt) {
-#if GFX_USE_DR
-    pvr_poly_hdr_t* target = (pvr_poly_hdr_t*)pvr_dr_target(dr_state);
-    pvr_poly_compile(target, cxt);
-    pvr_dr_commit(target);
-#else
-    pvr_poly_hdr_t hdr;
-    pvr_poly_compile(&hdr, cxt);
-    pvr_prim(&hdr, sizeof(hdr));
-#endif
+    cmd_reserve(1);
+    pvr_poly_compile((pvr_poly_hdr_t*)&cmdbuf[cmd_n++], cxt);
 }
 
 static void
@@ -267,32 +249,15 @@ ensure_header(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
 
 /* Vertices of the polygon being built (a triangle or a quad strip); sent when the one marked
  * as last arrives, so there is one submission per polygon. */
-static pvr_vertex_t vbuf[4] __attribute__((aligned(32)));
-static int vcount;
-
-static void
-submit_vertices(int n) {
-#if GFX_USE_DR
-    for (int i = 0; i < n; i++) {
-        pvr_vertex_t* t = pvr_dr_target(dr_state);
-        t->flags = vbuf[i].flags;
-        t->x = vbuf[i].x;
-        t->y = vbuf[i].y;
-        t->z = vbuf[i].z;
-        t->u = vbuf[i].u;
-        t->v = vbuf[i].v;
-        t->argb = vbuf[i].argb;
-        t->oargb = 0;
-        pvr_dr_commit(t);
-    }
-#else
-    pvr_prim(vbuf, n * (int)sizeof(pvr_vertex_t));
-#endif
-}
+static pvr_vertex_t* cur_poly;
 
 static void
 send_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last) {
-    pvr_vertex_t* vert = &vbuf[vcount++];
+    if (!cur_poly) {
+        cmd_reserve(4);
+        cur_poly = &cmdbuf[cmd_n];
+    }
+    pvr_vertex_t* vert = &cmdbuf[cmd_n++];
     vert->flags = last ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
     vert->x = x;
     vert->y = y;
@@ -302,8 +267,7 @@ send_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last
     vert->argb = argb;
     vert->oargb = 0;
     if (last) {
-        submit_vertices(vcount);
-        vcount = 0;
+        cur_poly = NULL;
     }
 }
 
@@ -439,9 +403,7 @@ get_text_texture(const char* str) {
 
     memset(text_canvas, 0, (size_t)w * GFX_LINE_H * 2);
     bfont_draw_str_ex(text_canvas, (uint32_t)w, 0xFFFF, 0, 16, 0, victim->str);
-    dr_suspend();
     pvr_txr_load(text_canvas, victim->ptr, (size_t)w * GFX_LINE_H * 2);
-    dr_resume();
     return victim;
 }
 
@@ -493,10 +455,6 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
 
     pvr_poly_cxt_t cxt;
     pvr_list_begin(PVR_LIST_OP_POLY);
-#if GFX_USE_DR
-    pvr_dr_init(&dr_state);
-    dr_active = 1;
-#endif
     pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
     cxt.gen.culling = PVR_CULLING_NONE;
     submit_header(&cxt);
@@ -504,26 +462,16 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
     send_vertex(640.0f, 0.0f, BG_Z, 0, 0, top, 0);
     send_vertex(0.0f, 480.0f, BG_Z, 0, 0, bottom, 0);
     send_vertex(640.0f, 480.0f, BG_Z, 0, 0, bottom, 1);
-#if GFX_USE_DR
-    pvr_dr_finish();
-    dr_active = 0;
-#endif
+    cmd_flush();
     pvr_list_finish();
 
     pvr_list_begin(PVR_LIST_TR_POLY);
-#if GFX_USE_DR
-    pvr_dr_init(&dr_state);
-    dr_active = 1;
-#endif
     hdr_valid = 0;
 }
 
 void
 gfx_end_frame(void) {
-#if GFX_USE_DR
-    pvr_dr_finish();
-    dr_active = 0;
-#endif
+    cmd_flush();
     pvr_list_finish();
     pvr_scene_finish();
 }
