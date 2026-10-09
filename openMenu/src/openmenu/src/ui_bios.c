@@ -181,6 +181,38 @@ games_sync(void) {
     blist_sync(&glist);
 }
 
+/* Text on the five buttons at the bottom (the CD player's buttons without their pictures):
+ * product code, region, players, VMU blocks, discs. */
+static void
+draw_button_text(const gd_item* cur) {
+    char text[BLIST_BUTTONS][12];
+    for (int i = 0; i < BLIST_BUTTONS; i++) {
+        text[i][0] = '\0';
+    }
+    if (cur && !uil_is_folder(cur)) {
+        snprintf(text[0], sizeof(text[0]), "%.6s", cur->product);
+        snprintf(text[1], sizeof(text[1]), "%.4s", cur->region);
+        int discs = cur->product[0] ? gd_item_disc_total(cur->disc) : 1;
+        snprintf(text[4], sizeof(text[4]), "%dD", discs > 0 ? discs : 1);
+        struct db_item* meta = NULL;
+        if (have_meta && !db_get_meta(cur->product, &meta) && meta) {
+            if (meta->num_players) {
+                snprintf(text[2], sizeof(text[2]), "%dP", meta->num_players);
+            }
+            if (meta->vmu_blocks) {
+                snprintf(text[3], sizeof(text[3]), "%dB", meta->vmu_blocks);
+            }
+        }
+    }
+    for (int i = 0; i < BLIST_BUTTONS; i++) {
+        if (text[i][0]) {
+            float x, y;
+            blist_button_center_px(i, &x, &y);
+            gfx_text(text[i], x - (float)strlen(text[i]) * GFX_CHAR_W / 2.0f, y - (float)GFX_LINE_H / 2.0f, 0.5f, 0xFFFFFFFFu, 1);
+        }
+    }
+}
+
 static void
 draw_games(void) {
     char lines[3][20];
@@ -193,36 +225,20 @@ draw_games(void) {
         return;
     }
     const gd_item* cur = uil_item(uil_cursor());
-    gfx_rrect(INFO_X - 6.0f, ART_Y - 8.0f, INFO_W + 12.0f, 366.0f, 6.0f, 0.4f, 0x58000000u);
+    draw_button_text(cur);
+    gfx_rrect(INFO_X - 6.0f, ART_Y - 8.0f, INFO_W + 12.0f, 326.0f, 6.0f, 0.4f, 0x58000000u);
     if (cur && !uil_is_folder(cur)) {
         gfx_art_box(cur->product, INFO_X + (INFO_W - ART_SIZE) / 2.0f, ART_Y, ART_SIZE, ART_SIZE, 0.45f);
         float y = ART_Y + ART_SIZE + 6.0f;
-        int n = wrap_text(cur->name, 15, lines, 2);
+        int n = wrap_text(cur->name, 15, lines, 3);
         for (int i = 0; i < n; i++) {
             gfx_text(lines[i], INFO_X, y, 0.5f, 0xFFFFFFFFu, 1);
             y += GFX_LINE_H - 4.0f;
         }
-        char line[48];
-        snprintf(line, sizeof(line), "%.14s", cur->product);
-        gfx_text(line, INFO_X, y, 0.5f, 0xFFC0C0C0u, 0);
-        y += GFX_LINE_H - 4.0f;
-        int discs = cur->product[0] ? gd_item_disc_total(cur->disc) : 1;
-        if (discs > 1) {
-            snprintf(line, sizeof(line), "%.4s  disc %d/%d", cur->region, gd_item_disc_num(cur->disc), discs);
-        } else {
-            snprintf(line, sizeof(line), "%.4s", cur->region);
-        }
-        gfx_text(line, INFO_X, y, 0.5f, 0xFFC0C0C0u, 0);
-        y += GFX_LINE_H - 4.0f;
-        struct db_item* meta = NULL;
-        if (have_meta && !db_get_meta(cur->product, &meta) && meta) {
-            snprintf(line, sizeof(line), "%.14s", db_format_nplayers_str(meta->num_players));
-            gfx_text(line, INFO_X, y, 0.5f, 0xFFC0C0C0u, 0);
-        }
     } else if (cur) {
         gfx_text("Folder", INFO_X, ART_Y, 0.5f, 0xFFFFFFFFu, 1);
     }
-    gfx_text("A:go X:recent", INFO_X, 330.0f, 0.5f, 0xFFA0A0A0u, 0); /* B is the BACK marker below */
+    gfx_text("A:go X:recent", INFO_X, 350.0f, 0.5f, 0xFFA0A0A0u, 0); /* B is the BACK marker */
 }
 
 #define POPUP_X 120.0f

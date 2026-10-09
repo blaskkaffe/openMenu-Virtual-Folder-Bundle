@@ -28,11 +28,14 @@
 #define MINI_X 3.3f
 #define MINI_SCALE 0.0625f
 #define NUM_TEXT_X 7.9f /* the text script offsets its text by -1.37 */
-/* the BACK marker: bottom right, under the info box */
-#define BACK_X 19.6f
-#define BACK_Y (-12.6f)
+/* the BACK marker and the five buttons along the bottom are where the CD player has them */
+#define BACK_X (-19.53125f)
+#define BACK_Y (-14.84375f)
 #define BACK_Z (-351.5625f)
-#define BACK_SCALE 0.75f
+#define BACK_SCALE 1.0f
+#define BUTTON_Y (-14.84375f)
+#define ID_BUTTON(i) ((uint16_t)(0x1301 + (i)))
+#define Y_CENTER 2.47f /* the rows sit above the buttons: centred at y = 212 px */
 
 /* CD player disc (script 0x1c): position and spin per frame, in the original's angle units */
 #define CD_Z (-378.90625f)
@@ -82,6 +85,9 @@ blist_open(blist* l, bmenu* m, int slots, int count) {
         bvm_create(&m->vm, 0x24, (uint16_t)BLIST_NUM_ID(s), PRIO);
     }
     bvm_create(&m->vm, 6, 0x1110, PRIO); /* BACK marker */
+    for (int i = 0; i < BLIST_BUTTONS; i++) {
+        bvm_create(&m->vm, 0x17 + (i == 1 ? 2 : (i == 2 ? 1 : i)), ID_BUTTON(i), PRIO); /* scripts 0x17,0x19,0x18,0x1a,0x1b: left to right */
+    }
     for (int s = 0; s < BLIST_MAX_SLOTS; s++) {
         l->multi[s] = 0;
     }
@@ -155,6 +161,14 @@ blist_row_in_slot(const blist* l, int slot) {
     return slot >= 0 && slot < l->slots && row < l->count ? row : -1;
 }
 
+void
+blist_button_center_px(int i, float* x, float* y) {
+    /* x of the buttons in the CD player's scripts 0x17, 0x19, 0x18, 0x1a, 0x1b */
+    static const float bx[BLIST_BUTTONS] = {-11.953125f, -4.0234375f, 3.90625f, 11.8359375f, 19.765625f};
+    *x = 320.0f + bx[i < 0 ? 0 : (i >= BLIST_BUTTONS ? BLIST_BUTTONS - 1 : i)] * PX_PER_UNIT;
+    *y = 240.0f - BUTTON_Y * PX_PER_UNIT;
+}
+
 float
 blist_row_right_px(void) {
     return 320.0f + (ANCHOR_X + (BAR_CAP_L + (BAR_CAP_R - BAR_CAP_L) * BAR_MIDDLE_F + 1.0f) * 0.8671875f) * PX_PER_UNIT;
@@ -166,7 +180,7 @@ static float
 pitch_px(int slots) {
     switch (slots) {
         case 5: return 70.0f;
-        case 6: return 62.0f;
+        case 6: return 58.0f;
         default: return 56.0f;
     }
 }
@@ -174,7 +188,7 @@ pitch_px(int slots) {
 static float
 row_y(const blist* l, int s) {
     float pitch = pitch_px(l->slots) / PX_PER_UNIT;
-    return ((float)(l->slots - 1) * 0.5f - (float)s) * pitch;
+    return Y_CENTER + ((float)(l->slots - 1) * 0.5f - (float)s) * pitch;
 }
 
 static void
@@ -357,6 +371,12 @@ blist_sync(blist* l) {
         }
     }
 
+    for (int i = 0; i < BLIST_BUTTONS; i++) {
+        bvm_obj* b = bvm_find(vm, ID_BUTTON(i));
+        if (b) {
+            set_hidden(b, l->launching);
+        }
+    }
     bvm_obj* back = bvm_find(vm, 0x1110);
     if (back) {
         set_pos(back, BACK_X, BACK_Y, BACK_Z);
@@ -374,6 +394,7 @@ blist_draw(blist* l, const bscene_sink* sink) {
         for (int i = 0; i < m->vm.count; i++) {
             const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
             m->scene.fullbright = o->id >= ID_MINI(0) && o->id < ID_MINI(BLIST_MAX_SLOTS);
+            m->scene.no_decals = o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(BLIST_BUTTONS);
             m->scene.stretch_on = o->id >= ID_ANCHOR(0) && o->id < ID_ANCHOR(BLIST_MAX_SLOTS);
             m->scene.stretch_a = BAR_CAP_L;
             m->scene.stretch_b = BAR_CAP_R;
@@ -383,5 +404,6 @@ blist_draw(blist* l, const bscene_sink* sink) {
     }
     m->scene.fullbright = 0;
     m->scene.stretch_on = 0;
+    m->scene.no_decals = 0;
     m->scene.parts = BSCENE_PART_ALL;
 }

@@ -60,7 +60,12 @@ void blist_launch_start(blist* l);
 int blist_launch_step(blist* l);
 void blist_launch_cancel(blist* l);
 
-/* Screen position (pixels) of a slot's text and the right edge of the rows, for the caller. */
+/* The five buttons of the CD player along the bottom, without their pictures. The caller writes
+ * text on them: this gives the centre of button i (pixels). */
+#define BLIST_BUTTONS 5
+void blist_button_center_px(int i, float* x, float* y);
+
+/* Right edge of the rows (pixels). */
 float blist_row_right_px(void);
 
 #ifdef __cplusplus

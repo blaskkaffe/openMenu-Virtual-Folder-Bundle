@@ -75,6 +75,7 @@ typedef struct bscene {
      * what lies beyond b moves along (the rounded ends of a row bar keep their shape). */
     int stretch_on;
     float stretch_a, stretch_b, stretch_f;
+    int no_decals; /* skip the polygons of texture 0: the pictures on the CD buttons */
     int fullbright; /* no shading by the light (the gold reverse of a disc looks shinier) */
     int double_alpha;  /* draw objects as if two identical layers were stacked (see bmenu_draw) */
     unsigned parts;    /* BSCENE_PART_* drawn by bscene_draw_object() */

@@ -197,6 +197,9 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
 
                 for (int p = 0; p < mesh->npolys; p++) {
                     const nj_poly* poly = &mesh->polys[p];
+                    if (s->no_decals && poly->tex == 0) { /* texture 0 of a button is its picture */
+                        continue;
+                    }
                     bscene_texref tex = {BSCENE_TEX_NONE, 0, 0};
                     if (poly->tex >= 0) {
                         tex.kind = BSCENE_TEX_TEXLIST;

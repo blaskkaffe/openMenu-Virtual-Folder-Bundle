@@ -129,3 +129,7 @@ Tune on hardware: row layout constants at the top of `bios_list.c`, panel layout
 Game list details: multi-disc sets (Compact mode) show a small pill with the gold side of a CD and
 "disc:total"; Left/Right on such a row pick the disc, A starts it (Left/Right page the list on other
 rows). The selected row is lit across the title; the BACK marker sits under the info box.
+
+Game list bottom row: the BACK marker and the CD player's five buttons (without their pictures)
+sit where they do in the CD player. For now the buttons show product code, region, players, VMU
+blocks and disc count (`draw_button_text` in `ui_bios.c`); they are free for other info.
