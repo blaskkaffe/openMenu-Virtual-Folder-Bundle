@@ -19,6 +19,7 @@
 #include "backend/gdemu_sdk.h"
 #include "backend/gdmenu_binary.h"
 #include "bloader.h"
+#include "history.h"
 #include "launch.h"
 #include "sound.h"
 
@@ -68,6 +69,7 @@ launch_disc(const gd_item* disc) {
         return;
     }
 
+    history_record(disc);
     sound_shutdown(); /* the next program must not inherit a running sound driver */
 
     if (!strcmp(disc->type, "other")) {

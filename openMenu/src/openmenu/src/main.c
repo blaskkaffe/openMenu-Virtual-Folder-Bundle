@@ -50,7 +50,7 @@ main(int argc, char* argv[]) {
 
     if (list_read_default() == 0) {
         list_folder_init();
-        list_set_sort_alphabetical();
+        list_set_folder_root(); /* folders first; sorted as the Sort setting says */
     }
 
     if (rom_err == BIOS_ROM_OK) {

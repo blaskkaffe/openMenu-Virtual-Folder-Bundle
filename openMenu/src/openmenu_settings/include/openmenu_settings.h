@@ -393,16 +393,18 @@ typedef enum CFG_FOLDERS_ITEM_DETAILS {
 typedef enum CFG_RECENTLY_PLAYED {
     RECENTLY_PLAYED_START = 0,
     RECENTLY_PLAYED_OFF = RECENTLY_PLAYED_START,
+    RECENTLY_PLAYED_5,
     RECENTLY_PLAYED_10,
+    RECENTLY_PLAYED_15,
     RECENTLY_PLAYED_20,
-    RECENTLY_PLAYED_30,
-    RECENTLY_PLAYED_40,
+    RECENTLY_PLAYED_25,
     RECENTLY_PLAYED_50,
     RECENTLY_PLAYED_END = RECENTLY_PLAYED_50
 } CFG_RECENTLY_PLAYED;
 
-/* Display cap for the current setting, 10 through 50 */
-#define RECENTLY_PLAYED_DISPLAY_MAX(setting) ((int)(setting) * 10)
+/* Display cap for the current setting: 5, 10, 15, 20, 25 or 50 */
+#define RECENTLY_PLAYED_DISPLAY_MAX(setting) \
+    ((int)(setting) == RECENTLY_PLAYED_50 ? 50 : (int)(setting) * 5)
 
 typedef enum CFG_REMEMBER_LAST_GAME {
     REMEMBER_LAST_GAME_START = 0,

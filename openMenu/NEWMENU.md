@@ -90,3 +90,10 @@ anchor of the icon captions, and the sound driver start-up are the likely places
 
 - Genre filter: the genre list is incomplete and sometimes wrong (the genre data comes from
   the bundled game database). Review and correct it, then bring the filter back.
+
+## Game browser settings (phase 5)
+
+All set in Settings: Game order (A-Z, SD card order), Multi-disc games, Disc sets from,
+Recently played (Off, 5, 10, 15, 20, 25, 50), Remember last game. In the game list, X opens the
+recently played popup. Remember last game restores folder and cursor the first time the
+browser is opened after start-up. Later: genre filter (needs better genre data), most played.

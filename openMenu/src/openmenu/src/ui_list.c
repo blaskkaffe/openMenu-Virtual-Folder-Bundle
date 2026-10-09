@@ -21,6 +21,10 @@ static int saved_cursor, saved_top;
 
 static int
 is_compact_hidden(const gd_item* it) {
+    /* the shared list adds a "Recently played" folder row; recents have their own popup here */
+    if (it && !strcmp(it->product, "RCNT")) {
+        return 1;
+    }
     return it && sf_multidisc[0] == MULTIDISC_HIDE && it->product[0] != '\0' && strncmp(it->disc, "DIR", 3)
            && gd_item_disc_num(it->disc) > 1 && gd_item_disc_total(it->disc) > 1;
 }
@@ -105,6 +109,24 @@ real_index(int index) {
         rebuild();
     }
     return index >= 0 && index < vis_count ? vis[index] : index;
+}
+
+static void move_cursor(int delta);
+
+/* Put the cursor on a row of the real list (as returned by the list functions). */
+void
+uil_goto_real(int row) {
+    chooser = 0;
+    vis_valid = 0;
+    rebuild();
+    cursor = 0;
+    for (int i = 0; i < vis_count; i++) {
+        if (vis[i] == row) {
+            cursor = i;
+        }
+    }
+    top = cursor > UIL_VISIBLE / 2 ? cursor - UIL_VISIBLE / 2 : 0;
+    move_cursor(0);
 }
 
 void

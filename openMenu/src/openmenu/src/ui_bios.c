@@ -13,12 +13,15 @@
 #include <bios_menu.h>
 
 #include "gfx.h"
+#include "history.h"
 #include "input.h"
 #include "launch.h"
 #include "sound.h"
 #include <openmenu_settings.h>
 
 #include "ui_bios.h"
+#include <backend/gd_list.h>
+
 #include "ui_list.h"
 #include "ui_settings.h"
 #include "video.h"
@@ -73,6 +76,9 @@ blend_color(uint32_t from, uint32_t to, int t) {
 static bmenu menu;
 static screen_t screen;
 static int settings_row;
+static int games_opened;  /* the game browser has been opened once (last game restored) */
+static int recent_open;   /* recently played popup */
+static int recent_row;
 static int notice_frames;
 static char fps_text[40];
 static uint64_t build_us_sum;
@@ -135,14 +141,39 @@ draw_games(void) {
         snprintf(line, sizeof(line), "%s  %s  disc %s", cur->product, cur->region, cur->disc);
         gfx_text(line, TEXT_X, hint_y, 0.5f, 0xFFA0A0A0u, 0);
     } else {
-        gfx_text("A: open / start   B: back", TEXT_X, hint_y, 0.5f, 0xFFA0A0A0u, 0);
+        gfx_text("A: open / start   X: recent   B: back", TEXT_X, hint_y, 0.5f, 0xFFA0A0A0u, 0);
     }
+}
+
+#define POPUP_X 120.0f
+#define POPUP_W 400.0f
+#define POPUP_ROWS 8
+
+static void
+draw_recent_popup(void) {
+    char line[64];
+    int n = history_recent_count();
+    int first = recent_row >= POPUP_ROWS ? recent_row - POPUP_ROWS + 1 : 0;
+    float h = (float)(POPUP_ROWS + 2) * GFX_LINE_H + 16.0f;
+    gfx_rect(POPUP_X, ROWS_Y - 40.0f, POPUP_W, h, 0.6f, 0xE0102050u);
+    gfx_text("Recently played", POPUP_X + 16.0f, ROWS_Y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
+    for (int i = 0; i < POPUP_ROWS && first + i < n; i++) {
+        const gd_item* g = history_recent(first + i);
+        float y = ROWS_Y + (float)i * GFX_LINE_H;
+        int sel = first + i == recent_row;
+        if (sel) {
+            gfx_rect(POPUP_X + 8.0f, y, POPUP_W - 16.0f, (float)GFX_LINE_H, 0.65f, 0x60FFFFFFu);
+        }
+        snprintf(line, sizeof(line), "%.38s", g ? g->name : "?");
+        gfx_text(line, POPUP_X + 16.0f, y, 0.7f, sel ? 0xFFFFFFFFu : 0xFFC0C0C0u, sel);
+    }
+    gfx_text("A: start   B: close", POPUP_X + 16.0f, ROWS_Y + POPUP_ROWS * GFX_LINE_H + 2.0f, 0.7f, 0xFFA0A0A0u, 0);
 }
 
 static void
 draw_settings(void) {
     char line[64];
-    gfx_rect(PANEL_X, PANEL_Y, PANEL_W, (ROWS_Y - PANEL_Y) + 6 * GFX_LINE_H + 40.0f, 0.4f, 0x90000000u);
+    gfx_rect(PANEL_X, PANEL_Y, PANEL_W, (ROWS_Y - PANEL_Y) + uis_count() * GFX_LINE_H + 40.0f, 0.4f, 0x90000000u);
     gfx_text("Settings", TEXT_X, TITLE_Y, 0.5f, 0xFFFFFFFFu, 1);
     for (int i = 0; i < uis_count(); i++) {
         float y = ROWS_Y + (float)i * GFX_LINE_H;
@@ -152,7 +183,7 @@ draw_settings(void) {
         uis_text(i, line, sizeof(line));
         gfx_text(line, TEXT_X, y, 0.5f, i == settings_row ? 0xFFFFFFFFu : 0xFFC0C0C0u, i == settings_row);
     }
-    gfx_text("Left/Right: change   B: back", TEXT_X, ROWS_Y + 6 * GFX_LINE_H + 4.0f, 0.5f, 0xFFA0A0A0u, 0);
+    gfx_text("Left/Right: change   B: back", TEXT_X, ROWS_Y + uis_count() * GFX_LINE_H + 4.0f, 0.5f, 0xFFA0A0A0u, 0);
 }
 
 static void
@@ -178,6 +209,9 @@ draw_frame(void) {
         bscene_draw_background(&menu.bg, gfx_sink());
         if (screen == SCREEN_GAMES) {
             draw_games();
+            if (recent_open) {
+                draw_recent_popup();
+            }
         } else {
             draw_settings();
         }
@@ -212,7 +246,13 @@ handle_main(button_t b) {
         case BTN_START:
             if (menu.selected == ICON_GAME) {
                 sound_sfx(BAUDIO_SFX_ENTER);
-                uil_reset();
+                if (!games_opened) {
+                    games_opened = 1;
+                    int row = history_restore();
+                    if (row >= 0) {
+                        uil_goto_real(row);
+                    }
+                }
                 screen = SCREEN_GAMES;
             } else if (menu.selected == ICON_SETTINGS) {
                 sound_sfx(BAUDIO_SFX_ENTER);
@@ -228,8 +268,61 @@ handle_main(button_t b) {
 }
 
 static void
+handle_recent(button_t b) {
+    int n = history_recent_count();
+    switch (b) {
+        case BTN_UP:
+            if (recent_row > 0) {
+                recent_row--;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_DOWN:
+            if (recent_row < n - 1) {
+                recent_row++;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_A:
+        case BTN_START: {
+            const gd_item* g = history_recent(recent_row);
+            if (g) {
+                sound_sfx(BAUDIO_SFX_ENTER);
+                launch_disc(g); /* only returns if the launch failed */
+                sound_sfx(BAUDIO_SFX_ERROR);
+                show_notice("Could not start the game");
+            }
+            recent_open = 0;
+            break;
+        }
+        case BTN_B:
+        case BTN_X:
+            sound_sfx(BAUDIO_SFX_CANCEL);
+            recent_open = 0;
+            break;
+        default: break;
+    }
+}
+
+static void
 handle_games(button_t b) {
     const gd_item* game = NULL;
+    if (recent_open) {
+        handle_recent(b);
+        return;
+    }
+    if (b == BTN_X) {
+        if (history_recent_count() > 0) {
+            recent_open = 1;
+            recent_row = 0;
+            sound_sfx(BAUDIO_SFX_ENTER);
+        } else {
+            sound_sfx(BAUDIO_SFX_ERROR);
+            show_notice(sf_recently_played[0] == RECENTLY_PLAYED_OFF ? "Recently played is off (Settings)"
+                                                                       : "No games played yet");
+        }
+        return;
+    }
     uil_result r = uil_button(b, &game);
     if (r == UIL_LAUNCH) {
         launch_disc(game); /* only returns if the launch failed */
@@ -272,6 +365,9 @@ handle_settings(button_t b) {
             } else {
                 sound_sfx(BAUDIO_SFX_CANCEL);
             }
+            /* order, multi-disc and recent list changes show up in the list again */
+            list_set_folder_root();
+            uil_reset();
             screen = SCREEN_MAIN;
             break;
         default: break;

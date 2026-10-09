@@ -19,7 +19,14 @@ static const char* const disc_exit[] = {"Standard", "Alternate", "Alternate 3D"}
 static const char* const multidisc_modes[] = {"Show all discs", "Compact"};
 static const char* const multidisc_groups[] = {"Anywhere", "Same folder only"};
 
+static const char* const sort_modes[] = {"A-Z", "SD card order"};
+static const char* const recent_modes[] = {"Off", "Last 5", "Last 10", "Last 15", "Last 20", "Last 25", "Last 50"};
+static const char* const on_off[] = {"Off", "On"};
+
 static const option options[] = {
+    {"Game order", &sf_sort, 2, sort_modes},
+    {"Recently played", &sf_recently_played, RECENTLY_PLAYED_END + 1, recent_modes},
+    {"Remember last game", &sf_remember_last_game, REMEMBER_LAST_GAME_END + 1, on_off},
     {"Multi-disc games", &sf_multidisc, MULTIDISC_END + 1, multidisc_modes},
     {"Disc sets from", &sf_multidisc_grouping, MULTIDISC_GROUPING_END + 1, multidisc_groups},
     {"Boot animation", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
