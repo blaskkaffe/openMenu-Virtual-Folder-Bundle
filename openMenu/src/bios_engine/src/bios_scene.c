@@ -3,6 +3,8 @@
  */
 #include "bios_scene.h"
 
+#include <math.h>
+
 #include <string.h>
 
 #define NEAR_Z (-1.0f) /* anything closer than this to the camera plane is dropped */
@@ -16,10 +18,12 @@
 #define LIGHT_DIFFUSE 0.5f
 #define STRIP_IGNORE_LIGHT 0x01
 #define STRIP_DOUBLE_SIDED 0x10
+#define STRIP_ENV 0x40 /* environment mapping: u, v come from the vertex normal, not from the file */
 
 /* Per-object scratch for projected vertices (the engine is single threaded). */
 static float scratch_x[MAX_MESH_VERTS], scratch_y[MAX_MESH_VERTS], scratch_w[MAX_MESH_VERTS];
 static int16_t scratch_l[MAX_MESH_VERTS]; /* light factor per vertex, 0..256 */
+static float scratch_eu[MAX_MESH_VERTS], scratch_ev[MAX_MESH_VERTS]; /* environment map u, v per vertex */
 static uint8_t scratch_ok[MAX_MESH_VERTS];
 
 void
@@ -192,6 +196,21 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                             light = 256;
                         }
                         scratch_l[i] = (int16_t)light;
+                        if (vx->has_nrm) {
+                            /* the normal in view space picks the point of the picture (a sphere map) */
+                            float nx = m.m[0][0] * vx->nrm.x + m.m[0][1] * vx->nrm.y + m.m[0][2] * vx->nrm.z;
+                            float ny = m.m[1][0] * vx->nrm.x + m.m[1][1] * vx->nrm.y + m.m[1][2] * vx->nrm.z;
+                            float nz = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
+                            float len = sqrtf(nx * nx + ny * ny + nz * nz);
+                            if (len > 1e-6f) {
+                                nx /= len;
+                                ny /= len;
+                            }
+                            scratch_eu[i] = 0.5f + 0.5f * nx;
+                            scratch_ev[i] = 0.5f - 0.5f * ny;
+                        } else {
+                            scratch_eu[i] = scratch_ev[i] = 0.5f;
+                        }
                     }
                 }
 
@@ -221,8 +240,13 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                             v[k].x = scratch_x[c->idx];
                             v[k].y = scratch_y[c->idx];
                             v[k].invw = scratch_w[c->idx];
-                            v[k].u = c->u;
-                            v[k].v = c->v;
+                            if (poly->strip_flags & STRIP_ENV) {
+                                v[k].u = scratch_eu[c->idx];
+                                v[k].v = scratch_ev[c->idx];
+                            } else {
+                                v[k].u = c->u;
+                                v[k].v = c->v;
+                            }
                             uint32_t base;
                             if (poly->has_diffuse) {
                                 base = poly_argb;
