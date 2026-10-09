@@ -366,7 +366,32 @@ main(int argc, char** argv) {
             for (int i = 0; i < 200; i++) {
                 bcase_step(&bc);
             }
-            bscene_draw_panel(&menu.scene, 432.0f, 58.0f, 194.0f, 326.0f, 0xFFE07000u, &sink);
+            { /* flat rounded panel in the colour of the row bars (as the app's gfx_rrect) */
+                float x = 432.0f, y = 58.0f, w = 194.0f, h = 326.0f, r = 9.0f;
+                float cxs[4] = {x + w - r, x + r, x + r, x + w - r}, cys[4] = {y + r, y + r, y + h - r, y + h - r};
+                float dxs[4] = {1, -1, -1, 1}, dys[4] = {-1, -1, 1, 1};
+                float rect[3][4] = {{x + r, y, w - 2 * r, r}, {x, y + r, w, h - 2 * r}, {x + r, y + h - r, w - 2 * r, r}};
+                for (int i = 0; i < 3; i++) {
+                    bscene_vtx q[4];
+                    float xs[4] = {rect[i][0], rect[i][0] + rect[i][2], rect[i][0], rect[i][0] + rect[i][2]};
+                    float ys[4] = {rect[i][1], rect[i][1], rect[i][1] + rect[i][3], rect[i][1] + rect[i][3]};
+                    for (int k = 0; k < 4; k++) {
+                        q[k] = (bscene_vtx){xs[k], ys[k], 0.003f, 0, 0, 0xB25A5AA0u};
+                    }
+                    bscene_vtx a[3] = {q[0], q[1], q[2]}, b2[3] = {q[1], q[3], q[2]};
+                    sink.triangle(sink.user, a, (bscene_texref){BSCENE_TEX_NONE, 0, 0});
+                    sink.triangle(sink.user, b2, (bscene_texref){BSCENE_TEX_NONE, 0, 0});
+                }
+                for (int c = 0; c < 4; c++) {
+                    for (int i = 0; i < 6; i++) {
+                        float a0 = 1.5707963f * i / 6, a1 = 1.5707963f * (i + 1) / 6;
+                        bscene_vtx v[3] = {{cxs[c], cys[c], 0.003f, 0, 0, 0xB25A5AA0u},
+                                           {cxs[c] + dxs[c] * r * cosf(a0), cys[c] + dys[c] * r * sinf(a0), 0.003f, 0, 0, 0xB25A5AA0u},
+                                           {cxs[c] + dxs[c] * r * cosf(a1), cys[c] + dys[c] * r * sinf(a1), 0.003f, 0, 0, 0xB25A5AA0u}};
+                        sink.triangle(sink.user, v, (bscene_texref){BSCENE_TEX_NONE, 0, 0});
+                    }
+                }
+            }
             bcase_draw(&bc, &menu.scene, 529.0f, 141.0f, 150.0f, NULL, NULL, &sink);
         }
     } else if (script == -2) {

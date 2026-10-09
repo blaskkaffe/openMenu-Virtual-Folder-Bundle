@@ -301,7 +301,7 @@ draw_games(void) {
     }
     const gd_item* cur = uil_item(uil_cursor());
     draw_button_text(cur);
-    gfx_rrect(INFO_X - 6.0f, ART_Y - 8.0f, INFO_W + 12.0f, 326.0f, 6.0f, 0.4f, 0x58000000u);
+    gfx_rrect(INFO_X - 6.0f, ART_Y - 8.0f, INFO_W + 12.0f, 326.0f, 9.0f, 0.4f, 0xB25A5AA0u); /* the colour, alpha and corner radius of the row bars */
     bcase_draw(&gcase, &menu.scene, INFO_X + INFO_W / 2.0f, ART_Y + ART_SIZE / 2.0f, ART_SIZE + 10.0f, case_bind, NULL, gfx_sink());
     if (cur && !uil_is_folder(cur)) {
         float y = ART_Y + ART_SIZE + 6.0f;
