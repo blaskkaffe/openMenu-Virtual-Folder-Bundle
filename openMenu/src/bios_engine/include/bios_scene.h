@@ -65,6 +65,7 @@ typedef struct bscene {
     } motions[BSCENE_MOTION_CACHE];
     int motion_count;
     nj_mat4 pose[256]; /* scratch: world matrices of the object being drawn */
+    int double_alpha;  /* draw objects as if two identical layers were stacked (see bmenu_draw) */
 } bscene;
 
 void bscene_init(bscene* s, const bios_rom* rom);
