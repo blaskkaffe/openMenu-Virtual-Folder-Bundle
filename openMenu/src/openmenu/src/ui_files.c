@@ -17,8 +17,13 @@ typedef enum {
     FS_DEST,         /* pick the card to copy to */
     FS_ASK_OVERWRITE,
     FS_ASK_DELETE,
-    FS_BUSY,         /* a copy or delete is about to run */
-    FS_MESSAGE
+    FS_BUSY,         /* a copy, delete or reset is about to run */
+    FS_MESSAGE,
+    FS_CARDMENU,     /* Change icon / Change colour / Memory reset / Cancel */
+    FS_ICONPICK,
+    FS_COLOURPICK,
+    FS_ASK_RESET,    /* "all files will be deleted, proceed?" */
+    FS_ASK_CONFIRM   /* "confirm your settings" before the reset */
 } fstate;
 
 static bmenu* menu;
@@ -30,7 +35,13 @@ static vf_file files[VF_MAX_FILES];
 static int nfiles, file_cursor, file_top;
 static int free_blocks[BFILES_SLOTS];
 static int popup_sel;
-static int busy_op, busy_frames; /* 0 copy, 1 delete */
+static int busy_op, busy_frames; /* 0 copy, 1 delete, 2 look change, 3 memory reset */
+static int look_shape, look_colour; /* the icon and colour being chosen */
+static int picking_for_reset;      /* the icon / colour pickers are part of the memory reset */
+static int icon_cursor, icon_page_base = -1;
+static int icon_tex_page[32];
+static int colour_cursor;
+static int file_icon[VF_MAX_FILES]; /* picture of each file: -2 not loaded yet, -1 none, else a gfx_dyn id */
 static int overwrite;
 static char message[4][48];
 static int message_lines;
@@ -69,7 +80,17 @@ set_message(fstate next, int lines, const char* a, const char* b, const char* c)
 }
 
 static void
+free_file_icons(void) {
+    gfx_dyn_free_all();
+    for (int i = 0; i < VF_MAX_FILES; i++) {
+        file_icon[i] = -2;
+    }
+    icon_page_base = -1;
+}
+
+static void
 load_files(void) {
+    free_file_icons();
     nfiles = vf_list(src_slot, files, VF_MAX_FILES);
     if (nfiles < 0) {
         nfiles = 0;
@@ -97,6 +118,7 @@ uif_open(bmenu* m) {
     bfiles_set_cursor(&grid, first);
     state = FS_GRID;
     refresh_timer = 0;
+    free_file_icons();
 }
 
 static void
@@ -171,6 +193,7 @@ uif_handle(button_t b) {
                 }
             } else if (b == BTN_B) {
                 sound_sfx(BAUDIO_SFX_CANCEL);
+                gfx_dyn_free_all();
                 return 1;
             } else {
                 grid_input(b);
@@ -192,10 +215,122 @@ uif_handle(button_t b) {
                 popup_sel = 0;
                 state = FS_FILEMENU;
                 sound_sfx(BAUDIO_SFX_ENTER);
+            } else if (b == BTN_X) {
+                popup_sel = 0;
+                state = FS_CARDMENU;
+                sound_sfx(BAUDIO_SFX_ENTER);
             } else if (b == BTN_B) {
                 sound_sfx(BAUDIO_SFX_CANCEL);
                 refresh_cards();
+                free_file_icons();
                 state = FS_GRID;
+            }
+            break;
+
+        case FS_CARDMENU:
+            if (b == BTN_UP && popup_sel > 0) {
+                popup_sel--;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            } else if (b == BTN_DOWN && popup_sel < 3) {
+                popup_sel++;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            } else if (b == BTN_A || b == BTN_START) {
+                sound_sfx(BAUDIO_SFX_ENTER);
+                if (vf_card_look(src_slot, &look_shape, &look_colour) != 0) {
+                    look_shape = 0;
+                    look_colour = 0;
+                }
+                if (popup_sel == 0) { /* Change icon */
+                    picking_for_reset = 0;
+                    icon_cursor = look_shape;
+                    free_file_icons();
+                    state = FS_ICONPICK;
+                } else if (popup_sel == 1) { /* Change colour */
+                    picking_for_reset = 0;
+                    colour_cursor = look_colour;
+                    state = FS_COLOURPICK;
+                } else if (popup_sel == 2) { /* Memory reset */
+                    popup_sel = 1; /* No */
+                    state = FS_ASK_RESET;
+                } else {
+                    state = FS_BROWSE;
+                }
+            } else if (b == BTN_B) {
+                sound_sfx(BAUDIO_SFX_CANCEL);
+                state = FS_BROWSE;
+            }
+            break;
+
+        case FS_ICONPICK: {
+            int step = b == BTN_LEFT ? -1 : (b == BTN_RIGHT ? 1 : (b == BTN_UP ? -8 : (b == BTN_DOWN ? 8 : 0)));
+            if (step) {
+                int next = icon_cursor + step;
+                if (next >= 0 && next < VF_ICON_SHAPES) {
+                    icon_cursor = next;
+                    sound_sfx(BAUDIO_SFX_CURSOR);
+                }
+            } else if (b == BTN_A || b == BTN_START) {
+                look_shape = icon_cursor;
+                sound_sfx(BAUDIO_SFX_CONFIRM);
+                if (picking_for_reset) {
+                    colour_cursor = look_colour;
+                    state = FS_COLOURPICK;
+                } else {
+                    start_op(2);
+                }
+            } else if (b == BTN_B) {
+                sound_sfx(BAUDIO_SFX_CANCEL);
+                free_file_icons();
+                state = FS_BROWSE;
+            }
+            break;
+        }
+
+        case FS_COLOURPICK:
+            if (b == BTN_UP && colour_cursor > 0) {
+                colour_cursor--;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            } else if (b == BTN_DOWN && colour_cursor < vf_colour_count() - 1) {
+                colour_cursor++;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            } else if (b == BTN_A || b == BTN_START) {
+                look_colour = colour_cursor;
+                sound_sfx(BAUDIO_SFX_CONFIRM);
+                if (picking_for_reset) {
+                    popup_sel = 1; /* No */
+                    state = FS_ASK_CONFIRM;
+                } else {
+                    start_op(2);
+                }
+            } else if (b == BTN_B) {
+                sound_sfx(BAUDIO_SFX_CANCEL);
+                state = FS_BROWSE;
+            }
+            break;
+
+        case FS_ASK_RESET:
+        case FS_ASK_CONFIRM:
+            if (b == BTN_UP || b == BTN_DOWN || b == BTN_LEFT || b == BTN_RIGHT) {
+                popup_sel = !popup_sel;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            } else if (b == BTN_A || b == BTN_START) {
+                if (popup_sel == 0 && state == FS_ASK_RESET) { /* Yes: now choose the icon and colour of the new card */
+                    picking_for_reset = 1;
+                    icon_cursor = look_shape;
+                    free_file_icons();
+                    state = FS_ICONPICK;
+                    sound_sfx(BAUDIO_SFX_ENTER);
+                } else if (popup_sel == 0) { /* Yes: erase it */
+                    start_op(3);
+                } else {
+                    sound_sfx(BAUDIO_SFX_CANCEL);
+                    free_file_icons();
+                    state = FS_BROWSE;
+                }
+            } else if (b == BTN_B) {
+                sound_sfx(BAUDIO_SFX_CANCEL);
+                free_file_icons();
+                state = FS_BROWSE;
             }
             break;
 
@@ -313,6 +448,24 @@ uif_sync(void) {
                 sound_sfx(BAUDIO_SFX_ERROR);
                 set_message(FS_BROWSE, 2, "File could not be copied.", "Please try again.", NULL);
             }
+        } else if (busy_op == 2) {
+            rc = vf_set_look(src_slot, look_shape, look_colour);
+            if (rc == 0) {
+                sound_sfx(BAUDIO_SFX_CONFIRM);
+                set_message(FS_BROWSE, 1, "The look of the memory card was changed.", NULL, NULL);
+            } else {
+                sound_sfx(BAUDIO_SFX_ERROR);
+                set_message(FS_BROWSE, 2, "The memory card could not be changed.", "Please try again.", NULL);
+            }
+        } else if (busy_op == 3) {
+            rc = vf_format(src_slot, look_shape, look_colour);
+            if (rc == 0) {
+                sound_sfx(BAUDIO_SFX_CONFIRM);
+                set_message(FS_BROWSE, 2, "All files were deleted and the", "memory card was reset.", NULL);
+            } else {
+                sound_sfx(BAUDIO_SFX_ERROR);
+                set_message(FS_BROWSE, 2, "The memory card could not be reset.", "Check the card and try again.", NULL);
+            }
         } else {
             rc = vf_delete(src_slot, &files[file_cursor]);
             if (rc == 0) {
@@ -324,6 +477,33 @@ uif_sync(void) {
             }
         }
         load_files();
+    }
+    if (state == FS_BROWSE || state == FS_FILEMENU) { /* load the picture of one visible file a frame */
+        for (int r = 0; r < LIST_ROWS && file_top + r < nfiles; r++) {
+            int i = file_top + r;
+            if (file_icon[i] == -2) {
+                unsigned short px[32 * 32];
+                file_icon[i] = vf_file_icon(src_slot, &files[i], px) == 0 ? gfx_dyn_create(px, 32, 32) : -1;
+                break;
+            }
+        }
+    }
+    if (state == FS_ICONPICK && icon_cursor / 32 * 32 != icon_page_base) { /* the 32 icons of the page the cursor is on */
+        for (int i = 0; i < 32; i++) {
+            if (icon_page_base >= 0) {
+                gfx_dyn_free(icon_tex_page[i]);
+            }
+        }
+        icon_page_base = icon_cursor / 32 * 32;
+        for (int i = 0; i < 32; i++) {
+            unsigned short px[32 * 32];
+            int shape = icon_page_base + i;
+            icon_tex_page[i] = -1;
+            if (shape < VF_ICON_SHAPES) {
+                vf_icon_shape_picture(shape, 0xFFFF, 0xF223, px);
+                icon_tex_page[i] = gfx_dyn_create(px, 32, 32);
+            }
+        }
     }
     if (state == FS_GRID || state == FS_DEST) {
         if (++refresh_timer >= 60) { /* cards come and go */
@@ -413,18 +593,57 @@ draw_browser(void) {
         if (sel) {
             gfx_rect(LIST_X - 12.0f, y, PANEL_W - 56.0f, ROW_H - 2.0f, 0.65f, 0x60FFFFFFu);
         }
-        gfx_text(f->name, LIST_X, y + 1.0f, 0.7f, sel ? 0xFFFFFFFFu : TEXT_COLOR, sel);
+        if (file_icon[file_top + r] >= 0) {
+            gfx_image(file_icon[file_top + r], LIST_X - 6.0f, y, 32.0f, 32.0f, 0.7f);
+        }
+        gfx_text(f->name, LIST_X + 36.0f, y + 1.0f, 0.7f, sel ? 0xFFFFFFFFu : TEXT_COLOR, sel);
         snprintf(line, sizeof(line), "%3d", f->blocks);
         gfx_text(line, PANEL_X + PANEL_W - 120.0f, y + 1.0f, 0.7f, TEXT_COLOR, 0);
         if (f->is_game) {
             gfx_text("game", PANEL_X + PANEL_W - 200.0f, y + 1.0f, 0.7f, 0xFF90C0FFu, 0);
         }
     }
-    gfx_text("A: file menu   B: back", LIST_X, PANEL_Y + PANEL_H - 40.0f, 0.7f, 0xFFA0A0A0u, 0);
+    gfx_text("A: file menu   X: card   B: back", LIST_X, PANEL_Y + PANEL_H - 40.0f, 0.7f, 0xFFA0A0A0u, 0);
+}
+
+static void
+draw_icon_picker(void) {
+    char line[48];
+    panel(PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
+    gfx_text(picking_for_reset ? "Choose an icon for the new card" : "Choose an icon", LIST_X, 70.0f, 0.7f, 0xFFFFFFFFu, 1);
+    for (int i = 0; i < 32; i++) {
+        int shape = icon_page_base + i;
+        float x = LIST_X + (float)(i % 8) * 52.0f, y = 104.0f + (float)(i / 8) * 52.0f;
+        if (shape == icon_cursor) {
+            gfx_rect(x - 6.0f, y - 6.0f, 48.0f, 48.0f, 0.65f, 0x70FFFFFFu);
+        }
+        if (shape < VF_ICON_SHAPES && icon_page_base >= 0) {
+            gfx_image(icon_tex_page[i], x, y, 36.0f, 36.0f, 0.7f);
+        }
+    }
+    snprintf(line, sizeof(line), "%d / %d", icon_cursor + 1, VF_ICON_SHAPES);
+    gfx_text(line, LIST_X, PANEL_Y + PANEL_H - 76.0f, 0.7f, 0xFFB0B0B0u, 0);
+    gfx_text("A: choose   B: back", LIST_X, PANEL_Y + PANEL_H - 40.0f, 0.7f, 0xFFA0A0A0u, 0);
+}
+
+static void
+draw_colour_picker(void) {
+    panel(PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
+    gfx_text(picking_for_reset ? "Choose a colour for the new card" : "Choose a colour", LIST_X, 70.0f, 0.7f, 0xFFFFFFFFu, 1);
+    for (int i = 0; i < vf_colour_count(); i++) {
+        float y = 104.0f + (float)i * 30.0f;
+        if (i == colour_cursor) {
+            gfx_rect(LIST_X - 12.0f, y - 2.0f, PANEL_W - 56.0f, 30.0f, 0.65f, 0x60FFFFFFu);
+        }
+        gfx_rect(LIST_X, y + 2.0f, 40.0f, 22.0f, 0.7f, vf_colour_argb(i));
+        gfx_text(vf_colour_get(i)->name, LIST_X + 56.0f, y - 1.0f, 0.7f, i == colour_cursor ? 0xFFFFFFFFu : TEXT_COLOR, 0);
+    }
+    gfx_text("A: choose   B: back", LIST_X, PANEL_Y + PANEL_H - 40.0f, 0.7f, 0xFFA0A0A0u, 0);
 }
 
 void
 uif_draw(void) {
+    static const char* const card_menu[4] = {"Change icon", "Change colour", "Memory reset", "Cancel"};
     static const char* const file_menu[3] = {"Copy", "Delete", "Cancel"};
     static const char* const yes_no[2] = {"Yes", "No"};
     switch (state) {
@@ -433,6 +652,8 @@ uif_draw(void) {
             bfiles_draw(&grid, gfx_sink());
             draw_grid_texts();
             break;
+        case FS_ICONPICK: draw_icon_picker(); break;
+        case FS_COLOURPICK: draw_colour_picker(); break;
         default: draw_browser(); break;
     }
     switch (state) {
@@ -441,9 +662,13 @@ uif_draw(void) {
             break;
         case FS_ASK_OVERWRITE: draw_list_popup("File exists. Overwrite?", yes_no, 2, popup_sel, 0); break;
         case FS_ASK_DELETE: draw_list_popup("Delete this file?", yes_no, 2, popup_sel, 0); break;
+        case FS_CARDMENU: draw_list_popup(slot_names[src_slot], card_menu, 4, popup_sel, 0); break;
+        case FS_ASK_RESET: draw_list_popup("Delete ALL files? Proceed?", yes_no, 2, popup_sel, 0); break;
+        case FS_ASK_CONFIRM: draw_list_popup("Confirm your settings", yes_no, 2, popup_sel, 0); break;
         case FS_BUSY:
             message_lines = 2;
-            snprintf(message[0], sizeof(message[0]), "%s", busy_op == 0 ? "Copying..." : "Deleting...");
+            snprintf(message[0], sizeof(message[0]), "%s",
+                     busy_op == 0 ? "Copying..." : (busy_op == 1 ? "Deleting..." : (busy_op == 2 ? "Changing the card..." : "Deleting all...")));
             snprintf(message[1], sizeof(message[1]), "%s", "Please do not remove the memory card.");
             draw_message();
             break;

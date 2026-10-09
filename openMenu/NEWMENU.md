@@ -165,5 +165,26 @@ selected card flashes. A on a card lists its files in a green window (`ui_files.
 file menu (Copy, Delete, Cancel), copy asks for the destination card (same checks and messages as
 the BIOS: card not ready, full, one VMU game per card, same name exists), delete asks first, the
 "do not remove the card" box is shown while a copy or delete runs. File access is `vmu_files.c`
-(KOS vmufs). Not yet: the file icons (VMS header bitmaps), copying a group of files, memory reset
-(format) and the card's own icon.
+(KOS vmufs).
+
+File icons: the first icon of each file's VMS header (32x32, 16 colours) is shown in the file list;
+they are read one per frame for the visible rows (`vf_file_icon`).
+Card look: X in the file list opens the card menu. "Change icon" and "Change colour" only rewrite the
+card's root block (icon shape, colour) and the file ICONDATA_VMS: no file is touched and nothing is
+formatted. The 124 icons are the BIOS's own (monochrome pictures in its font ROM, shape n is picture
+n + 5); the colours are presets (`vf_colour`), Standard uses the console's default.
+"Memory reset" asks, lets you pick icon and colour of the new card, asks again, then rewrites the
+card's directory and FAT (all files gone). Untested on hardware: back up first.
+Not yet: copying a group of files, the animated icons.
+
+## Todo: Files, devices, DreamPi (from the plan, later)
+
+- Browse and load Serial VMU saves (the saves kept on the SD card by the serial VMU emulation) in the
+  Files menu, next to the real cards.
+- Show an SD card model or icon on the VMU slot that is allocated for the serial SD.
+- Serial SD settings in the Files menu: on/off, slot/controller number, back up now, load backup.
+- Integrate with VM2, VMU Pro, USB4Maple and Pico2Maple: sense which of them is plugged in, and
+  control their own features from the Files menu: switch between VMU slots (and know which is
+  connected), enable/disable GameID and show its status, battery level of VM2 and VMU Pro, and more.
+- Much later: integrate with DreamPi so that the DreamPi script can load, download and upload saves
+  and VMU backups.

@@ -56,3 +56,11 @@ void gfx_set_row_scroll(int slot, int window_px, int offset_px);
 /* 16:9 mode: everything but the background gradient is squeezed to 3/4 of its width around the
  * centre of the screen, so a wide TV that stretches the picture shows it in proportion. */
 void gfx_set_aspect(int wide);
+
+/* Small pictures made at run time, e.g. the icons of files on a memory card. gfx_dyn_create() copies a
+ * w x h ARGB4444 picture into video memory and returns its id (-1 if there is no room); free them when
+ * the screen that uses them is left. gfx_image() draws one as a rectangle. */
+int gfx_dyn_create(const unsigned short* argb4444, int w, int h);
+void gfx_dyn_free(int id);
+void gfx_dyn_free_all(void);
+void gfx_image(int id, float x, float y, float w, float h, float z);

@@ -734,6 +734,65 @@ gfx_rect(float x, float y, float w, float h, float z, uint32_t argb) {
     send_vertex(x + w, y + h, z, 0, 0, argb, 1);
 }
 
+/* ---- Small pictures made at run time (file icons of the memory cards) ----------------------------- */
+
+#define DYN_MAX 64
+static rom_tex dyn_tex[DYN_MAX];
+
+int
+gfx_dyn_create(const unsigned short* argb4444, int w, int h) {
+    for (int i = 0; i < DYN_MAX; i++) {
+        if (dyn_tex[i].valid) {
+            continue;
+        }
+        size_t size = ((size_t)w * (size_t)h * 2u + 31u) & ~(size_t)31u;
+        void* staging = memalign(32, size);
+        pvr_ptr_t ptr = staging ? pvr_mem_malloc(size) : NULL;
+        if (!ptr) {
+            free(staging);
+            return -1;
+        }
+        memset(staging, 0, size);
+        memcpy(staging, argb4444, (size_t)w * (size_t)h * 2u);
+        pvr_txr_load(staging, ptr, size);
+        free(staging);
+        dyn_tex[i].ptr = ptr;
+        dyn_tex[i].w = w;
+        dyn_tex[i].h = h;
+        dyn_tex[i].fmt = PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED;
+        dyn_tex[i].valid = 1;
+        return i;
+    }
+    return -1;
+}
+
+void
+gfx_dyn_free(int id) {
+    if (id >= 0 && id < DYN_MAX && dyn_tex[id].valid) {
+        pvr_mem_free(dyn_tex[id].ptr);
+        memset(&dyn_tex[id], 0, sizeof(dyn_tex[id]));
+    }
+}
+
+void
+gfx_dyn_free_all(void) {
+    for (int i = 0; i < DYN_MAX; i++) {
+        gfx_dyn_free(i);
+    }
+}
+
+void
+gfx_image(int id, float x, float y, float w, float h, float z) {
+    if (id < 0 || id >= DYN_MAX || !dyn_tex[id].valid) {
+        return;
+    }
+    ensure_header(&dyn_tex[id], NULL, 0);
+    send_vertex(x, y, z, 0.0f, 0.0f, 0xFFFFFFFFu, 0);
+    send_vertex(x + w, y, z, 1.0f, 0.0f, 0xFFFFFFFFu, 0);
+    send_vertex(x, y + h, z, 0.0f, 1.0f, 0xFFFFFFFFu, 0);
+    send_vertex(x + w, y + h, z, 1.0f, 1.0f, 0xFFFFFFFFu, 1);
+}
+
 void
 gfx_art_box(const char* product, float x, float y, float w, float h, float z) {
     art_entry* e = art_get(product, 1);

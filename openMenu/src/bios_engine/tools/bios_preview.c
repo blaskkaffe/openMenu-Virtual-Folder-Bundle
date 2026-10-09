@@ -290,7 +290,11 @@ main(int argc, char** argv) {
     } else if (script == -8) {
         static const uint32_t acc[5] = {0xFFE07000u, 0xFF00E070u, 0xFF0070E0u, 0xFFE00070u, 0xFFE0E0E0u};
         bscene_draw_background(&menu.bg, &sink);
-        bscene_draw_panel(&menu.scene, 82.0f, 97.0f, 476.0f, 286.0f, acc[selected % 5], &sink);
+        float pr[4] = {82.0f, 97.0f, 476.0f, 286.0f}; /* BIOS_PREVIEW_PANEL="x,y,w,h" */
+        if (getenv("BIOS_PREVIEW_PANEL")) {
+            sscanf(getenv("BIOS_PREVIEW_PANEL"), "%f,%f,%f,%f", &pr[0], &pr[1], &pr[2], &pr[3]);
+        }
+        bscene_draw_panel(&menu.scene, pr[0], pr[1], pr[2], pr[3], acc[selected % 5], &sink);
     } else if (script == -6) {
         bscene_draw_background(&menu.bg, &sink);
         bscene_draw_panel(&menu.scene, BDT_PANEL_X, BDT_PANEL_Y, BDT_PANEL_W, BDT_PANEL_H, 0xFFE00070u, &sink);
