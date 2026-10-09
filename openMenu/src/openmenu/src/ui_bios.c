@@ -11,6 +11,7 @@
 
 #include <bios_audio.h>
 #include <bios_menu.h>
+#include <bios_page.h>
 
 #include "gfx.h"
 #include "history.h"
@@ -75,7 +76,9 @@ blend_color(uint32_t from, uint32_t to, int t) {
 
 static bmenu menu;
 static screen_t screen;
-static int settings_row;
+static bpage page;
+static int settings_popup;     /* a settings row popup is open */
+static int settings_popup_sel;
 static int games_opened;  /* the game browser has been opened once (last game restored) */
 static int recent_open;   /* recently played popup */
 static int recent_row;
@@ -149,41 +152,80 @@ draw_games(void) {
 #define POPUP_W 400.0f
 #define POPUP_ROWS 8
 
+typedef const char* (*popup_name_fn)(int index);
+
+/* A BIOS-style popup list: title, a few rows with the selected one highlighted, a hint line. */
 static void
-draw_recent_popup(void) {
+draw_popup(const char* title, const char* hint, int count, int sel, popup_name_fn name) {
     char line[64];
-    int n = history_recent_count();
-    int first = recent_row >= POPUP_ROWS ? recent_row - POPUP_ROWS + 1 : 0;
-    float h = (float)(POPUP_ROWS + 2) * GFX_LINE_H + 16.0f;
+    int first = sel >= POPUP_ROWS ? sel - POPUP_ROWS + 1 : 0;
+    int rows = count < POPUP_ROWS ? count : POPUP_ROWS;
+    float h = (float)(rows + 2) * GFX_LINE_H + 16.0f;
     gfx_rect(POPUP_X, ROWS_Y - 40.0f, POPUP_W, h, 0.6f, 0xE0102050u);
-    gfx_text("Recently played", POPUP_X + 16.0f, ROWS_Y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
-    for (int i = 0; i < POPUP_ROWS && first + i < n; i++) {
-        const gd_item* g = history_recent(first + i);
+    gfx_text(title, POPUP_X + 16.0f, ROWS_Y - 32.0f, 0.7f, 0xFFFFFFFFu, 1);
+    for (int i = 0; i < rows; i++) {
         float y = ROWS_Y + (float)i * GFX_LINE_H;
-        int sel = first + i == recent_row;
-        if (sel) {
+        int is_sel = first + i == sel;
+        if (is_sel) {
             gfx_rect(POPUP_X + 8.0f, y, POPUP_W - 16.0f, (float)GFX_LINE_H, 0.65f, 0x60FFFFFFu);
         }
-        snprintf(line, sizeof(line), "%.38s", g ? g->name : "?");
-        gfx_text(line, POPUP_X + 16.0f, y, 0.7f, sel ? 0xFFFFFFFFu : 0xFFC0C0C0u, sel);
+        snprintf(line, sizeof(line), "%.38s", name(first + i));
+        gfx_text(line, POPUP_X + 16.0f, y, 0.7f, is_sel ? 0xFFFFFFFFu : 0xFFC0C0C0u, is_sel);
     }
-    gfx_text("A: start   B: close", POPUP_X + 16.0f, ROWS_Y + POPUP_ROWS * GFX_LINE_H + 2.0f, 0.7f, 0xFFA0A0A0u, 0);
+    gfx_text(hint, POPUP_X + 16.0f, ROWS_Y + (float)rows * GFX_LINE_H + 2.0f, 0.7f, 0xFFA0A0A0u, 0);
+}
+
+static const char*
+recent_name(int index) {
+    const gd_item* g = history_recent(index);
+    return g ? g->name : "?";
+}
+
+static const char*
+settings_choice_name(int index) {
+    return uis_choice_name(page.cursor, index);
+}
+
+/* ---- Settings page ---------------------------------------------------------------------- */
+
+static void
+page_row(void* user, int index, bpage_row* out) {
+    (void)user;
+    out->icon = BPAGE_ICON_DIGIT(index % 10); /* placeholder icons until the real ones exist */
+}
+
+/* Text of the visible rows and of the help box, then the objects themselves. */
+static void
+settings_sync(void) {
+    char line[BPAGE_LABEL_MAX];
+    for (int s = 0; s < BPAGE_SLOTS; s++) {
+        int row = bpage_row_in_slot(&page, s);
+        if (row >= 0) {
+            snprintf(line, sizeof(line), "%.20s\t%.20s", uis_label(row), uis_value(row));
+        } else {
+            line[0] = '\0';
+        }
+        gfx_set_label((uint16_t)BPAGE_TEXT_ID(s), line);
+    }
+    snprintf(line, sizeof(line), "%.40s\n%.40s", uis_group(page.cursor), uis_help(page.cursor));
+    gfx_set_label((uint16_t)BPAGE_HELP_ID, line);
+    bpage_sync(&page, page_row, NULL);
 }
 
 static void
 draw_settings(void) {
-    char line[64];
-    gfx_rect(PANEL_X, PANEL_Y, PANEL_W, (ROWS_Y - PANEL_Y) + uis_count() * GFX_LINE_H + 40.0f, 0.4f, 0x90000000u);
-    gfx_text("Settings", TEXT_X, TITLE_Y, 0.5f, 0xFFFFFFFFu, 1);
-    for (int i = 0; i < uis_count(); i++) {
-        float y = ROWS_Y + (float)i * GFX_LINE_H;
-        if (i == settings_row) {
-            gfx_rect(PANEL_X + 8.0f, y, PANEL_W - 16.0f, (float)GFX_LINE_H, 0.45f, 0x50FFFFFFu);
-        }
-        uis_text(i, line, sizeof(line));
-        gfx_text(line, TEXT_X, y, 0.5f, i == settings_row ? 0xFFFFFFFFu : 0xFFC0C0C0u, i == settings_row);
+    bpage_draw(&page, gfx_sink());
+    /* more rows above / below the four shown */
+    if (page.top > 0) {
+        gfx_text("^", 590.0f, 40.0f, 0.5f, 0xFFFFFFFFu, 1);
     }
-    gfx_text("Left/Right: change   B: back", TEXT_X, ROWS_Y + uis_count() * GFX_LINE_H + 4.0f, 0.5f, 0xFFA0A0A0u, 0);
+    if (page.top + BPAGE_SLOTS < page.count) {
+        gfx_text("v", 590.0f, 370.0f, 0.5f, 0xFFFFFFFFu, 1);
+    }
+    if (settings_popup) {
+        draw_popup(uis_label(page.cursor), "A: choose   B: cancel", uis_choice_count(page.cursor), settings_popup_sel,
+                   settings_choice_name);
+    }
 }
 
 static void
@@ -205,15 +247,16 @@ draw_frame(void) {
         if (!(held & CONT_Y)) {
             bmenu_draw_objects(&menu, gfx_sink());
         }
+    } else if (screen == SCREEN_SETTINGS) {
+        bscene_draw_background(&menu.bg, gfx_sink());
+        draw_settings();
     } else {
         bscene_draw_background(&menu.bg, gfx_sink());
         if (screen == SCREEN_GAMES) {
             draw_games();
             if (recent_open) {
-                draw_recent_popup();
+                draw_popup("Recently played", "A: start   B: close", history_recent_count(), recent_row, recent_name);
             }
-        } else {
-            draw_settings();
         }
     }
     if (screen == SCREEN_MAIN) {
@@ -256,7 +299,8 @@ handle_main(button_t b) {
                 screen = SCREEN_GAMES;
             } else if (menu.selected == ICON_SETTINGS) {
                 sound_sfx(BAUDIO_SFX_ENTER);
-                settings_row = 0;
+                bpage_open(&page, &menu, uis_count());
+                settings_popup = 0;
                 screen = SCREEN_SETTINGS;
             } else {
                 sound_sfx(BAUDIO_SFX_ERROR);
@@ -337,39 +381,76 @@ handle_games(button_t b) {
 }
 
 static void
+leave_settings(void) {
+    if (uis_commit() != 0) {
+        sound_sfx(BAUDIO_SFX_ERROR);
+        show_notice("Could not save settings");
+    } else {
+        sound_sfx(BAUDIO_SFX_CANCEL);
+    }
+    /* order, multi-disc and recent list changes show up in the list again */
+    list_set_folder_root();
+    uil_reset();
+    bmenu_show_main(&menu, ICON_SETTINGS);
+    screen = SCREEN_MAIN;
+}
+
+static void
 handle_settings(button_t b) {
+    int row = page.cursor;
+    if (settings_popup) {
+        int n = uis_choice_count(row);
+        switch (b) {
+            case BTN_UP:
+                if (settings_popup_sel > 0) {
+                    settings_popup_sel--;
+                    sound_sfx(BAUDIO_SFX_CURSOR);
+                }
+                break;
+            case BTN_DOWN:
+                if (settings_popup_sel < n - 1) {
+                    settings_popup_sel++;
+                    sound_sfx(BAUDIO_SFX_CURSOR);
+                }
+                break;
+            case BTN_A:
+            case BTN_START:
+                uis_set(row, settings_popup_sel);
+                sound_sfx(BAUDIO_SFX_CONFIRM);
+                settings_popup = 0;
+                break;
+            case BTN_B:
+                sound_sfx(BAUDIO_SFX_CANCEL);
+                settings_popup = 0;
+                break;
+            default: break;
+        }
+        return;
+    }
     switch (b) {
         case BTN_UP:
-            if (settings_row > 0) {
-                settings_row--;
-                sound_sfx(BAUDIO_SFX_CURSOR);
-            }
+            if (bpage_move(&page, -1)) sound_sfx(BAUDIO_SFX_CURSOR);
             break;
         case BTN_DOWN:
-            if (settings_row < uis_count() - 1) {
-                settings_row++;
-                sound_sfx(BAUDIO_SFX_CURSOR);
-            }
+            if (bpage_move(&page, 1)) sound_sfx(BAUDIO_SFX_CURSOR);
             break;
         case BTN_LEFT:
         case BTN_RIGHT:
-        case BTN_A:
-            uis_change(settings_row, b == BTN_LEFT ? -1 : 1);
+            uis_change(row, b == BTN_LEFT ? -1 : 1);
             sound_sfx(BAUDIO_SFX_CONFIRM);
             break;
-        case BTN_B:
-        case BTN_START:
-            if (uis_commit() != 0) {
-                sound_sfx(BAUDIO_SFX_ERROR);
-                show_notice("Could not save settings");
+        case BTN_A:
+            if (uis_opens_popup(row)) {
+                settings_popup = 1;
+                settings_popup_sel = uis_get(row);
+                sound_sfx(BAUDIO_SFX_ENTER);
             } else {
-                sound_sfx(BAUDIO_SFX_CANCEL);
+                uis_change(row, 1);
+                sound_sfx(BAUDIO_SFX_CONFIRM);
             }
-            /* order, multi-disc and recent list changes show up in the list again */
-            list_set_folder_root();
-            uil_reset();
-            screen = SCREEN_MAIN;
             break;
+        case BTN_B:
+        case BTN_START: leave_settings(); break;
         default: break;
     }
 }
@@ -433,6 +514,10 @@ ui_bios_run(const bios_rom* rom) {
             if (fade_step < FADE_STEPS) {
                 fade_step++;
             }
+        }
+
+        if (screen == SCREEN_SETTINGS) {
+            settings_sync();
         }
 
         frames_this_second++;

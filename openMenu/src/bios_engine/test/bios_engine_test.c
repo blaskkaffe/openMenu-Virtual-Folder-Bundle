@@ -13,6 +13,7 @@
 #include "bios_rom.h"
 #include "bios_vm.h"
 #include "dcbg.h"
+#include "bios_page.h"
 #include "bios_scene.h"
 #include "nj_model.h"
 #include "tex_decode.h"
@@ -697,6 +698,28 @@ test_real_rom(const char* path) {
     free(data);
 }
 
+static void
+test_page(const bios_rom* rom) {
+    static bmenu m;
+    static bpage p;
+    bmenu_init(&m, rom, NULL);
+    bpage_open(&p, &m, 10);
+    CHECK(p.cursor == 0 && p.top == 0);
+    CHECK(bpage_row_in_slot(&p, 3) == 3);
+    for (int i = 0; i < 6; i++) {
+        CHECK(bpage_move(&p, 1) == 1);
+    }
+    CHECK(p.cursor == 6 && p.top == 3); /* scrolled so the cursor is the last visible row */
+    CHECK(bpage_row_in_slot(&p, 0) == 3 && bpage_row_in_slot(&p, 3) == 6);
+    CHECK(bpage_move(&p, 100) == 1 && p.cursor == 9 && p.top == 6);
+    CHECK(bpage_move(&p, 1) == 0);
+    CHECK(bpage_move(&p, -100) == 1 && p.cursor == 0 && p.top == 0);
+    bpage_open(&p, &m, 2); /* fewer rows than slots */
+    CHECK(bpage_row_in_slot(&p, 1) == 1 && bpage_row_in_slot(&p, 2) == -1);
+    bpage_sync(&p, NULL, NULL);
+    bmenu_free(&m);
+}
+
 int
 main(void) {
     image = calloc(1, BIOS_ROM_SIZE);
@@ -722,6 +745,7 @@ main(void) {
     test_tex_decode();
     test_audio();
     test_scene(&rom);
+    test_page(&rom);
 
     const char* real = getenv("BIOS_ROM_FILE");
     if (real && *real) {

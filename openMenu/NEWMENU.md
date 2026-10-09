@@ -100,3 +100,13 @@ All set in Settings: Game order (A-Z, SD card order), Multi-disc games, Disc set
 Recently played (Off, 5, 10, 15, 20, 25, 50), Remember last game. In the game list, X opens the
 recently played popup. Remember last game restores folder and cursor the first time the
 browser is opened after start-up. Later: genre filter (needs better genre data), most played.
+
+## Settings screen (sketch)
+
+Looks like the BIOS Settings screen (`bios_engine/bios_page`): four rows with a 3D icon, a pill and a
+text line, and a help box below showing the group and a help line. The list scrolls, so it can hold
+any number of rows. Icons are the digit models 0-9 until real ones exist. Rows with more than two
+values open a popup list; two-value rows toggle. Rows are defined in `ui_settings.c`
+(label, group, help, save-file variable, choice names). Text column positions
+(`PAGE_TEXT_PAD`, `PAGE_VALUE_X` in `gfx.c`) are guesses to be tuned on hardware.
+Preview without hardware: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.

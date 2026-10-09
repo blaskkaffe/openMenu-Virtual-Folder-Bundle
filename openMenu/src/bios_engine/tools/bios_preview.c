@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "bios_menu.h"
+#include "bios_page.h"
 #include "tex_decode.h"
 
 #define W 640
@@ -132,6 +133,12 @@ text(void* user, const bvm_obj* o, float x, float y, float invw) {
     }
 }
 
+static void
+demo_row(void* user, int index, bpage_row* out) {
+    (void)user;
+    out->icon = index < 4 ? BPAGE_ICON_BIOS(index) : BPAGE_ICON_DIGIT(index - 4);
+}
+
 int
 main(int argc, char** argv) {
     if (argc < 3) {
@@ -179,8 +186,14 @@ main(int argc, char** argv) {
     }
 
     static bmenu menu;
+    static bpage page;
     bmenu_init(&menu, &rom, NULL);
-    if (script >= 0) {
+    if (script == -2) { /* settings page demo: `selected` = cursor row, 10 rows */
+        bpage_open(&page, &menu, 10);
+        for (int i = 0; i < selected; i++) {
+            bpage_move(&page, 1);
+        }
+    } else if (script >= 0) {
         bvm_obj* o = bvm_create(&menu.vm, script, 0x400, 0x2000);
         if (!o) {
             fprintf(stderr, "script %d is unused\n", script);
@@ -192,6 +205,9 @@ main(int argc, char** argv) {
     }
     for (int i = 0; i < frames; i++) {
         bmenu_update(&menu);
+        if (script == -2) {
+            bpage_sync(&page, demo_row, NULL);
+        }
     }
     if (menu.vm.error) {
         fprintf(stderr, "script error %d at %#x\n", menu.vm.error, menu.vm.error_pc);
@@ -210,7 +226,12 @@ main(int argc, char** argv) {
         }
     }
     bscene_sink sink = {NULL, tri, text};
-    bmenu_draw(&menu, &sink);
+    if (script == -2) {
+        bscene_draw_background(&menu.bg, &sink);
+        bpage_draw(&page, &sink);
+    } else {
+        bmenu_draw(&menu, &sink);
+    }
 
     FILE* out = fopen(argv[2], "wb");
     if (!out) {
