@@ -228,3 +228,15 @@ moves down the new case flies in from the top while the old one leaves at the bo
 motion is an ease-out of 26% of the remaining way per frame (about 15 frames), the case leans into the motion.
 At rest it tilts slowly about all axes (periods roughly 9, 12 and 15 s), each game with its own phase and
 direction. Folders show no case. Preview: `bios_preview dc_boot.bin out.ppm 5 <frames> -11`.
+
+## Lighting of the models (open)
+
+What is known from the decompile: every vertex has a normal (chunk type 0x29), every material carries diffuse,
+ambient and specular colours (`nj_poly.diffuse/ambient/specular`), strip flag bits are 0x01 ignore light,
+0x02 ignore specular, 0x04 ignore ambient, 0x08 use alpha, 0x10 double sided, 0x40 environment map. The vertex
+handlers (table at ROM 0xE3618) transform positions and normals; the colour is made in the strip handlers
+(0x8C0C....-0x8C0D....), not yet reverse engineered. Current approximation: colour = diffuse * (0.5 + 0.5 N.L) with the
+light along the view axis, plus `ambient_models` (the clock keeps its ambient colour). Tests showed that
+colour = ambient + diffuse * N.L washes out the buttons, controller and panels, and that a light from the upper
+left (scene.light_x/y/z, preview `BIOS_PREVIEW_LIGHT=x,y,z`) gives the left-bright shading seen on the original's VMU and
+controller. Needs either the strip handlers read to the end, or same-exposure photos of one model at a time.

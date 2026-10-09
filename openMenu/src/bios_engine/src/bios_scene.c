@@ -297,9 +297,10 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
                         int light = 256;
                         if (vx->has_nrm) {
                             float nz = m.m[2][0] * vx->nrm.x + m.m[2][1] * vx->nrm.y + m.m[2][2] * vx->nrm.z;
-                            if (s->light_y != 0.0f) { /* light from above the camera: tilt it by light_y */
+                            if (s->light_x != 0.0f || s->light_y != 0.0f) { /* a light that is not along the view axis */
+                                float nx = m.m[0][0] * vx->nrm.x + m.m[0][1] * vx->nrm.y + m.m[0][2] * vx->nrm.z;
                                 float ny = m.m[1][0] * vx->nrm.x + m.m[1][1] * vx->nrm.y + m.m[1][2] * vx->nrm.z;
-                                nz = nz * s->light_z + ny * s->light_y;
+                                nz = nz * s->light_z + ny * s->light_y + nx * s->light_x;
                             }
                             nz = nz > 0.0f ? (nz > 1.0f ? 1.0f : nz) : 0.0f;
                             light = (int)((LIGHT_AMBIENT + LIGHT_DIFFUSE * nz) * 256.0f);

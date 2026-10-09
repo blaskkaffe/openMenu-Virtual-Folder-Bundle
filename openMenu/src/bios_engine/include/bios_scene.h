@@ -83,7 +83,7 @@ typedef struct bscene {
     int panel_on;
     float panel_fx, panel_fy;
     uint32_t panel_accent;
-    float light_y, light_z; /* direction of the light toward the scene (y up); 0, 0 means straight along the view axis */
+    float light_x, light_y, light_z; /* unit vector from the surface toward the light (x right, y up, z toward the viewer); all 0 = straight along the view axis */
     int amb_k; /* how much of the material's ambient colour is the lowest the light can make a surface, 256 = all */
     /* material colours replaced while an object of `model` is drawn (the BIOS script effects that recolour a model:
      * the BACK marker's arrow and frame). node and poly index into the model. */

@@ -128,3 +128,21 @@ Mark OK / FAIL / n.a. and write what you saw.
 - [ ] Zero serial mismatches in your own collection (section 1)
 - [ ] 60 fps in all screens, no stutter while browsing
 - [ ] No crashes in 1 hour of normal use
+
+## 5. Results of the first hardware round (dev build, game list)
+
+| Item | Result | Follow-up |
+|---|---|---|
+| 5 rows, titles, pill, discs, BACK + buttons | OK | BACK was not selectable, no yellow blinking frame: **fixed** (down from the last row, A leaves; frame and arrow colours from the BIOS effect 0x8C021CD0) |
+| Art on discs round | art shows, but **wrong art** | The BIOS shows the disc's own `0GDTEX.PVR`; which picture do you expect here, and which DAT does the Card Manager write it to? (open question) |
+| Art for games without art (PAL blue / NTSC red) | not tested | |
+| Right panel | alpha OK, top 1-2 px low | **fixed** (2 px higher) |
+| 3D case flies | works, but leaves over the buttons and to the right | **changed**: leaves fully off the screen, no roll |
+| Case with no box art / folder | not tested | |
+| Paging, hold to scroll, no wrap | OK | jumping far: not tested |
+| Launch animation | too slow / cut short, row backgrounds stayed | **changed**: everything bursts outwards in 14 frames, the disc alone stays 18 frames |
+| X recent popup | works, ugly | **centred** |
+| B back, remember last game, mouse, keyboard | OK | |
+| Sort A-Z / SD order | not tested (card already sorted) | |
+| All models look a bit weird against the original BIOS | open | lighting: see NEWMENU.md notes |
+| Labels | "Game"/"Files" | **changed** to "Play"/"File" like the BIOS; text uses the BIOS double-thick font everywhere |

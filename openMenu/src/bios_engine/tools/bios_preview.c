@@ -266,8 +266,8 @@ main(int argc, char** argv) {
     static bdt dt;
     bmenu_init(&menu, &rom, NULL);
 
-    if (getenv("BIOS_PREVIEW_LIGHT")) { /* "y,z" direction components */
-        sscanf(getenv("BIOS_PREVIEW_LIGHT"), "%f,%f", &menu.scene.light_y, &menu.scene.light_z);
+    if (getenv("BIOS_PREVIEW_LIGHT")) { /* "x,y,z" direction toward the light */
+        sscanf(getenv("BIOS_PREVIEW_LIGHT"), "%f,%f,%f", &menu.scene.light_x, &menu.scene.light_y, &menu.scene.light_z);
     }
     if (getenv("BIOS_PREVIEW_AMB")) { /* amb_k, 0..256 */
         sscanf(getenv("BIOS_PREVIEW_AMB"), "%d", &menu.scene.amb_k);
