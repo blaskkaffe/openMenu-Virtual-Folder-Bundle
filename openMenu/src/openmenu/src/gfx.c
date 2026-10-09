@@ -426,6 +426,7 @@ white_tex(void) {
 }
 
 static char model_front_product[16];
+static int memo_ok;
 
 void
 gfx_model_bind_front(const char* product) {
@@ -436,7 +437,6 @@ gfx_model_bind_front(const char* product) {
 
 /* The last texture looked up: a model draws many triangles with the same one, and finding a game picture
  * costs a string search. Forgotten whenever pictures come or go. */
-static int memo_ok;
 static bscene_texref memo_ref;
 static rom_tex* memo_tex;
 
