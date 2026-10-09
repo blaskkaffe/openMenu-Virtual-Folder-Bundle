@@ -288,10 +288,16 @@ draw_games(void) {
 #define POPUP_W 400.0f
 #define POPUP_ROWS 8
 
-/* The window panels take the colour of their screen, as in the BIOS: orange for Game, magenta for Settings. */
+/* The window panels take the colour of their screen, as in the BIOS (the colour of the main menu
+ * item the screen belongs to): orange Game, green Files, blue Music / online, magenta Settings. */
 static uint32_t
 screen_accent(void) {
-    return screen == SCREEN_GAMES ? 0xFFE07000u : (screen == SCREEN_MAIN ? 0xFFE0E0E0u : 0xFFE00070u);
+    switch (screen) {
+        case SCREEN_GAMES: return BMENU_ACCENT_GAME;
+        case SCREEN_SETTINGS:
+        case SCREEN_DATETIME: return BMENU_ACCENT_SETTINGS;
+        default: return BMENU_ACCENT_MAIN;
+    }
 }
 
 typedef const char* (*popup_name_fn)(int index);

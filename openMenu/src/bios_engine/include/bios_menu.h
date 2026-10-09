@@ -22,6 +22,14 @@ typedef enum bmenu_dir { BMENU_UP, BMENU_DOWN, BMENU_LEFT, BMENU_RIGHT } bmenu_d
 #define BMENU_ID_CAPTION(i) (0x300 + (i))
 #define BMENU_ID_HEADER 0x1FF
 
+/* Accent colours of the window panels, by main menu item (set_panel_accent_color in the BIOS):
+ * the same colours as the pills behind the icon names on the main screen. */
+#define BMENU_ACCENT_GAME 0xFFE07000u     /* orange */
+#define BMENU_ACCENT_FILES 0xFF00E070u    /* green */
+#define BMENU_ACCENT_MUSIC 0xFF0070E0u    /* blue: Music, and the online category that takes its place */
+#define BMENU_ACCENT_SETTINGS 0xFFE00070u /* magenta */
+#define BMENU_ACCENT_MAIN 0xFFE0E0E0u     /* light grey: popups on the main screen */
+
 /* The header bar is model 7; its texture slot 0 is the "Dreamcast" logo (a 128x32 picture). */
 #define BMENU_HEADER_MODEL 7
 #define BMENU_LOGO_SLOT 0
