@@ -52,12 +52,27 @@ static const char* const icon_names[BMENU_ICONS] = {"Play", "File", "Music", "Se
 
 #define NOTICE_FRAMES 150
 
-/* Start-up fade (decompile: gui_init, fade_step_bg_colors): the background starts as one flat
- * colour, the colour the boot animation leaves behind (white-ish), and blends linearly to the
- * gradient over 32 logic steps. START_COLOR is that flat colour. */
+/* Start-up fade (decompile: gui_init 0x8C0101E0, main_menu_update 0x8C020BA0, fade_step_bg_colors 0x8C021620):
+ * the background, and the border of the picture, start as one flat colour, the word the boot code left at 0x8C000060
+ * with every channel limited to 0xC0 (gui_init reads exactly that). The first frame creates nothing, the second creates
+ * the icons, the third the captions, and from the fourth frame on the fade runs one step per frame, 32 steps, to the
+ * gradient (border to black). */
 #define FADE_STEPS 32
-#define START_COLOR 0xFFFFFFFFu
-static int fade_step;
+#define FADE_HOLD_STEPS 3
+#define BOOT_COLOR_ADDR 0x8C000060u
+static int fade_step = -FADE_HOLD_STEPS;
+static uint32_t start_color = 0xFF000000u;
+
+static uint32_t
+read_boot_color(void) {
+    uint32_t v = *(volatile uint32_t*)BOOT_COLOR_ADDR;
+    uint32_t r = (v >> 16) & 0xFF, g = (v >> 8) & 0xFF, b = v & 0xFF;
+    r = r > 0xC0 ? 0xC0 : r;
+    g = g > 0xC0 ? 0xC0 : g;
+    b = b > 0xC0 ? 0xC0 : b;
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+#define START_COLOR start_color
 
 static uint32_t
 blend_color(uint32_t from, uint32_t to, int t) {
@@ -499,9 +514,13 @@ draw_frame(void) {
     uint32_t held = UI_DEBUG ? input_buttons() : 0;
     gfx_set_aspect(sf_aspect[0] == ASPECT_WIDE);
     dcbg_gradient(&menu.bg, &top, &bottom);
+    {
+        uint32_t border = blend_color(START_COLOR, 0xFF000000u, fade_step < 0 ? 0 : fade_step);
+        vid_border_color((int)((border >> 16) & 0xFF), (int)((border >> 8) & 0xFF), (int)(border & 0xFF));
+    }
     if (fade_step < FADE_STEPS) {
-        top = blend_color(START_COLOR, top, fade_step);
-        bottom = blend_color(START_COLOR, bottom, fade_step);
+        top = blend_color(START_COLOR, top, fade_step < 0 ? 0 : fade_step);
+        bottom = blend_color(START_COLOR, bottom, fade_step < 0 ? 0 : fade_step);
     }
     gfx_begin_frame(top, bottom);
     uint64_t t1 = timer_us_gettime64();
@@ -945,8 +964,10 @@ ui_bios_run(const bios_rom* rom) {
     }
 
     sound_init(rom);
-    snprintf(status_line, sizeof(status_line), "BIOS %s  %s", rom->revision, sound_status());
+    snprintf(status_line, sizeof(status_line), "BIOS %s  %s  boot %08X", rom->revision, sound_status(),
+             (unsigned)*(volatile uint32_t*)BOOT_COLOR_ADDR);
 
+    start_color = read_boot_color();
     bmenu_init(&menu, rom, NULL);
     bmenu_show_main(&menu, ICON_GAME);
     for (int i = 0; i < BMENU_ICONS; i++) {
