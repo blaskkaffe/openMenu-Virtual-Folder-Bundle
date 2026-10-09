@@ -37,6 +37,24 @@ static const char* const icon_names[BMENU_ICONS] = {"Game", "Files", "Music", "S
 
 #define NOTICE_FRAMES 150
 
+/* Start-up fade (decompile: gui_init, fade_step_bg_colors): the background starts as one flat
+ * colour, the colour the boot animation leaves behind (white-ish), and blends linearly to the
+ * gradient over 32 logic steps. START_COLOR is that flat colour. */
+#define FADE_STEPS 32
+#define START_COLOR 0xFFFFFFFFu
+static int fade_step;
+
+static uint32_t
+blend_color(uint32_t from, uint32_t to, int t) {
+    uint32_t out = 0xFF000000u;
+    for (int sh = 0; sh <= 16; sh += 8) {
+        int a = (int)((from >> sh) & 0xFF);
+        int b = (int)((to >> sh) & 0xFF);
+        out |= (uint32_t)(a + (b - a) * t / FADE_STEPS) << sh;
+    }
+    return out;
+}
+
 /* Layout in the safe area (about 5% of the picture is cropped by many TVs and scalers) */
 #define PANEL_X 48.0f
 #define PANEL_Y 56.0f
@@ -111,6 +129,10 @@ draw_frame(void) {
     uint64_t t0 = timer_us_gettime64();
     uint32_t held = UI_DEBUG ? input_buttons() : 0;
     dcbg_gradient(&menu.bg, &top, &bottom);
+    if (fade_step < FADE_STEPS) {
+        top = blend_color(START_COLOR, top, fade_step);
+        bottom = blend_color(START_COLOR, bottom, fade_step);
+    }
     gfx_begin_frame(top, bottom);
 
     if (screen == SCREEN_MAIN) {
@@ -197,6 +219,12 @@ ui_bios_run(const bios_rom* rom) {
     }
     update_clock();
 
+    /* Cover the first frames (texture uploads) with the start colour so nothing pops in. */
+    for (int i = 0; i < 3; i++) {
+        gfx_begin_frame(START_COLOR, START_COLOR);
+        gfx_end_frame();
+    }
+
     uint64_t last_ms = timer_ms_gettime64();
     uint64_t fps_since = last_ms;
     uint32_t step_credit = 0;
@@ -228,6 +256,9 @@ ui_bios_run(const bios_rom* rom) {
         }
         for (int i = 0; i < steps; i++) {
             bmenu_update(&menu);
+            if (fade_step < FADE_STEPS) {
+                fade_step++;
+            }
         }
 
         frames_this_second++;
