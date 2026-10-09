@@ -348,97 +348,156 @@ build_phone(builder* b) {
     bar(b, light, grip, 4, 0.42f, 0.42f);
 }
 
-#define GLOBE_LON 10
-#define GLOBE_LAT 6
 #define GLOBE_R 4.6f
-#define GLOBE_LINE_R 1.04f /* the coast lines float a little above the faceted ball */
+#define GLOBE_FRONT_LON (-75.0f) /* the Americas face the viewer */
+#define GLOBE_LEAN 0.35f           /* the north pole leans toward the viewer (radians) */
+#ifndef GLOBE_SUBDIV
+#define GLOBE_SUBDIV 2 /* 20 * 4^2 = 320 triangles; 3 gives 1280 */
+#endif
+#define GLOBE_MAX_FACES (20 << (2 * GLOBE_SUBDIV))
 
 static v3
-sphere_pt(float lon_deg, float lat_deg, float r) {
-    float lam = lon_deg * (PI_F / 180.0f), phi = lat_deg * (PI_F / 180.0f); /* longitude 0 faces +z */
-    const float tilt = 0.41f;                                              /* 23.5 degrees of axial tilt */
-    v3 p = v3m(r * cosf(phi) * sinf(lam), r * sinf(phi), r * cosf(phi) * cosf(lam));
-    return v3m(p.x * cosf(tilt) - p.y * sinf(tilt), p.x * sinf(tilt) + p.y * cosf(tilt), p.z);
+globe_orient(v3 p) {
+    /* turn the earth so GLOBE_FRONT_LON faces +z, then lean the north pole toward the viewer */
+    float a = -GLOBE_FRONT_LON * (PI_F / 180.0f);
+    v3 q = v3m(p.x * cosf(a) + p.z * sinf(a), p.y, -p.x * sinf(a) + p.z * cosf(a));
+    return v3m(q.x, q.y * cosf(GLOBE_LEAN) - q.z * sinf(GLOBE_LEAN), q.y * sinf(GLOBE_LEAN) + q.z * cosf(GLOBE_LEAN));
 }
 
-/* Coast lines as closed (lon, lat) loops in degrees, a few points per continent. */
+/* Continents and big islands as closed (lon, lat) loops in degrees. */
 #define LOOP_END 999.0f
 static const float globe_coast[][2] = {
     /* North America */
-    {-165, 65}, {-125, 70}, {-95, 72}, {-62, 58}, {-56, 48}, {-76, 35}, {-81, 25}, {-90, 29},
-    {-97, 22}, {-80, 8}, {-105, 20}, {-124, 40}, {-130, 55}, {LOOP_END, 0},
+    {-168, 66}, {-162, 70}, {-156, 71.5}, {-141, 69.5}, {-128, 70}, {-115, 68}, {-95, 72}, {-85, 69}, {-82, 63}, {-93, 59}, {-94, 57}, {-80, 52}, {-79, 57}, {-77, 62}, {-70, 60}, {-62, 58}, {-56, 52}, {-60, 47}, {-66, 45}, {-70, 42}, {-74, 40}, {-76, 35}, {-81, 31}, {-80, 26}, {-82, 26}, {-84, 30}, {-90, 29.5}, {-94, 29}, {-97, 26}, {-97.5, 22}, {-95, 19}, {-91, 19}, {-90, 21}, {-87, 21}, {-88, 16}, {-84, 15}, {-83, 10}, {-79, 8.5}, {-83, 8}, {-86, 11}, {-92, 14.5}, {-96, 16}, {-105, 20}, {-109, 26}, {-114, 31}, {-117, 33}, {-121, 35}, {-124, 40}, {-124, 46}, {-125, 49}, {-130, 54}, {-135, 58}, {-140, 60}, {-148, 60}, {-152, 58}, {-158, 56}, {-163, 55}, {-158, 58}, {-162, 61}, {-165, 63}, {LOOP_END, 0},
     /* Greenland */
-    {-55, 60}, {-20, 70}, {-25, 80}, {-60, 82}, {-65, 70}, {LOOP_END, 0},
+    {-73, 78}, {-60, 82}, {-30, 83}, {-20, 80}, {-18, 76}, {-22, 70}, {-32, 68}, {-43, 60}, {-48, 61}, {-53, 67}, {-56, 70}, {-67, 76}, {LOOP_END, 0},
     /* South America */
-    {-80, 8}, {-62, 10}, {-35, -6}, {-40, -22}, {-58, -38}, {-68, -52}, {-74, -40}, {-71, -18}, {-81, -5}, {LOOP_END, 0},
+    {-77.5, 8.5}, {-72, 12}, {-65, 10.5}, {-60, 8}, {-52, 5}, {-50, 0}, {-44, -2}, {-35, -5}, {-35, -9}, {-39, -13}, {-39, -18}, {-41, -22}, {-48, -26}, {-53, -34}, {-58, -35}, {-57, -38}, {-62, -39}, {-65, -45}, {-68, -50}, {-69, -54}, {-72, -53}, {-75, -47}, {-73, -40}, {-71, -30}, {-70, -18}, {-76, -14}, {-81, -6}, {-80, -2}, {-78, 2}, {LOOP_END, 0},
     /* Africa */
-    {-17, 21}, {-10, 35}, {10, 37}, {32, 31}, {43, 12}, {51, 12}, {40, -15}, {20, -35}, {12, -18}, {9, 4}, {-8, 5},
-    {LOOP_END, 0},
-    /* Europe and Asia */
-    {-9, 37}, {-4, 48}, {8, 54}, {5, 62}, {25, 70}, {60, 70}, {100, 77}, {140, 72}, {178, 66}, {155, 58}, {130, 42}, {122, 30},
-    {108, 20}, {100, 2}, {92, 22}, {78, 8}, {66, 25}, {50, 28}, {36, 36}, {15, 40}, {LOOP_END, 0},
+    {-17, 21}, {-16, 28}, {-9, 32}, {-6, 36}, {10, 37}, {11, 33}, {20, 31}, {32, 31}, {34, 28}, {38, 20}, {43, 12}, {51, 11.5}, {48, 5}, {40, -3}, {40, -11}, {35, -20}, {33, -26}, {27, -34}, {20, -35}, {18, -30}, {12, -17}, {13, -8}, {9, -1}, {9, 4}, {5, 6}, {-2, 5}, {-8, 4.5}, {-13, 8}, {-17, 13}, {LOOP_END, 0},
+    /* Eurasia */
+    {-9, 37}, {-9, 43}, {-2, 44}, {-5, 48}, {2, 51}, {5, 53}, {8, 54}, {8, 57}, {10, 57}, {12, 54}, {21, 55}, {24, 59}, {30, 60}, {23, 60}, {22, 65}, {17, 61}, {19, 59}, {16, 56}, {12, 56}, {11, 59}, {5, 59}, {5, 62}, {14, 67}, {25, 71}, {33, 70}, {41, 67}, {40, 64}, {45, 68}, {60, 69}, {70, 73}, {80, 73}, {100, 77}, {113, 74}, {130, 71}, {140, 72}, {160, 70}, {170, 70}, {180, 68}, {180, 65}, {178, 63}, {163, 60}, {156, 51}, {155, 58}, {142, 59}, {137, 54}, {141, 52}, {140, 48}, {135, 43}, {130, 42}, {129, 35}, {126, 35}, {125, 40}, {121, 40}, {122, 37}, {119, 35}, {122, 31}, {121, 28}, {115, 23}, {110, 21}, {108, 17}, {106, 10}, {105, 9}, {101, 13}, {100, 7}, {103, 1.5}, {100, 3}, {98, 10}, {98, 16}, {94, 16}, {92, 22}, {87, 21.5}, {80, 15}, {77, 8}, {73, 17}, {72, 21}, {67, 24.5}, {61, 25}, {57, 26}, {56, 27}, {51, 30}, {49, 30}, {51, 25}, {56, 24}, {59, 22}, {52, 16}, {44, 12.5}, {43, 15}, {39, 21}, {35, 28}, {35, 31}, {36, 36.5}, {27, 37}, {26, 40.5}, {23, 40}, {24, 37}, {21, 37}, {19, 42}, {13, 45}, {12, 44}, {18, 40}, {16, 38}, {12, 41}, {9, 44}, {3, 43}, {0, 39}, {-2, 37}, {-6, 36}, {LOOP_END, 0},
     /* Australia */
-    {114, -22}, {130, -12}, {142, -11}, {153, -26}, {146, -39}, {135, -33}, {115, -34}, {LOOP_END, 0},
+    {114, -22}, {122, -18}, {130, -12}, {137, -12}, {136, -16}, {141, -17}, {142, -11}, {146, -19}, {153, -26}, {151, -33}, {147, -38}, {141, -38}, {135, -35}, {131, -31}, {124, -33}, {115, -34}, {114, -28}, {LOOP_END, 0},
+    /* UK */
+    {-5, 50}, {1, 51}, {2, 53}, {-3, 56}, {-5, 58.5}, {-6, 56}, {-3, 54}, {-5, 52}, {LOOP_END, 0},
+    /* Japan */
+    {130, 31}, {136, 34}, {140, 36}, {142, 40}, {142, 44}, {140, 42}, {137, 37}, {131, 34}, {LOOP_END, 0},
+    /* Madagascar */
+    {44, -25}, {47, -25}, {50, -15}, {49, -12}, {44, -17}, {LOOP_END, 0},
+    /* Borneo */
+    {109, 1}, {117, 7}, {119, 5}, {116, -4}, {110, -3}, {LOOP_END, 0},
+    /* Sumatra */
+    {95, 5}, {106, -6}, {104, -6}, {98, 0}, {LOOP_END, 0},
+    /* New Guinea */
+    {131, -1}, {141, -3}, {150, -10}, {142, -9}, {138, -8}, {LOOP_END, 0},
+    /* New Zealand */
+    {172, -34}, {178, -38}, {175, -41}, {167, -46}, {172, -41}, {LOOP_END, 0},
     {LOOP_END, LOOP_END},
 };
 
-static void
-globe_line(builder* b, int poly, v3 p0, v3 p1) {
-    v3 mid = norm(add(p0, p1));
-    v3 w = mul(norm(cross(mid, sub(p1, p0))), 0.11f);
-    quad(b, poly, add(p0, w), add(p1, w), sub(p1, w), sub(p0, w), NULL, mid);
-}
-
-static void
-build_globe(builder* b) {
-    int sea = poly_new(b, -1, 0xFF2D6EDCu, 0);
-    int line = poly_new(b, -1, 0xFF3CC83Cu, STRIP_DOUBLE_SIDED);
-    /* a smooth shaded low poly ball */
-    for (int lat = 0; lat < GLOBE_LAT; lat++) {
-        for (int lon = 0; lon < GLOBE_LON; lon++) {
-            float l0 = -180.0f + 360.0f * lon / GLOBE_LON, l1 = -180.0f + 360.0f * (lon + 1) / GLOBE_LON;
-            float a0 = 90.0f - 180.0f * lat / GLOBE_LAT, a1 = 90.0f - 180.0f * (lat + 1) / GLOBE_LAT;
-            v3 p00 = sphere_pt(l0, a0, GLOBE_R), p10 = sphere_pt(l1, a0, GLOBE_R);
-            v3 p01 = sphere_pt(l0, a1, GLOBE_R), p11 = sphere_pt(l1, a1, GLOBE_R);
-            v3 out = add(add(p00, p10), add(p01, p11));
-            if (lat == 0) {
-                v3 t[3] = {p00, p11, p01};
-                v3 n[3] = {norm(p00), norm(p11), norm(p01)};
-                tri(b, sea, t, n, NULL, out);
-            } else if (lat == GLOBE_LAT - 1) {
-                v3 t[3] = {p00, p10, p01};
-                v3 n[3] = {norm(p00), norm(p10), norm(p01)};
-                tri(b, sea, t, n, NULL, out);
-            } else {
-                v3 t1[3] = {p00, p10, p11}, t2[3] = {p00, p11, p01};
-                v3 n1[3] = {norm(p00), norm(p10), norm(p11)}, n2[3] = {norm(p00), norm(p11), norm(p01)};
-                tri(b, sea, t1, n1, NULL, out);
-                tri(b, sea, t2, n2, NULL, out);
-            }
-        }
+/* Land test on the coarse continent loops (lon, lat in degrees), plus ice at the poles. */
+static int
+globe_surface(float lon, float lat) {
+    if (lat > 78.0f || lat < -70.0f) {
+        return 2; /* ice */
     }
-    /* the map: coast lines as thin ribbons, long edges cut in two so they do not dive into the ball */
-    int start = 0;
+    int start = 0, inside = 0;
     for (int i = 0;; i++) {
         if (globe_coast[i][0] == LOOP_END) {
             if (globe_coast[i][1] == LOOP_END) {
                 break;
             }
-            int n = i - start;
-            for (int k = 0; k < n; k++) {
-                const float* a = globe_coast[start + k];
-                const float* c = globe_coast[start + (k + 1) % n];
-                float dl = fabsf(c[0] - a[0]), dp = fabsf(c[1] - a[1]);
-                float len = dl > dp ? dl : dp;
-                int cuts = len > 40.0f ? 2 : 1;
-                for (int q = 0; q < cuts; q++) {
-                    float f0 = (float)q / cuts, f1 = (float)(q + 1) / cuts;
-                    globe_line(b, line, sphere_pt(a[0] + (c[0] - a[0]) * f0, a[1] + (c[1] - a[1]) * f0, GLOBE_R * GLOBE_LINE_R),
-                               sphere_pt(a[0] + (c[0] - a[0]) * f1, a[1] + (c[1] - a[1]) * f1, GLOBE_R * GLOBE_LINE_R));
+            int n = i - start, in = 0;
+            for (int k = 0, j = n - 1; k < n; j = k++) {
+                const float* pk = globe_coast[start + k];
+                const float* pj = globe_coast[start + j];
+                if (((pk[1] > lat) != (pj[1] > lat)) && (lon < (pj[0] - pk[0]) * (lat - pk[1]) / (pj[1] - pk[1]) + pk[0])) {
+                    in = !in;
                 }
             }
+            inside |= in;
             start = i + 1;
         }
+    }
+    return inside ? 1 : 0;
+}
+
+static void
+build_globe(builder* b) {
+    /* BIOS palette: the green of the menu icons, a deep blue, a light ice colour */
+    int sea = poly_new(b, -1, 0xFF2A5FD8u, 0);
+    int land = poly_new(b, -1, 0xFF1CB257u, 0);
+    int ice = poly_new(b, -1, 0xFFEAF2FFu, 0);
+
+    /* icosahedron, subdivided twice: a faceted ball */
+    static v3 vert[12 + 2 * GLOBE_MAX_FACES]; /* corners of the ball, with the midpoints added by the subdivision */
+    static int face[GLOBE_MAX_FACES][3];
+    int nv = 12, nf = 20;
+    const float t = (1.0f + sqrtf(5.0f)) / 2.0f;
+    {
+        const float a = 1.0f, c = t;
+        const float pts[12][3] = {{-a, c, 0}, {a, c, 0}, {-a, -c, 0}, {a, -c, 0}, {0, -a, c}, {0, a, c},
+                                  {0, -a, -c}, {0, a, -c}, {c, 0, -a}, {c, 0, a}, {-c, 0, -a}, {-c, 0, a}};
+        for (int i = 0; i < 12; i++) {
+            vert[i] = norm(v3m(pts[i][0], pts[i][1], pts[i][2]));
+        }
+    }
+    static const int f0[20][3] = {{0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11}, {1, 5, 9}, {5, 11, 4}, {11, 10, 2}, {10, 7, 6}, {7, 1, 8},
+                                  {3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8}, {3, 8, 9}, {4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}};
+    memcpy(face, f0, sizeof(f0));
+    for (int level = 0; level < GLOBE_SUBDIV; level++) {
+        static int nface[GLOBE_MAX_FACES][3];
+        int nn = 0;
+        for (int f = 0; f < nf; f++) {
+            int m[3];
+            for (int k = 0; k < 3; k++) {
+                v3 mid = norm(add(vert[face[f][k]], vert[face[f][(k + 1) % 3]]));
+                int found = -1;
+                for (int q = 12; q < nv; q++) {
+                    if (fabsf(vert[q].x - mid.x) + fabsf(vert[q].y - mid.y) + fabsf(vert[q].z - mid.z) < 1e-5f) {
+                        found = q;
+                        break;
+                    }
+                }
+                if (found < 0) {
+                    vert[nv] = mid;
+                    found = nv++;
+                }
+                m[k] = found;
+            }
+            int a = face[f][0], bb = face[f][1], c = face[f][2];
+            int quads[4][3] = {{a, m[0], m[2]}, {m[0], bb, m[1]}, {m[2], m[1], c}, {m[0], m[1], m[2]}};
+            for (int k = 0; k < 4; k++) {
+                memcpy(nface[nn++], quads[k], sizeof(int) * 3);
+            }
+        }
+        nf = nn;
+        memcpy(face, nface, sizeof(int) * (size_t)nf * 3);
+    }
+    for (int f = 0; f < nf; f++) {
+        v3 corner[3], c = v3m(0, 0, 0);
+        for (int k = 0; k < 3; k++) {
+            corner[k] = vert[face[f][k]];
+            c = add(c, corner[k]);
+        }
+        c = norm(c);
+        float lat = asinf(c.y) * (180.0f / PI_F), lon = atan2f(c.x, c.z) * (180.0f / PI_F); /* unit sphere, lon 0 toward +z */
+        /* land when at least two of four sample points (the middle and three points toward the corners) are land */
+        int kind = globe_surface(lon, lat), votes = kind == 1;
+        if (kind != 2) {
+            for (int k = 0; k < 3; k++) {
+                v3 q = norm(add(mul(c, 0.5f), mul(corner[k], 0.5f)));
+                float qlat = asinf(q.y) * (180.0f / PI_F), qlon = atan2f(q.x, q.z) * (180.0f / PI_F);
+                votes += globe_surface(qlon, qlat) == 1;
+            }
+            kind = votes >= 2;
+        }
+        v3 p[3];
+        for (int k = 0; k < 3; k++) {
+            p[k] = add(v3m(0.0f, 5.0f, 0.0f), mul(globe_orient(corner[k]), GLOBE_R));
+        }
+        tri(b, kind == 1 ? land : (kind == 2 ? ice : sea), p, NULL, NULL, sub(p[0], v3m(0, 5.0f, 0)));
     }
 }
 
