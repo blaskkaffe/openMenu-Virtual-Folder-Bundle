@@ -134,7 +134,8 @@ typedef struct {
     struct {
         int node, poly;
         uint32_t argb;
-    } ovr[4];
+        int lit;
+    } ovr[BSCENE_OVR_MAX];
 } draw_key;
 
 typedef struct {
@@ -222,7 +223,7 @@ key_hash(const draw_key* k) {
 }
 
 static void
-make_key(const bscene* s, const bvm_obj* o, const float scl[3], draw_key* k) {
+make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* offs, draw_key* k) {
     memset(k, 0, sizeof(*k));
     k->flags = o->flags;
     k->model = o->model;
@@ -231,8 +232,8 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], draw_key* k) {
     memcpy(k->pos, o->pos, sizeof(k->pos));
     memcpy(k->rot, o->rot, sizeof(k->rot));
     memcpy(k->scl, scl, sizeof(k->scl));
-    if (o->flags & BVM_F_COLOUR) {
-        memcpy(k->color, o->color, sizeof(k->color));
+    if (offs) {
+        memcpy(k->color, offs, sizeof(k->color));
     }
     k->mframe = (o->flags & BVM_F_MOTION) ? o->motion_tw.cur : 0.0f;
     if (s->stretch_on) {
@@ -249,11 +250,12 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], draw_key* k) {
         k->panel_fy = s->panel_fy;
         k->panel_accent = s->panel_accent;
     }
-    for (int i = 0; i < s->ovr_n && i < 4; i++) {
+    for (int i = 0; i < s->ovr_n && i < BSCENE_OVR_MAX; i++) {
         if (s->ovr[i].model == o->model) {
             k->ovr[k->ovr_n].node = s->ovr[i].node;
             k->ovr[k->ovr_n].poly = s->ovr[i].poly;
             k->ovr[k->ovr_n].argb = s->ovr[i].argb;
+            k->ovr[k->ovr_n].lit = s->ovr[i].lit;
             k->ovr_n++;
         }
     }
@@ -452,22 +454,68 @@ bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const f
     s->parts = saved;
 }
 
+static float text_fade; /* bscene.fade of the scene drawn last, for bscene_text_alpha() */
+
+float
+bscene_text_alpha(const bvm_obj* o) {
+    return (o->flags & BVM_F_FLAG17) ? 1.0f - text_fade : 1.0f;
+}
+
+nj_node*
+bscene_node(bscene* s, int model, int node) {
+    const nj_object* obj = get_model(s, model);
+    return obj && node >= 0 && node < obj->count ? &obj->nodes[node] : NULL;
+}
+
+/* A window panel an object made with panel_create (popups, the copy box): model 39 with its corners moved out
+ * by w / 25 - 10 and h / 25 - 10 units (panel_mesh_fit_rect 0x8C022500), at the object's place. */
+static void
+draw_object_panel(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
+    bvm_obj p = *o;
+    p.flags = BVM_F_MODEL | (o->flags & BVM_F_FLAG17);
+    p.model = p.texlist = BSCENE_PANEL_MODEL;
+    unsigned saved = s->parts;
+    s->parts = BSCENE_PART_MODEL;
+    s->panel_on = 1;
+    s->panel_fx = (float)o->panel_w / 25.0f - 10.0f;
+    s->panel_fy = (float)o->panel_h / 25.0f - 10.0f;
+    s->panel_accent = s->object_panel_accent ? s->object_panel_accent : 0xFFE0E0E0u;
+    bscene_draw_object(s, &p, sink);
+    s->panel_on = 0;
+    s->parts = saved;
+}
+
 void
 bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
     if (!o->active || (o->flags & BVM_F_HIDE)) {
         return;
     }
+    text_fade = s->fade;
+    if ((o->flags & BVM_F_PANEL) && o->panel_w > 0 && o->panel_h > 0 && (s->parts & BSCENE_PART_MODEL)) {
+        draw_object_panel(s, o, sink);
+    }
 
     float scl[3] = {o->scale_tw[0].cur, o->scale_tw[1].cur, o->scale_tw[2].cur};
     nj_mat4 obj_m;
     nj_mat_object(&obj_m, o->pos, scl, o->rot);
+    /* constant material (a, r, g, b offsets), and the screen transition's fade */
+    float eoff[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    const float* offs = NULL;
+    if (o->flags & BVM_F_COLOUR) {
+        memcpy(eoff, o->color, sizeof(eoff));
+        offs = eoff;
+    }
+    if ((o->flags & BVM_F_FLAG17) && s->fade > 0.0f) {
+        eoff[0] -= s->fade;
+        offs = eoff;
+    }
 
     /* replay, or capture, the model's triangles (see the object output cache) */
     cache_entry* ce = NULL;
     const bscene_sink* real_sink = sink;
     if ((o->flags & BVM_F_MODEL) && (s->parts & BSCENE_PART_MODEL) && !cache_disabled) {
         draw_key key;
-        make_key(s, o, scl, &key);
+        make_key(s, o, scl, offs, &key);
         uint32_t h = key_hash(&key);
         for (int i = 0; i < cache_entry_n; i++) {
             cache_entry* e = &cache_entries[i];
@@ -502,7 +550,6 @@ draw_model:
             const nj_motion* mo = (o->flags & BVM_F_MOTION) ? get_motion(s, o->model, o->motion, obj->count) : NULL;
             nj_mat4* world = s->pose;
             nj_object_pose(obj, mo, o->motion_tw.cur, world);
-            const float* offs = (o->flags & BVM_F_COLOUR) ? o->color : NULL; /* constant material (a, r, g, b) */
 
             for (int n = 0; n < obj->count; n++) {
                 const nj_mesh* mesh = obj->nodes[n].mesh;
@@ -578,18 +625,31 @@ draw_model:
                         tex.a = o->texlist;
                         tex.b = poly->tex;
                     }
-                    const fcolour mat = material(poly->has_diffuse ? poly->diffuse : 0u, offs);
-                    uint32_t poly_argb = poly->has_diffuse ? pack(mat) : 0;
+                    uint32_t diffuse = poly->has_diffuse ? poly->diffuse : 0u;
                     int forced = 0; /* a colour the scripts pick is shown as it is */
+                    uint32_t forced_argb = 0;
+                    for (int k = 0; k < s->ovr_n; k++) {
+                        if (s->ovr[k].model == o->model && s->ovr[k].node == n && s->ovr[k].poly == p) {
+                            if (s->ovr[k].lit) {
+                                diffuse = s->ovr[k].argb;
+                            } else {
+                                forced_argb = s->ovr[k].argb;
+                                forced = 1;
+                            }
+                        }
+                    }
+                    const fcolour mat = material(diffuse, offs);
+                    uint32_t poly_argb = poly->has_diffuse ? pack(mat) : 0;
                     if (s->panel_on && p == 0) {
                         poly_argb = s->panel_accent; /* the rim */
                         forced = 1;
+                    } else if (forced) {
+                        poly_argb = forced_argb;
                     }
-                    for (int k = 0; k < s->ovr_n; k++) {
-                        if (s->ovr[k].model == o->model && s->ovr[k].node == n && s->ovr[k].poly == p) {
-                            poly_argb = s->ovr[k].argb;
-                            forced = 1;
-                        }
+                    if (forced && offs && offs[0] != 0.0f) { /* the constant alpha still fades a forced colour */
+                        float a = (float)(poly_argb >> 24) + offs[0] * 255.0f;
+                        a = a < 0.0f ? 0.0f : (a > 255.0f ? 255.0f : a);
+                        poly_argb = (poly_argb & 0x00FFFFFFu) | ((uint32_t)a << 24);
                     }
                     if (poly->tex == 0 && o->texlist >= BSCENE_ROUND_FACE_TEXLIST && poly->has_uv && poly->ntris == 2) {
                         draw_round_face(mesh, poly, &m, poly_argb, tex, sink);

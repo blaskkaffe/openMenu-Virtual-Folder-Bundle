@@ -30,6 +30,7 @@
 #include "bios_models.h"
 #include "bios_case.h"
 #include "bios_cdplayer.h"
+#include "bios_surface.h"
 
 #define W 640
 #define H 480
@@ -292,6 +293,25 @@ text(void* user, const bvm_obj* o, float x, float y, float invw) {
         frag_resolve(); /* outlines are a debugging aid: keep them on top */
     }
     int x0 = (int)(x - o->text_w / 2.0f), y0 = (int)(y - o->text_h / 2.0f), x1 = x0 + o->text_w, y1 = y0 + o->text_h; /* anchor = centre */
+    const bsurf* sf = bsurf_find(o->id);
+    if (sf) { /* a text surface the screen printed into: blend it pixel for pixel */
+        if (sf->hidden) {
+            return;
+        }
+        float fade = bscene_text_alpha(o);
+        int sx0 = (int)(x - sf->w / 2.0f), sy0 = (int)(y - sf->h / 2.0f);
+        for (int j = 0; j < sf->h; j++) {
+            for (int i = 0; i < sf->w; i++) {
+                int px = sx0 + i, py = sy0 + j;
+                if (px < 0 || px >= W || py < 0 || py >= H) continue;
+                uint16_t c = sf->px[j * sf->w + i];
+                float a = (float)(c >> 12) / 15.0f * fade;
+                float rgb[3] = {(float)((c >> 8) & 15) / 15.0f, (float)((c >> 4) & 15) / 15.0f, (float)(c & 15) / 15.0f};
+                for (int k = 0; k < 3; k++) fb[py][px][k] = fb[py][px][k] * (1.0f - a) + rgb[k] * a;
+            }
+        }
+        return;
+    }
     if (getenv("BIOS_PREVIEW_NOBOX")) { /* print the text areas instead of outlining them (id x y w h) */
         fprintf(stderr, "TEXT %x %d %d %d %d\n", o->id, x0, y0, o->text_w, o->text_h);
         return;
@@ -377,6 +397,11 @@ main(int argc, char** argv) {
     static blist list;
     static bdt dt;
     bmenu_init(&menu, &rom, NULL);
+    bsurf_init(&rom);
+    { /* the header clock as ui_bios prints it (fx_debug_hex_text) */
+        bsurf* hs = bsurf_get(BMENU_ID_HEADER, 256, 32);
+        bsurf_clock_text(hs, 40, 16, "10/10/2026 10:27");
+    }
     frags = malloc(sizeof(frag) * MAX_FRAGS);
     memset(frag_head, 0xFF, sizeof(frag_head));
     /* the main menu runs with the PVR's per-pixel autosort, as the BIOS (and the console build) does */

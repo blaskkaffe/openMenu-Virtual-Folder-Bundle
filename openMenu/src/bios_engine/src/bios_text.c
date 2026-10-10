@@ -1,5 +1,7 @@
 #include "bios_text.h"
 
+#include "bios_rom.h"
+
 const uint8_t*
 btext_glyph(const uint8_t* font, uint32_t ch) {
     uint32_t index = 288; /* an empty glyph, as the system font routine does for unknown characters */
@@ -65,4 +67,121 @@ btext_draw(uint16_t* canvas, int stride, int height, int x, int y, const uint8_t
         x += BTEXT_ADVANCE;
     }
     return x - start;
+}
+
+/* ---- message strings ------------------------------------------------------------------------------------ */
+
+uint16_t
+btext_code_colour(int code) {
+    /* text_render_string: the colour each control byte selects */
+    static const uint16_t table[16] = {0xF000, 0xF00C, 0xFC00, 0xFC0C, 0xF0C0, 0xF0CC, 0xFCC0, 0xFCCC,
+                                       0x7CCC, 0xF006, 0xF600, 0xF606, 0xF060, 0xF066, 0xF660, 0xF666};
+    return code >= 0x10 && code <= 0x1F ? table[code - 0x10] : 0;
+}
+
+int
+btext_rich_width(const char* s, int advance) {
+    /* As text_render_string measures a string to centre it (Latin languages): every byte but a space counts as a
+     * glyph, the control bytes too, so a line with a button symbol sits a little to the left. */
+    int w = 0;
+    for (const unsigned char* p = (const unsigned char*)s; p && *p; p++) {
+        w += *p == ' ' ? BTEXT_SPACE : advance;
+    }
+    return w;
+}
+
+void
+btext_symbol(uint16_t* canvas, int stride, int height, int x, int y, const uint8_t* font, int n, uint16_t colour) {
+    if (n < 0 || n >= 0x16) {
+        n = 0;
+    }
+    const uint8_t* g = font + BTEXT_SYMBOLS + (uint32_t)n * 72u;
+    uint16_t shade = btext_shade(colour);
+    for (int row = 0; row < BTEXT_SYMBOL_W; row++) {
+        uint32_t bits = ((uint32_t)g[row * 3] << 16) | ((uint32_t)g[row * 3 + 1] << 8) | g[row * 3 + 2];
+        for (int col = 0; col < BTEXT_SYMBOL_W; col++) {
+            if (bits & (0x800000u >> col)) {
+                int px = x + col, py = y + row;
+                put(canvas, stride, height, px, py, colour);
+                put(canvas, stride, height, px + 1, py, colour);
+                put(canvas, stride, height, px, py + 1, colour);
+                put(canvas, stride, height, px + 1, py + 1, shade);
+                put(canvas, stride, height, px + 2, py + 1, shade);
+            }
+        }
+    }
+}
+
+void
+btext_rich(uint16_t* canvas, int stride, int height, int x, int y, const uint8_t* font, const char* s, uint16_t* colour,
+           int advance) {
+    if (!s) {
+        return;
+    }
+    if (x < 0) {
+        x = -x - btext_rich_width(s, advance) / 2;
+    }
+    const unsigned char* p = (const unsigned char*)s;
+    while (*p) {
+        if (*p == 1) {
+            if (!p[1]) {
+                break;
+            }
+            btext_symbol(canvas, stride, height, x, y, font, p[1], *colour);
+            x += BTEXT_SYMBOL_ADVANCE;
+            p += 2;
+        } else if (*p >= 0x10 && *p <= 0x1F) {
+            *colour = btext_code_colour(*p);
+            p++;
+        } else if (*p == ' ') {
+            x += BTEXT_SPACE;
+            p++;
+        } else {
+            btext_blit(canvas, stride, height, x, y, btext_glyph(font, *p), *colour);
+            x += advance;
+            p++;
+        }
+    }
+}
+
+void
+btext_tiny_digit(uint16_t* canvas, int stride, int height, int x, int y, const uint8_t* table, int digit, uint16_t colour) {
+    if (digit < 0 || digit > 9) {
+        return;
+    }
+    const uint8_t* g = table + digit * 24;
+    for (int row = 0; row < 12; row++) {
+        unsigned bits = ((unsigned)g[row * 2] << 8) | g[row * 2 + 1];
+        for (int col = 0; col < 12; col++) {
+            if (!(bits & (0x8000u >> col))) {
+                put(canvas, stride, height, x + col, y + row, colour);
+            }
+        }
+    }
+}
+
+const char*
+btext_message(const struct bios_rom* rom, int language, int id, int line) {
+    /* msg_table_jp, _en, _de, _fr, _es, _it: entries of 20 bytes (u16 id, u16 lines, 4 string pointers), 0xFFFF ends */
+    static const uint32_t tables[6] = {0x8C039460u, 0x8C039BA4u, 0x8C03AA2Cu, 0x8C03A2E8u, 0x8C03B170u, 0x8C03B8B4u};
+    if (!rom || line < 0 || line > 3) {
+        return NULL;
+    }
+    uint32_t t = tables[language >= 0 && language < 6 ? language : 1];
+    for (int i = 0; i < 2000; i++) {
+        const uint8_t* e = bios_rom_ptr(rom, t + (uint32_t)i * 20u, 20);
+        if (!e) {
+            return NULL;
+        }
+        unsigned eid = (unsigned)e[0] | ((unsigned)e[1] << 8);
+        if (eid == 0xFFFFu) {
+            return NULL;
+        }
+        if (eid == (unsigned)id) {
+            const uint8_t* q = e + 4 + line * 4;
+            uint32_t addr = (uint32_t)q[0] | ((uint32_t)q[1] << 8) | ((uint32_t)q[2] << 16) | ((uint32_t)q[3] << 24);
+            return addr ? (const char*)bios_rom_ptr(rom, addr, 1) : NULL;
+        }
+    }
+    return NULL;
 }

@@ -17,6 +17,7 @@
 #include <bios_menu.h>
 #include <bios_list.h>
 #include <bios_text.h>
+#include <bios_surface.h>
 #include <bios_models.h>
 #include <bios_page.h>
 #include <backend/dat_format.h>
@@ -45,6 +46,7 @@ typedef struct {
     pvr_ptr_t ptr;
     int w, h, fmt;
     int valid;
+    int nearest; /* drawn pixel for pixel: no filtering (the text surfaces) */
 } rom_tex;
 
 typedef struct {
@@ -131,6 +133,7 @@ static uint16_t text_canvas[MAX_TEXT_W * GFX_LINE_H] __attribute__((aligned(32))
 int
 gfx_init(const bios_rom* rom) {
     g_rom = rom;
+    bsurf_init(rom);
     pvr_init_params_t params = {
         /* OP, OP modifier, TR, TR modifier, punch-through */
         {PVR_BINSIZE_32, PVR_BINSIZE_0, PVR_BINSIZE_32, PVR_BINSIZE_0, PVR_BINSIZE_0},
@@ -636,7 +639,8 @@ send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
     pvr_poly_cxt_t cxt;
 
     if (tex) {
-        pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY, tex->fmt, tex->w, tex->h, tex->ptr, PVR_FILTER_BILINEAR);
+        pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY, tex->fmt, tex->w, tex->h, tex->ptr,
+                         tex->nearest ? PVR_FILTER_NONE : PVR_FILTER_BILINEAR);
         cxt.gen.specular = PVR_SPECULAR_ENABLE; /* the offset colour: the BIOS' specular on textured strips */
     } else if (text_ptr) {
         pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY, PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED, text_w, GFX_LINE_H, text_ptr,
@@ -739,9 +743,103 @@ find_label(uint16_t id) {
 
 static void text_windowed(const char* str, float x, float y, float z, uint32_t argb, int window, int offset);
 
+/* ---- Text surfaces (bios_surface): the pictures the screens print into, kept in video memory ---------------- */
+
+typedef struct {
+    uint16_t id;
+    rom_tex tex;
+    uint32_t serial;
+} surf_tex;
+static surf_tex surf_texes[BSURF_MAX];
+
+static rom_tex*
+surface_texture(bsurf* sf) {
+    surf_tex* st = NULL;
+    for (int i = 0; i < BSURF_MAX; i++) {
+        if (surf_texes[i].tex.valid && surf_texes[i].id == sf->id) {
+            st = &surf_texes[i];
+            break;
+        }
+    }
+    if (st && (st->tex.w != sf->w || st->tex.h != sf->h)) {
+        pvr_mem_free(st->tex.ptr);
+        memset(st, 0, sizeof(*st));
+        st = NULL;
+    }
+    if (!st) {
+        for (int i = 0; i < BSURF_MAX && !st; i++) {
+            if (!surf_texes[i].tex.valid) {
+                st = &surf_texes[i];
+            }
+        }
+        if (!st) {
+            return NULL;
+        }
+        st->tex.ptr = pvr_mem_malloc((size_t)sf->w * (size_t)sf->h * 2u);
+        if (!st->tex.ptr) {
+            return NULL;
+        }
+        st->id = sf->id;
+        st->tex.w = sf->w;
+        st->tex.h = sf->h;
+        st->tex.fmt = PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED;
+        st->tex.nearest = 1;
+        st->tex.valid = 1;
+        bsurf_touch(sf, 0, sf->h - 1); /* all of it the first time */
+    }
+    int y0, y1;
+    if (bsurf_take_dirty(sf, &y0, &y1)) {
+        size_t row = (size_t)sf->w * 2u;
+        pvr_txr_load(sf->px + (size_t)y0 * sf->w, (uint8_t*)st->tex.ptr + (size_t)y0 * row, (size_t)(y1 - y0 + 1) * row);
+        stats.text_uploads++;
+    }
+    return &st->tex;
+}
+
+/* Free the video memory of surfaces that no longer exist (after a screen freed them). */
+static void
+surface_gc(void) {
+    for (int i = 0; i < BSURF_MAX; i++) {
+        if (surf_texes[i].tex.valid && !bsurf_find(surf_texes[i].id)) {
+            pvr_mem_free(surf_texes[i].tex.ptr);
+            memset(&surf_texes[i], 0, sizeof(surf_texes[i]));
+        }
+    }
+}
+
+static int
+draw_surface(const bvm_obj* obj, float x, float y, float invw) {
+    bsurf* sf = bsurf_find(obj->id);
+    if (!sf) {
+        return 0;
+    }
+    if (sf->hidden) {
+        return 1;
+    }
+    rom_tex* t = surface_texture(sf);
+    if (!t) {
+        return 1;
+    }
+    float a = bscene_text_alpha(obj);
+    if (a <= 0.0f) {
+        return 1;
+    }
+    uint32_t argb = ((uint32_t)(a * 255.0f) << 24) | 0x00FFFFFFu;
+    float x0 = x - (float)sf->w / 2.0f, y0 = y - (float)sf->h / 2.0f, z = invw + TEXT_Z_BIAS;
+    ensure_header(t, NULL, 0);
+    send_vertex(x0, y0, z, 0.0f, 0.0f, argb, 0);
+    send_vertex(x0 + (float)sf->w, y0, z, 1.0f, 0.0f, argb, 0);
+    send_vertex(x0, y0 + (float)sf->h, z, 0.0f, 1.0f, argb, 0);
+    send_vertex(x0 + (float)sf->w, y0 + (float)sf->h, z, 1.0f, 1.0f, argb, 1);
+    return 1;
+}
+
 static void
 sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
     (void)user;
+    if (draw_surface(obj, x, y, invw)) {
+        return;
+    }
     const char* label = find_label(obj->id);
     if (label && obj->id >= BPAGE_TEXT_ID(0) && obj->id <= BPAGE_HELP_ID) {
         /* Settings page: left aligned in the text surface. "label\tvalue" puts the value in a
@@ -1082,6 +1180,7 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
         stats.wait_us += (unsigned)(timer_us_gettime64() - t0);
     }
     art_poll();
+    surface_gc();
     memo_ok = 0;
     /* The tile matrix of the buffer the TA fills next carries the sort mode (see set_tile_presort). */
 #ifdef GFX_PVR_INTERNAL

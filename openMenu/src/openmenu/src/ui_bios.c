@@ -19,6 +19,7 @@
 #include <kos/fs.h>
 
 #include "clock.h"
+#include <bios_surface.h>
 #include "gfx.h"
 #include "history.h"
 #include "input.h"
@@ -133,15 +134,28 @@ static const char* notice_text;
 
 static char status_line[64];
 
-/* The BIOS shows the date and time in the header bar; the console's clock holds local time. */
+/* The BIOS shows the date and time in the header bar, in its own small antialiased font (fx_debug_hex_text
+ * 0x8C021FC0): the header's 256x32 text surface, from (40, 16). Format of format_datetime_string 0x8C01BAE0 for the
+ * console's date order; the console's clock holds local time. */
 static void
 update_clock(void) {
     char text[24];
-    time_t now = time(NULL);
-    struct tm* t = gmtime(&now);
-    if (t) {
-        snprintf(text, sizeof(text), "%02d/%02d/%04d  %02d:%02d", t->tm_mday, t->tm_mon + 1, t->tm_year + 1900, t->tm_hour,
-                 t->tm_min);
+    int y, mo, d, h, mi;
+    clock_get(&y, &mo, &d, &h, &mi);
+    switch (clock_date_order()) {
+        case 0: snprintf(text, sizeof(text), "%04d/%02d/%02d %02d:%02d", y, mo, d, h, mi); break;
+        case 2: snprintf(text, sizeof(text), "%02d/%02d/%04d %02d:%02d", d, mo, y, h, mi); break;
+        default: snprintf(text, sizeof(text), "%02d/%02d/%04d %02d:%02d", mo, d, y, h, mi); break;
+    }
+    static char shown[24];
+    static uint32_t shown_serial;
+    bsurf* s = bsurf_get(BMENU_ID_HEADER, 256, 32);
+    if (s && (strcmp(shown, text) != 0 || s->serial != shown_serial)) {
+        bsurf_clear(s);
+        bsurf_clock_text(s, 40, 16, text);
+        strcpy(shown, text);
+        shown_serial = s->serial;
+    } else if (!s) {
         gfx_set_label(BMENU_ID_HEADER, text);
     }
 }

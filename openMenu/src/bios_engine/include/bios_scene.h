@@ -62,6 +62,8 @@ typedef struct bscene_sink {
 #define BSCENE_MODEL_CACHE BIOS_MODEL_COUNT
 #define BSCENE_MOTION_CACHE 16
 
+#define BSCENE_OVR_MAX 16
+
 typedef struct bscene {
     const bios_rom* rom;
     nj_object models[BSCENE_MODEL_CACHE];
@@ -89,8 +91,14 @@ typedef struct bscene {
     struct {
         int model, node, poly;
         uint32_t argb;
-    } ovr[4];
+        int lit; /* 0: shown as it is; 1: replaces the material diffuse and is lit like it (the BIOS effects that
+                  * write into a model's material: the card colours, the file window's ALL button) */
+    } ovr[BSCENE_OVR_MAX];
     int ovr_n;
+    /* screen_fly_in / screen_fly_out: objects with BVM_F_FLAG17 (and their text) fade by this much alpha (0..1) */
+    float fade;
+    /* rim colour of the window panels that objects create (script op panel_create, BVM_F_PANEL) */
+    uint32_t object_panel_accent;
     int fullbright; /* no shading by the light (the gold reverse of a disc looks shinier) */
     unsigned parts;    /* BSCENE_PART_* drawn by bscene_draw_object() */
 } bscene;
@@ -116,6 +124,13 @@ void bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t a
  * pixel (cx, cy) as it looks at BSCENE_PANEL_Z; `scale` multiplies the model's own units, `rot_deg` is
  * the rotation about x, y, z in degrees. Submitted immediately, like bscene_draw_panel(). */
 void bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const float rot_deg[3], const bscene_sink* sink);
+
+/* A node of a loaded model, for the effects that change a model in place (the free-space gauge of the memory
+ * card plate scales one). NULL if the model cannot be loaded. Call bscene_cache_clear() after changing it. */
+nj_node* bscene_node(bscene* s, int model, int node);
+
+/* Alpha (0..1) the text surface of `o` is drawn with during a screen transition (see bscene.fade). */
+float bscene_text_alpha(const bvm_obj* o);
 
 void bscene_draw_background(const dcbg_state* bg, const bscene_sink* sink);
 

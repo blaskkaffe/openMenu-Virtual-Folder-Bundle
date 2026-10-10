@@ -120,7 +120,9 @@ bmenu_back_style(bmenu* m, int selected, int anim, int pal) {
     const uint32_t arrow = selected ? (pal ? 0xD02020F0u : 0xD0F02000u) : 0u;
     const uint32_t frame = selected && ((anim / 16) & 1) == 0 ? 0xFFFFFF00u : 0xC0404040u;
     m->scene.ovr[0].model = 0, m->scene.ovr[0].node = 1, m->scene.ovr[0].poly = 0, m->scene.ovr[0].argb = arrow;
+    m->scene.ovr[0].lit = 0;
     m->scene.ovr[1].model = 0, m->scene.ovr[1].node = 2, m->scene.ovr[1].poly = 0, m->scene.ovr[1].argb = frame;
+    m->scene.ovr[1].lit = 0;
     m->scene.ovr_n = 2;
 }
 
