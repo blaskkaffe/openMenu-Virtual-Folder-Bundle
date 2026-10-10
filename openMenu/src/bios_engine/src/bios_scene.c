@@ -454,6 +454,61 @@ bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, const f
     s->parts = saved;
 }
 
+/* A grid mesh made by script ops 0x80..0x85 with deformer 5 (mesh_deform_mode5 0x8C0167AA): the copy box's
+ * progress bar. cols x rows cells of (cw, ch) / 10 units; var0 = progress (256 a column): the middle rows of the
+ * filled columns are opaque, the rest clear; colours cycle with var0 and the texture coordinates are noise
+ * (rand() / 32768 * 0.1953) over GBIX texture `mesh_tex`. */
+static uint32_t mesh_seed = 12345u;
+
+static void
+draw_grid_mesh(const bscene* s, const bvm_obj* o, const nj_mat4* m, const float* offs, const bscene_sink* sink) {
+    int cols = o->mesh_cols, rows = o->mesh_rows;
+    if (cols < 1 || rows < 1 || cols > 32 || rows > 8 || o->mesh_mode != 5) {
+        return;
+    }
+    (void)s;
+    int v = o->var[0], full = v / 256, part = (v % 256) * 255 / 256;
+    static bscene_vtx vt[33][9];
+    static int ok[33][9];
+    for (int i = 0; i <= cols; i++) {
+        for (int j = 0; j <= rows; j++) {
+            nj_vec3 p = {(float)(i * o->mesh_cw - cols * o->mesh_cw / 2) / 10.0f, (float)(j * o->mesh_ch - rows * o->mesh_ch / 2) / 10.0f,
+                         0.0f};
+            bscene_vtx* x = &vt[i][j];
+            ok[i][j] = bscene_project(nj_mat_apply(m, p), &x->x, &x->y, &x->invw);
+            mesh_seed = mesh_seed * 1103515245u + 12345u;
+            x->u = (float)((mesh_seed >> 16) & 0x7FFF) / 32768.0f * 0.1953f;
+            mesh_seed = mesh_seed * 1103515245u + 12345u;
+            x->v = (float)((mesh_seed >> 16) & 0x7FFF) / 32768.0f * 0.1953f;
+            float r = 127.0f * sinf((float)(i * 1000 + v * 15) * (6.2831853f / 65536.0f)) + 127.0f;
+            float g = 127.0f * cosf((float)(i * 2000 + v * 20) * (6.2831853f / 65536.0f)) + 127.0f;
+            float b = 127.0f * sinf((float)(i * 3000 + v * 21 + 0x4000) * (6.2831853f / 65536.0f)) + 127.0f;
+            int a = 0;
+            if (j >= 1 && j <= 3 && i >= 1) {
+                a = i <= full ? 255 : (i == full + 1 ? part : 0);
+            }
+            if (offs) {
+                a += (int)(offs[0] * 255.0f);
+                a = a < 0 ? 0 : (a > 255 ? 255 : a);
+            }
+            x->argb = ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+            x->oargb = 0;
+        }
+    }
+    bscene_texref tex = {BSCENE_TEX_GBIX, o->mesh_tex, 0};
+    for (int i = 0; i < cols; i++) {
+        for (int j = 0; j < rows; j++) {
+            if (!(ok[i][j] && ok[i + 1][j] && ok[i][j + 1] && ok[i + 1][j + 1])) {
+                continue;
+            }
+            bscene_vtx t1[3] = {vt[i][j], vt[i + 1][j], vt[i][j + 1]};
+            bscene_vtx t2[3] = {vt[i + 1][j], vt[i + 1][j + 1], vt[i][j + 1]};
+            sink->triangle(sink->user, t1, tex);
+            sink->triangle(sink->user, t2, tex);
+        }
+    }
+}
+
 static float text_fade; /* bscene.fade of the scene drawn last, for bscene_text_alpha() */
 
 float
@@ -725,6 +780,9 @@ draw_model:
         sink = real_sink;
     }
 model_done:
+    if (o->mesh_cols > 0 && o->mesh_mode == 5 && (s->parts & BSCENE_PART_MODEL)) {
+        draw_grid_mesh(s, o, &obj_m, offs, sink);
+    }
     if ((s->parts & BSCENE_PART_TEXT) && (o->flags & BVM_F_TEXT) && o->text_w > 0 && o->text_h > 0 && sink->text) {
         nj_vec3 anchor = {o->pos[0] + o->text_off[0], o->pos[1] + o->text_off[1], o->pos[2]};
         float sx, sy, iw;

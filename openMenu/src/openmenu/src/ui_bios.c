@@ -1105,10 +1105,7 @@ ui_bios_run(const bios_rom* rom) {
         } else if (screen == SCREEN_DATETIME) {
             handle_datetime(b);
         } else if (screen == SCREEN_FILES) {
-            if (uif_handle(b)) {
-                bmenu_show_main(&menu, ICON_FILES);
-                screen = SCREEN_MAIN;
-            }
+            uif_handle(b);
         } else if (screen == SCREEN_MUSIC) {
             handle_music(b);
         } else {
@@ -1135,6 +1132,10 @@ ui_bios_run(const bios_rom* rom) {
             bmenu_update(&menu);
             if (fade_step < FADE_STEPS) {
                 fade_step++;
+            }
+            if (screen == SCREEN_FILES && uif_step()) {
+                bmenu_show_main(&menu, ICON_FILES);
+                screen = SCREEN_MAIN;
             }
             if (launch_pending && blist_launch_step(&glist)) {
                 const gd_item* g = launch_pending;

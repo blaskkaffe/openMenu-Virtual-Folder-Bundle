@@ -31,6 +31,8 @@
 #include "bios_case.h"
 #include "bios_cdplayer.h"
 #include "bios_surface.h"
+#include "bios_filescr.h"
+#include "bios_text.h"
 
 #define W 640
 #define H 480
@@ -330,6 +332,59 @@ text(void* user, const bvm_obj* o, float x, float y, float invw) {
     }
 }
 
+
+/* File screen demo (-14): A1 a blue card with files, B1 a plain card, B2 unformatted, controllers A and B */
+static bfs_card demo_cards[BFS_SLOTS];
+static bfs_file demo_files[2][BFS_MAX_FILES];
+static uint8_t demo_bits[BFS_MAX_FILES][512];
+static bfs demo_fs;
+
+static void
+demo_fill(const bios_rom* rom) {
+    static const char* names[] = {"SONICADV_INT", "SONICADV_SYS", "SOUL_CAL.SYS", "PSO_GUILD", "CRAZYTAXI", "SHENMUE_SYS",
+                                  "JETGRIND_001", "ICONDATA_VMS", "MSR_DATA", "RES_EVIL_CV1", "SKIESARC_01", "POWERSTONE"};
+    for (int c = 0; c < 2; c++) {
+        bfs_card* k = &demo_cards[c == 0 ? 0 : 2];
+        k->status = BFS_CARD_READY;
+        k->colour = c == 0 ? 0xFF3050E0u : 0xFFFFFFFFu;
+        const uint8_t* font = bios_rom_ptr(rom, 0x8C000000u + BTEXT_FONT_OFFSET, 0x80000u);
+        bfs_mono_icon(font + BTEXT_VMU_ICONS + (uint32_t)(c ? 40 : 12) * 128u, 0xF225, k->icon);
+        k->files = demo_files[c];
+        k->nfiles = c == 0 ? 12 : 3;
+        k->total_blocks = 200;
+        k->free_blocks = c == 0 ? 37 : 180;
+        for (int i = 0; i < k->nfiles; i++) {
+            bfs_file* f = &k->files[i];
+            snprintf(f->name, sizeof(f->name), "%s", names[(i + c * 5) % 12]);
+            snprintf(f->vmdesc, sizeof(f->vmdesc), "Game file %d", i);
+            snprintf(f->desc, sizeof(f->desc), "Demo save of %s", names[(i + c * 5) % 12]);
+            snprintf(f->app, sizeof(f->app), "APP%d", i % 4);
+            f->blocks = 3 + i * 7 % 40;
+            uint8_t t[8] = {0x20, 0x01, 0x03, 0x14, 0x12, 0x34, 0x00, 0x02};
+            memcpy(f->time, t, 8);
+            f->protect = i == 4 ? 0xFF : 0;
+            f->game = i == 6;
+            f->header = 2;
+            f->icons = 1;
+            f->speed = 10;
+            for (int p = 0; p < 16; p++) {
+                f->palette[p] = (uint16_t)(0xF000 | ((p * 3 + i) & 15) << 8 | ((p * 7) & 15) << 4 | ((15 - p + i) & 15));
+            }
+            f->palette[0] = 0x0000;
+            for (int b = 0; b < 512; b++) {
+                int x = (b * 2) % 32, y = (b * 2) / 32;
+                int dx = x - 16, dy = y - 16, d = (dx * dx + dy * dy) / (10 + i * 3);
+                demo_bits[i + c * 100][b] = (uint8_t)((d < 15 ? d + 1 : 0) << 4 | (d < 15 ? d + 1 : 0));
+            }
+            f->bitmaps = demo_bits[i + c * 100];
+        }
+    }
+    demo_cards[3].status = BFS_CARD_UNFORMATTED;
+    demo_cards[3].colour = 0xFFFFFFFFu;
+    const uint8_t* font = bios_rom_ptr(rom, 0x8C000000u + BTEXT_FONT_OFFSET, 0x80000u);
+    bfs_mono_icon(font + BTEXT_VMU_ICONS, 0xFD00, demo_cards[3].icon);
+}
+
 static void
 demo_row(void* user, int index, bpage_row* out) {
     (void)user;
@@ -457,6 +512,35 @@ main(int argc, char** argv) {
         bmenu_update(&menu);
     } else if (script == -11) { /* case flying in: `selected` = frames since the selection moved down */
         bmenu_update(&menu);
+    } else if (script == -14) { /* the File screen: BIOS_PREVIEW_KEYS="frame:key,..." with keys UDLRABXY */
+        demo_fill(&rom);
+        bfs_init(&demo_fs, &menu, NULL, demo_cards);
+        demo_fs.ports = 3;
+        bfs_open(&demo_fs);
+        const char* keys = getenv("BIOS_PREVIEW_KEYS");
+        for (int i = 0; i < frames; i++) {
+            if (keys) {
+                for (const char* p = keys; *p;) {
+                    int f = atoi(p);
+                    const char* c = strchr(p, ':');
+                    if (!c) break;
+                    if (f == i) {
+                        const char* map = "UDLRABXY";
+                        const char* k = strchr(map, c[1]);
+                        if (k) bfs_key(&demo_fs, (int)(k - map) + 1);
+                    }
+                    p = strchr(c, ',');
+                    if (!p) break;
+                    p++;
+                }
+            }
+            bmenu_update(&menu);
+            bfs_update(&demo_fs);
+            bfs_op* op = bfs_pending(&demo_fs);
+            if (op) { op->progress += 12; if (op->progress >= 1000) { op->progress = 1000; op->done = 1; } }
+        }
+        fprintf(stderr, "file screen state %#x grid %d browser %d cursor %d/%d\n", demo_fs.state, demo_fs.g_state, demo_fs.b_state,
+                demo_fs.g_cursor, demo_fs.b_cursor);
     } else if (script == -9) { /* memory card grid of the File screen: `selected` = cursor; cards in A1, B1, B2 */
         static bfiles bf;
         bfiles_open(&bf, &menu, selected);
@@ -496,7 +580,7 @@ main(int argc, char** argv) {
             }
         }
     }
-    for (int i = 0; i < (script == -5 || script == -7 || script == -10 || script == -11 || script == -8 || script == -9 ? 0 : frames); i++) {
+    for (int i = 0; i < (script == -5 || script == -7 || script == -10 || script == -11 || script == -8 || script == -9 || script == -14 ? 0 : frames); i++) {
         bmenu_update(&menu);
         if (script == -2) {
             bpage_sync(&page, demo_row, NULL);
@@ -547,7 +631,10 @@ main(int argc, char** argv) {
         }
     }
     bscene_sink sink = {NULL, tri, text};
-    if (script == -9) {
+    if (script == -14) {
+        bscene_draw_background(&menu.bg, &sink);
+        bfs_draw(&demo_fs, &sink);
+    } else if (script == -9) {
         bscene_draw_background(&menu.bg, &sink);
         bmenu_draw_objects(&menu, &sink);
     } else if (script == -8) {

@@ -50,6 +50,7 @@ vf_list(int slot, vf_file* out, int max) {
         out[n].protect = dir[i].copyprotect == 0xFF;
         out[n].firstblk = dir[i].firstblk;
         out[n].hdroff = dir[i].hdroff;
+        memcpy(out[n].time, &dir[i].timestamp, 8);
         n++;
     }
     free(dir);
@@ -266,14 +267,16 @@ vf_card_look(int slot, int* shape, int* colour_index) {
 }
 
 /* ICONDATA_VMS: the icon the VMU shows on its own screen and the BIOS shows for the card:
- * 0x00 offset of the monochrome icon, 0x04 offset of the colour icon, 0x20 the 32x32 1 bit icon,
- * 0xA0 the colour icon (16 palette entries, then 32x32 at 4 bits a pixel). */
+ * 0x00 description (16 bytes), 0x10 offset of the monochrome icon, 0x14 offset of the colour icon (0: none),
+ * then the 32x32 1 bit icon and the colour icon (16 palette entries, then 32x32 at 4 bits a pixel). The BIOS
+ * reads the offsets at 0x10 and 0x14 (vmu_decode_file_header 0x8C023B40). */
 static int
 write_icondata(maple_device_t* dev, int shape, int colour_index) {
     uint8_t file[0xA0 + 32 + 512];
     memset(file, 0, sizeof(file));
-    file[0] = 0x20;
-    file[4] = 0xA0;
+    memcpy(file, "MEMORY CARD     ", 16);
+    file[0x10] = 0x20;
+    file[0x14] = 0xA0;
     const uint8_t* g = ICON_TABLE + (shape + 5) * 128;
     memcpy(file + 0x20, g, 128);
     const vf_colour* c = vf_colour_get(colour_index);
@@ -322,6 +325,34 @@ vf_set_look(int slot, int shape, int colour_index) {
     return write_icondata(dev, shape, colour_index); /* the card keeps working even if this file cannot be written */
 }
 
+static int
+root_valid(const vmu_root_t* root) {
+    for (int i = 0; i < 16; i++) {
+        if (root->magic[i] != 0x55) {
+            return 0;
+        }
+    }
+    return root->fat_size == 1 && root->dir_size > 0 && root->dir_size <= 20 && root->dir_loc < 256 && root->fat_loc < 256;
+}
+
+/* A new root block as a formatted card has it: 256 blocks, FAT at 254, 13 directory blocks from 253, 200 for files. */
+static void
+root_new(vmu_root_t* root) {
+    memset(root, 0, sizeof(*root));
+    memset(root->magic, 0x55, sizeof(root->magic));
+    uint8_t* r = (uint8_t*)root;
+    r[0x40] = 0xFF; /* last block */
+    r[0x44] = 0xFF; /* the root block */
+    root->fat_loc = 254;
+    root->fat_size = 1;
+    root->dir_loc = 253;
+    root->dir_size = 13;
+    root->blk_cnt = 200;
+    r[0x52] = 31;   /* save area / VMU game area sizes as the BIOS writes them */
+    r[0x54] = 128;
+    vmufs_dir_fill_time((vmu_dir_t*)((uint8_t*)root + 0x30 - 16)); /* fills the 8 time bytes at 0x30 */
+}
+
 int
 vf_format(int slot, int shape, int colour_index) {
     maple_device_t* dev = card(slot);
@@ -333,8 +364,14 @@ vf_format(int slot, int shape, int colour_index) {
     }
     memset(zero, 0, sizeof(zero));
     vmufs_mutex_lock();
-    if (vmufs_root_read(dev, &root) == 0 && root.fat_size == 1 && root.dir_size > 0 && root.dir_size <= 20 && root.dir_loc < 256
-        && root.fat_loc < 256) {
+    if (vmufs_root_read(dev, &root) != 0 || !root_valid(&root)) {
+        root_new(&root);
+        if (vmufs_root_write(dev, &root) != 0) {
+            vmufs_mutex_unlock();
+            return -1;
+        }
+    }
+    if (root_valid(&root)) {
         uint16_t fat[256];
         for (int i = 0; i < 256; i++) {
             fat[i] = 0xFFFC; /* free */
@@ -358,4 +395,213 @@ vf_format(int slot, int shape, int colour_index) {
         return -1;
     }
     return vf_set_look(slot, shape, colour_index);
+}
+
+int
+vf_format_raw(int slot, int shape, int custom, const unsigned char bgra[4]) {
+    /* the nearest preset carries the colour through vf_format(); the exact colour is written afterwards */
+    if (vf_format(slot, shape, 0) != 0) {
+        return -1;
+    }
+    maple_device_t* dev = card(slot);
+    vmu_root_t root;
+    int rc = -1;
+    vmufs_mutex_lock();
+    if (dev && vmufs_root_read(dev, &root) == 0) {
+        root.use_custom = (uint8_t)(custom != 0);
+        memcpy(root.custom_color, bgra, 4);
+        rc = vmufs_root_write(dev, &root);
+    }
+    vmufs_mutex_unlock();
+    return rc;
+}
+
+/* ---- The File screen's view of a card ------------------------------------------------------------------- */
+
+static unsigned short
+mono_px(const uint8_t* bits, int x, int y, unsigned short fg) {
+    return (bits[y * 4 + x / 8] >> (7 - (x & 7))) & 1 ? fg : 0xFBC6;
+}
+
+int
+vf_card_info_read(int slot, vf_card_info* out) {
+    maple_device_t* dev = card(slot);
+    vmu_root_t root;
+    memset(out, 0, sizeof(*out));
+    out->colour = 0xFFFFFFFFu;
+    if (!dev) {
+        return out->status = VF_CARD_NONE;
+    }
+    vmufs_mutex_lock();
+    int rc = vmufs_root_read(dev, &root);
+    vmufs_mutex_unlock();
+    if (rc != 0) {
+        return out->status = VF_CARD_ERROR;
+    }
+    if (!root_valid(&root)) {
+        /* not formatted: the BIOS shows picture 0 in orange and the card in 0xFF2F5F9F */
+        const uint8_t* g = ICON_TABLE;
+        for (int y = 0; y < 32; y++) {
+            for (int x = 0; x < 32; x++) {
+                out->icon[y * 32 + x] = mono_px(g, x, y, 0xFD00);
+            }
+        }
+        out->colour = 0xFF2F5F9Fu;
+        return out->status = VF_CARD_UNFORMATTED;
+    }
+    out->shape = root.icon_shape < 124 ? root.icon_shape : 0;
+    if (root.use_custom) {
+        out->colour = ((unsigned)root.custom_color[3] << 24) | ((unsigned)root.custom_color[2] << 16) |
+                      ((unsigned)root.custom_color[1] << 8) | root.custom_color[0];
+    }
+    out->total_blocks = root.blk_cnt ? root.blk_cnt : 200;
+    out->free_blocks = vmufs_free_blocks(dev);
+    if (out->free_blocks < 0) {
+        out->free_blocks = 0;
+    }
+    /* the card's picture: ICONDATA_VMS if there is one, else the root block's icon shape */
+    void* data = NULL;
+    int size = 0;
+    int done = 0;
+    if (vmufs_read(dev, "ICONDATA_VMS", &data, &size) == 0 && data && size >= 0x20) {
+        const uint8_t* d = (const uint8_t*)data;
+        uint32_t mono = d[0x10] | (d[0x11] << 8) | ((uint32_t)d[0x12] << 16) | ((uint32_t)d[0x13] << 24);
+        uint32_t colour = d[0x14] | (d[0x15] << 8) | ((uint32_t)d[0x16] << 16) | ((uint32_t)d[0x17] << 24);
+        if (colour && colour + 0x20 + 512 <= (uint32_t)size) {
+            const uint8_t* pal = d + colour;
+            for (int i = 0; i < 1024; i++) {
+                uint8_t b = d[colour + 0x20 + i / 2];
+                int n = (i & 1) ? (b & 15) : (b >> 4);
+                out->icon[i] = (unsigned short)(pal[n * 2] | (pal[n * 2 + 1] << 8));
+            }
+            done = 1;
+        } else if (mono + 128 <= (uint32_t)size) {
+            for (int y = 0; y < 32; y++) {
+                for (int x = 0; x < 32; x++) {
+                    out->icon[y * 32 + x] = mono_px(d + mono, x, y, 0xF225);
+                }
+            }
+            done = 1;
+        }
+    }
+    free(data);
+    if (!done) {
+        const uint8_t* g = ICON_TABLE + (out->shape + 5) * 128;
+        for (int y = 0; y < 32; y++) {
+            for (int x = 0; x < 32; x++) {
+                out->icon[y * 32 + x] = mono_px(g, x, y, 0xF225);
+            }
+        }
+    }
+    return out->status = VF_CARD_READY;
+}
+
+/* Read `count` blocks of a file starting `skip` blocks in. Returns the blocks read. */
+static int
+read_file_blocks(maple_device_t* dev, int first, int skip, int count, uint8_t* out) {
+    vmu_root_t root;
+    int got = 0;
+    vmufs_mutex_lock();
+    if (vmufs_root_read(dev, &root) == 0 && root.fat_size > 0 && root.fat_size <= 4) {
+        uint16_t* fat = (uint16_t*)malloc((size_t)root.fat_size * 512);
+        if (fat && vmufs_fat_read(dev, &root, fat) == 0) {
+            int blk = first;
+            for (int i = 0; i < skip && blk < 256; i++) {
+                blk = fat[blk];
+            }
+            while (got < count && blk < 256) {
+                if (vmu_block_read(dev, (uint16_t)blk, out + got * 512) != 0) {
+                    break;
+                }
+                got++;
+                blk = fat[blk];
+            }
+        }
+        free(fat);
+    }
+    vmufs_mutex_unlock();
+    return got;
+}
+
+static void
+copy_text(char* dst, const uint8_t* src, int n) {
+    memcpy(dst, src, (size_t)n);
+    dst[n] = '\0';
+    for (int i = 0; i < n; i++) {
+        if ((uint8_t)dst[i] < 0x20) {
+            dst[i] = ' ';
+        }
+    }
+}
+
+int
+vf_file_header(int slot, const vf_file* file, vf_header* out) {
+    maple_device_t* dev = card(slot);
+    memset(out, 0, sizeof(*out));
+    memset(out->vmdesc, ' ', 16);
+    memset(out->desc, ' ', 32);
+    memset(out->app, ' ', 16);
+    if (!dev || !strncmp(file->name, "ICONDATA_VMS", 12)) {
+        return -1;
+    }
+    uint8_t buf[4 * 512];
+    int got = read_file_blocks(dev, file->firstblk, file->hdroff, 4, buf);
+    if (got < 1) {
+        return -1;
+    }
+    copy_text(out->vmdesc, buf, 16);
+    copy_text(out->desc, buf + 0x10, 32);
+    copy_text(out->app, buf + 0x30, 16);
+    out->icons = buf[0x40] | (buf[0x41] << 8);
+    if (out->icons < 0 || out->icons > 3) {
+        out->icons = 0; /* as the BIOS: more than 3 frames is not a header it trusts */
+    }
+    out->speed = (buf[0x42] | (buf[0x43] << 8)) * 2;
+    out->eyecatch = buf[0x44] | (buf[0x45] << 8);
+    if (out->eyecatch > 3) {
+        out->eyecatch = 0;
+    }
+    for (int i = 0; i < 16; i++) {
+        out->palette[i] = (unsigned short)(buf[0x60 + i * 2] | (buf[0x61 + i * 2] << 8));
+    }
+    int need = 0x80 + out->icons * 512;
+    if (need > got * 512) {
+        out->icons = (got * 512 - 0x80) / 512;
+    }
+    memcpy(out->bitmaps, buf + 0x80, (size_t)out->icons * 512);
+    return 0;
+}
+
+int
+vf_file_eyecatch(int slot, const vf_file* file, int type, int icons, unsigned short out[72 * 56]) {
+    static const int sizes[4] = {0, 72 * 56 * 2, 512 + 72 * 56, 32 + 72 * 56 / 2};
+    maple_device_t* dev = card(slot);
+    if (!dev || type < 1 || type > 3) {
+        return -1;
+    }
+    int start = 0x80 + icons * 512, len = sizes[type];
+    int blocks = (start + len + 511) / 512;
+    uint8_t* buf = (uint8_t*)malloc((size_t)blocks * 512);
+    if (!buf) {
+        return -1;
+    }
+    int rc = -1;
+    if (read_file_blocks(dev, file->firstblk, file->hdroff, blocks, buf) == blocks) {
+        const uint8_t* d = buf + start;
+        for (int i = 0; i < 72 * 56; i++) {
+            if (type == 1) {
+                out[i] = (unsigned short)(d[i * 2] | (d[i * 2 + 1] << 8));
+            } else if (type == 2) {
+                int n = d[512 + i];
+                out[i] = (unsigned short)(d[n * 2] | (d[n * 2 + 1] << 8));
+            } else {
+                uint8_t b = d[32 + i / 2];
+                int n = (i & 1) ? (b & 15) : (b >> 4);
+                out[i] = (unsigned short)(d[n * 2] | (d[n * 2 + 1] << 8));
+            }
+        }
+        rc = 0;
+    }
+    free(buf);
+    return rc;
 }
