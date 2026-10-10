@@ -415,6 +415,18 @@ art_get(const char* product, int box) {
     return e;
 }
 
+int
+gfx_art_prefetch(const char* product, int box) {
+    if (!product || !product[0]) {
+        return 1;
+    }
+    art_entry* e = art_get(product, box);
+    if (!e) {
+        return 0; /* loader busy or cache full this frame: not there yet */
+    }
+    return !e->loading;
+}
+
 void
 gfx_art_bind_row(int slot, const char* product, int pal) {
     if (slot >= 0 && slot < BLIST_MAX_SLOTS) {

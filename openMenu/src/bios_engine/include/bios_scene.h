@@ -119,6 +119,14 @@ void bscene_draw_model(bscene* s, int model, float cx, float cy, float scale, co
 
 void bscene_draw_background(const dcbg_state* bg, const bscene_sink* sink);
 
+/* Objects whose drawing state did not change since an earlier frame are not transformed, lit and projected again:
+ * their triangles are kept and sent as they were. The key covers the object (model, motion frame, position,
+ * rotation, scale, constant material, flags) and the scene settings that change how it is drawn. Textures are
+ * looked up by the sink at send time, so pictures that arrive later still show. Call bscene_cache_clear() after
+ * changing anything else a model's look depends on; bscene_cache_enable(0) turns the cache off. */
+void bscene_cache_clear(void);
+void bscene_cache_enable(int on);
+
 /* Translucent sorting. The BIOS lets the PVR sort its translucent polygons (auto-sort), so where the parts of a
  * model, or the two copies of a main-menu icon, overlap, the farther one is always blended first. The console build
  * runs the PVR in presort mode (cheaper: polygons are blended in the order they are sent), so the main menu sends its

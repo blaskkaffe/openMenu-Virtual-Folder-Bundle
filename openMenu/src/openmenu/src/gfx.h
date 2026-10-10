@@ -73,6 +73,10 @@ void gfx_art_box(const char* product, float x, float y, float w, float h, float 
  * or plain white when empty or not found. The back picture is white until something is placed there. */
 void gfx_model_bind_front(const char* product);
 
+/* Start loading a game picture before it is needed (box = 1: box art, 0: disc icon), so it is there when the
+ * row or case shows it. Returns 1 once the picture is in video memory or known to be missing, 0 while it loads. */
+int gfx_art_prefetch(const char* product, int box);
+
 /* Game list row `slot`: show its title through a window of `window_px` pixels, moved left by
  * `offset_px` (a scrolling title). window_px 0 shows the title as it is. */
 void gfx_set_row_scroll(int slot, int window_px, int offset_px);

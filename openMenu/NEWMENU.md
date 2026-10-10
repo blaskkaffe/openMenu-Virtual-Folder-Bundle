@@ -254,3 +254,25 @@ preview composites the main menu per pixel the same way (`BIOS_PREVIEW_PRESORT=1
 `BIOS_PREVIEW_FLAT=1 bios_preview dc_boot.bin out.ppm 120 -1` matches the reference render of `menu3d_ref.py`
 within one level on every icon and pill pixel.
 BACK marker: selectable on the game list, Settings (BIOS cursor table 0x8C037D70) and the File card grid (0x8C03884C).
+
+## Frame time
+
+Measured as SH-4 instructions per frame of the engine (scene building only, `qemu-sh4` with one instruction per
+block; the console runs about 3.3 million cycles per 60 Hz frame):
+
+| Screen | 4be3853 (60 fps) | before this change | now |
+|---|---|---|---|
+| Main menu, an icon animating | 1.29 M | 3.34 M | 1.04 M |
+| Settings | 0.85 M | 1.18 M | 0.45 M |
+| Game list | | 3.41 M | 0.71 M |
+| File card grid | | 3.83 M | 0.39 M |
+
+What changed: the lit colour of a vertex is worked out once per strip instead of once per triangle corner; the
+sphere-map u, v only for meshes that use it; the round disc faces use a sin/cos table; and objects whose drawing
+state (model, motion frame, position, rotation, scale, constant material, scene settings) is the same as in an
+earlier frame send their kept triangles again instead of being transformed, lit and projected
+(`bscene_cache_*`, checked against uncached drawing frame by frame in `bios_engine_test`). Doubling the icons and
+the per-vertex lighting had tripled the main menu's cost; that is what dropped it to 20 fps.
+
+Game list: the box art of the games next to the cursor is read ahead, and a new case waits up to 10 frames for
+its picture before flying in, so the front no longer pops in.

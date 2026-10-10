@@ -620,6 +620,84 @@ test_dcbg(void) {
     CHECK(top == 0xFFB0D0D0 && bottom == 0xFF4060C0);
 }
 
+
+/* ---- object output cache: what is replayed must equal what is drawn ---- */
+#define REC_MAX 20000
+typedef struct {
+    bscene_vtx v[3];
+    bscene_texref tex;
+} rec_tri;
+static rec_tri* rec_buf;
+static int rec_n;
+static void
+rec_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
+    (void)user;
+    if (rec_n < REC_MAX) {
+        memset(&rec_buf[rec_n], 0, sizeof(rec_buf[rec_n]));
+        memcpy(rec_buf[rec_n].v, v, sizeof(rec_buf[rec_n].v));
+        rec_buf[rec_n].tex = tex;
+        rec_n++;
+    }
+}
+
+static void
+rec_row(void* user, int index, bpage_row* out) {
+    (void)user;
+    out->icon = index < 4 ? BPAGE_ICON_BIOS(index) : BPAGE_ICON_DIGIT(index - 4);
+}
+
+/* Draws `frames` frames of a screen twice, cache on and off, and compares every triangle. */
+static void
+test_cache_screen(const bios_rom* rom, int screen) {
+    if (!rec_buf) rec_buf = malloc(sizeof(rec_tri) * REC_MAX);
+    int mismatches = 0, total = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        static bmenu m;
+        static bpage page;
+        static blist list;
+        bmenu_init(&m, rom, NULL);
+        bscene_cache_enable(pass == 1);
+        bmenu_show_main(&m, 1);
+        if (screen == 1) bpage_open(&page, &m, 10);
+        if (screen == 2) blist_open(&list, &m, 5, 40);
+        bscene_sink sink = {NULL, rec_triangle, NULL};
+        for (int fr = 0; fr < 90; fr++) {
+            bmenu_update(&m);
+            if (screen == 1) {
+                if (fr == 40) bpage_move(&page, 1);
+                bpage_sync(&page, rec_row, NULL);
+            }
+            if (screen == 2) {
+                if (fr == 40) blist_move(&list, 1);
+                blist_sync(&list);
+            }
+            rec_n = 0;
+            if (screen == 0) bmenu_draw_objects(&m, &sink);
+            if (screen == 1) bpage_draw(&page, &sink);
+            if (screen == 2) blist_draw(&list, &sink);
+            static int ref_n[90];
+            static rec_tri* frames_ref[90];
+            if (pass == 0) {
+                free(frames_ref[fr]);
+                frames_ref[fr] = malloc(sizeof(rec_tri) * (size_t)(rec_n ? rec_n : 1));
+                memcpy(frames_ref[fr], rec_buf, sizeof(rec_tri) * (size_t)rec_n);
+                ref_n[fr] = rec_n;
+            } else {
+                total += rec_n;
+                if (rec_n != ref_n[fr] || memcmp(frames_ref[fr], rec_buf, sizeof(rec_tri) * (size_t)rec_n)) {
+                    mismatches++;
+                }
+            }
+        }
+        bmenu_free(&m);
+    }
+    bscene_cache_enable(1);
+    CHECK(mismatches == 0 && total > 0);
+    if (mismatches) {
+        printf("cache: screen %d differs in %d frames\n", screen, mismatches);
+    }
+}
+
 static void
 test_real_rom(const char* path) {
     FILE* f = fopen(path, "rb");
@@ -687,6 +765,10 @@ test_real_rom(const char* path) {
         }
     }
     CHECK(script_errors == 0);
+
+    test_cache_screen(&rom, 0);
+    test_cache_screen(&rom, 1);
+    test_cache_screen(&rom, 2);
 
     /* the real sound container: 9 blocks, the three data banks with their known addresses */
     const uint8_t *drv, *banks;

@@ -209,11 +209,38 @@ case_bind(void* user, const char* tag) {
     gfx_model_bind_front(tag);
 }
 
+/* A new case waits for its box art (at most CASE_ART_WAIT frames), so its front does not pop in after it has
+ * arrived; the pictures of the next and previous games are read ahead while the cursor rests. */
+#define CASE_ART_WAIT 10
+static int case_wait;
+
+static void
+case_prefetch(int cursor) {
+    static const int ahead[] = {1, -1, 2, -2};
+    for (unsigned i = 0; i < sizeof(ahead) / sizeof(ahead[0]); i++) {
+        int row = cursor + ahead[i];
+        if (row < 0 || row >= uil_count()) {
+            continue;
+        }
+        const gd_item* it = uil_item(row);
+        if (it && !uil_is_folder(it) && it->product[0]) {
+            gfx_art_prefetch(it->product, 1);
+        }
+    }
+}
+
 static void
 case_update(void) {
     int cursor = uil_cursor();
     const gd_item* cur = uil_count() > 0 ? uil_item(cursor) : NULL;
     if (cursor != gcase_prev_cursor || cur != gcase_prev_item) {
+        int ready = !cur || uil_is_folder(cur) || gfx_art_prefetch(cur->product, 1);
+        if (!ready && case_wait < CASE_ART_WAIT) {
+            case_wait++; /* the old case stays a little longer */
+            bcase_step(&gcase);
+            return;
+        }
+        case_wait = 0;
         int dir = cursor >= gcase_prev_cursor ? 1 : -1;
         if (cur && !uil_is_folder(cur)) {
             int pal = cur->product[0] ? serial_is_pal(cur->product) : console_is_pal();
@@ -223,6 +250,8 @@ case_update(void) {
         }
         gcase_prev_cursor = cursor;
         gcase_prev_item = cur;
+    } else {
+        case_prefetch(cursor);
     }
     bcase_step(&gcase);
 }

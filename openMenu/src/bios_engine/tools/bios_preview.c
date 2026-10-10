@@ -379,7 +379,7 @@ main(int argc, char** argv) {
     frags = malloc(sizeof(frag) * MAX_FRAGS);
     memset(frag_head, 0xFF, sizeof(frag_head));
     /* the main menu runs with the PVR's per-pixel autosort, as the BIOS (and the console build) does */
-    g_autosort = frags && !getenv("BIOS_PREVIEW_PRESORT") && script < 0 && (script == -1 || script == -9);
+    g_autosort = frags && !getenv("BIOS_PREVIEW_PRESORT") && script == -1;
     menu.hw_autosort = g_autosort;
 
     if (script == -2) { /* settings page demo: `selected` = cursor row, 10 rows */
