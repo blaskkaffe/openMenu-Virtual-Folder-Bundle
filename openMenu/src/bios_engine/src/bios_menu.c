@@ -89,6 +89,81 @@ bmenu_update(bmenu* m) {
     m->frames++;
 }
 
+/* Each icon is drawn twice (0x200 + i and 0x300 + i): the same model, motion frame, rotation and colour, the second
+ * one 0.117 units higher and 0.039 farther. The lighting depends on the normals only, so the second copy is the
+ * first one's triangles projected again from the shifted position: no second transform and lighting. */
+#define TWIN_MAX 2048
+typedef struct {
+    bscene_vtx v[3];
+    bscene_texref tex;
+} twin_tri;
+static twin_tri twin_buf[TWIN_MAX];
+static int twin_n, twin_overflow;
+static const bscene_sink* twin_out;
+
+static void
+twin_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
+    (void)user;
+    if (twin_n < TWIN_MAX) {
+        memcpy(twin_buf[twin_n].v, v, sizeof(twin_buf[twin_n].v));
+        twin_buf[twin_n].tex = tex;
+        twin_n++;
+    } else {
+        twin_overflow = 1;
+    }
+    twin_out->triangle(twin_out->user, v, tex);
+}
+
+static int
+twins(const bvm_obj* a, const bvm_obj* b) {
+    if (!a->active || !b->active || ((a->flags ^ b->flags) & ~(uint32_t)(BVM_F_ATTACHED | BVM_F_TEXT)) || a->model != b->model ||
+        a->texlist != b->texlist || (a->flags & (BVM_F_HIDE | BVM_F_PANEL)) || !(a->flags & BVM_F_MODEL)) {
+        return 0;
+    }
+    if ((a->flags & BVM_F_MOTION) && (a->motion != b->motion || a->motion_tw.cur != b->motion_tw.cur)) {
+        return 0;
+    }
+    if ((a->flags & BVM_F_COLOUR) && memcmp(a->color, b->color, sizeof(a->color))) {
+        return 0;
+    }
+    for (int k = 0; k < 3; k++) {
+        if (a->rot[k] != b->rot[k] || a->scale_tw[k].cur != b->scale_tw[k].cur) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* the captured triangles of `a`, seen from where `b` is */
+static void
+twin_replay(const bvm_obj* a, const bvm_obj* b, const bscene_sink* sink) {
+    const float dx = b->pos[0] - a->pos[0], dy = b->pos[1] - a->pos[1], dz = b->pos[2] - a->pos[2];
+    const float half_w = BSCENE_SCREEN_W / 2, half_h = BSCENE_SCREEN_H / 2;
+    for (int t = 0; t < twin_n; t++) {
+        bscene_vtx v[3];
+        int ok = 1;
+        for (int k = 0; k < 3; k++) {
+            const bscene_vtx* s = &twin_buf[t].v[k];
+            v[k] = *s;
+            /* back to view space (z = -1 / invw), shift, project again */
+            float w = 1.0f / s->invw;
+            float x = (s->x - half_w) * w + BSCENE_FOCAL * dx, y = (half_h - s->y) * w + BSCENE_FOCAL * dy;
+            float nw = w - dz;
+            if (nw < 1.0f) {
+                ok = 0;
+                break;
+            }
+            float iw = 1.0f / nw;
+            v[k].x = half_w + x * iw;
+            v[k].y = half_h - y * iw;
+            v[k].invw = iw;
+        }
+        if (ok) {
+            sink->triangle(sink->user, v, twin_buf[t].tex);
+        }
+    }
+}
+
 void
 bmenu_draw_objects(bmenu* m, const bscene_sink* sink) {
     static const unsigned passes[2] = {BSCENE_PART_MODEL, BSCENE_PART_TEXT};
@@ -98,9 +173,42 @@ bmenu_draw_objects(bmenu* m, const bscene_sink* sink) {
          * through the CPU sorter */
         const int cpu_sort = pass == 0 && !m->hw_autosort;
         const bscene_sink* to = cpu_sort ? bscene_sort_begin(sink) : sink;
+        uint8_t done[BVM_MAX_OBJECTS] = {0};
         for (int i = 0; i < m->vm.count; i++) {
-            const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
-            bscene_draw_object(&m->scene, o, to);
+            const int oi = m->vm.order[i];
+            const bvm_obj* o = &m->vm.objs[oi];
+            if (done[oi]) {
+                continue;
+            }
+            /* an icon of the first layer: draw it, then its twin of the second layer from the same triangles */
+            const bvm_obj* twin = NULL;
+            int twin_index = -1;
+            /* only for an icon that moves: one at rest comes out of the scene's triangle cache already */
+            if (pass == 0 && (o->flags & BVM_F_MOTION) && o->id >= BMENU_ID_ICON(0) && o->id < BMENU_ID_ICON(BMENU_ICONS)) {
+                for (int k = 0; k < m->vm.count; k++) {
+                    const bvm_obj* c = &m->vm.objs[m->vm.order[k]];
+                    if (c->id == o->id + 0x100 && twins(o, c)) {
+                        twin = c;
+                        twin_index = m->vm.order[k];
+                        break;
+                    }
+                }
+            }
+            if (!twin) {
+                bscene_draw_object(&m->scene, o, to);
+                continue;
+            }
+            bscene_sink cap = {NULL, twin_triangle, to->text};
+            twin_out = to;
+            twin_n = 0;
+            twin_overflow = 0;
+            bscene_draw_object(&m->scene, o, &cap);
+            if (twin_overflow) {
+                bscene_draw_object(&m->scene, twin, to);
+            } else {
+                twin_replay(o, twin, to);
+            }
+            done[twin_index] = 1;
         }
         if (cpu_sort) {
             bscene_sort_end();

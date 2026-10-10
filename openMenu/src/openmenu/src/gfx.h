@@ -52,6 +52,9 @@ void gfx_rect(float x, float y, float w, float h, float z, uint32_t argb);
 /* Counters for the debug overlay, collected since the previous call (which zeroes them). */
 typedef struct gfx_stats {
     unsigned wait_us;      /* time spent waiting for the previous frame to finish rendering */
+    unsigned render_us;    /* the PVR's rendering time of the frames (pvr_stats rnd_last_time) */
+    unsigned ta_us;        /* time spent handing the vertices to the TA (pvr_prim) */
+    unsigned vertices;     /* vertices sent */
     unsigned art_loads;    /* pictures the loader thread finished */
     unsigned art_us;       /* ... and the time it needed for them */
     unsigned text_uploads; /* text pictures made */

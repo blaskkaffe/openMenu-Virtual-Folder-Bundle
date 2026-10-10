@@ -1173,8 +1173,9 @@ ui_bios_run(const bios_rom* rom) {
             snprintf(fps_text, sizeof(fps_text), "%d fps  %u tris", frames_this_second, gfx_triangles());
             snprintf(perf_text[0], sizeof(perf_text[0]), "sync %u.%u build %u.%u wait %u.%u ms", sync_t / 10, sync_t % 10,
                      build_t / 10, build_t % 10, wait_t / 10, wait_t % 10);
-            snprintf(perf_text[1], sizeof(perf_text[1]), "art %u (%u ms) text %u hdr %u", gs.art_loads, gs.art_us / 1000u,
-                     gs.text_uploads, gs.headers / n);
+            snprintf(perf_text[1], sizeof(perf_text[1]), "gpu %u.%u ta %u.%u ms  %u vtx  hdr %u%s", gs.render_us / n / 1000u,
+                     gs.render_us / n / 100u % 10u, gs.ta_us / n / 1000u, gs.ta_us / n / 100u % 10u, gs.vertices / n, gs.headers / n,
+                     gfx_autosort() ? " auto" : " pre");
             {
                 unsigned beg = (unsigned)(phase_us[0] / n / 100u), bg = (unsigned)(phase_us[1] / n / 100u),
                          all = (unsigned)(phase_us[2] / n / 100u);

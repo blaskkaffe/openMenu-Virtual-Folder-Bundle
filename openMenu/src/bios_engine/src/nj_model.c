@@ -574,6 +574,21 @@ nj_mat_identity(nj_mat4* r) {
 void
 nj_mat_mul(nj_mat4* r, const nj_mat4* a, const nj_mat4* b) {
     nj_mat4 t;
+    if (a->m[3][0] == 0.0f && a->m[3][1] == 0.0f && a->m[3][2] == 0.0f && a->m[3][3] == 1.0f && b->m[3][0] == 0.0f &&
+        b->m[3][1] == 0.0f && b->m[3][2] == 0.0f && b->m[3][3] == 1.0f) {
+        /* both affine (every matrix of the models and objects): 36 multiplications instead of 64 */
+        for (int i = 0; i < 3; i++) {
+            const float a0 = a->m[i][0], a1 = a->m[i][1], a2 = a->m[i][2];
+            t.m[i][0] = a0 * b->m[0][0] + a1 * b->m[1][0] + a2 * b->m[2][0];
+            t.m[i][1] = a0 * b->m[0][1] + a1 * b->m[1][1] + a2 * b->m[2][1];
+            t.m[i][2] = a0 * b->m[0][2] + a1 * b->m[1][2] + a2 * b->m[2][2];
+            t.m[i][3] = a0 * b->m[0][3] + a1 * b->m[1][3] + a2 * b->m[2][3] + a->m[i][3];
+        }
+        t.m[3][0] = t.m[3][1] = t.m[3][2] = 0.0f;
+        t.m[3][3] = 1.0f;
+        *r = t;
+        return;
+    }
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 4; j++) {
             t.m[i][j] = a->m[i][0] * b->m[0][j] + a->m[i][1] * b->m[1][j] + a->m[i][2] * b->m[2][j] + a->m[i][3] * b->m[3][j];
@@ -596,48 +611,98 @@ nj_ang_to_rad(int32_t a) {
     return (float)a * NJ_TWO_PI / 65536.0f;
 }
 
+/* sin and cos of a Ninja angle (0x10000 = 360 degrees), from a table as njSin / njCos do: much cheaper than sinf
+ * on the SH-4, and the angles are whole Ninja units anyway (linear between entries for the fractions of motions). */
+#define SIN_BITS 12
+#define SIN_N (1 << SIN_BITS)
+static float sin_tab[SIN_N + 1];
+static int sin_ready;
+
 static void
-rot_x(nj_mat4* r, float t) {
-    nj_mat_identity(r);
-    float c = cosf(t), s = sinf(t);
-    r->m[1][1] = c; r->m[1][2] = -s;
-    r->m[2][1] = s; r->m[2][2] = c;
+ang_sincos(float ang, float* s, float* c) {
+    if (!sin_ready) {
+        for (int i = 0; i <= SIN_N; i++) {
+            sin_tab[i] = sinf((float)i * NJ_TWO_PI / (float)SIN_N);
+        }
+        sin_ready = 1;
+    }
+    /* position in the table, wrapped to one turn */
+    float u = ang * ((float)SIN_N / 65536.0f);
+    int i = (int)u;
+    if (u < (float)i) {
+        i--; /* floor for negative angles */
+    }
+    float f = u - (float)i;
+    int is = i & (SIN_N - 1), ic = (i + SIN_N / 4) & (SIN_N - 1);
+    *s = sin_tab[is] + (sin_tab[is + 1] - sin_tab[is]) * f;
+    *c = sin_tab[ic] + (sin_tab[ic + 1] - sin_tab[ic]) * f;
+}
+
+typedef struct {
+    float m[3][3];
+} mat3;
+
+static void
+mul3(mat3* r, const mat3* a, const mat3* b) {
+    mat3 t;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            t.m[i][j] = a->m[i][0] * b->m[0][j] + a->m[i][1] * b->m[1][j] + a->m[i][2] * b->m[2][j];
+        }
+    }
+    *r = t;
 }
 
 static void
-rot_y(nj_mat4* r, float t) {
-    nj_mat_identity(r);
-    float c = cosf(t), s = sinf(t);
-    r->m[0][0] = c; r->m[0][2] = s;
-    r->m[2][0] = -s; r->m[2][2] = c;
+rot3_x(mat3* r, float ang) {
+    float s, c;
+    ang_sincos(ang, &s, &c);
+    *r = (mat3){{{1.0f, 0.0f, 0.0f}, {0.0f, c, -s}, {0.0f, s, c}}};
 }
 
 static void
-rot_z(nj_mat4* r, float t) {
-    nj_mat_identity(r);
-    float c = cosf(t), s = sinf(t);
-    r->m[0][0] = c; r->m[0][1] = -s;
-    r->m[1][0] = s; r->m[1][1] = c;
+rot3_y(mat3* r, float ang) {
+    float s, c;
+    ang_sincos(ang, &s, &c);
+    *r = (mat3){{{c, 0.0f, s}, {0.0f, 1.0f, 0.0f}, {-s, 0.0f, c}}};
+}
+
+static void
+rot3_z(mat3* r, float ang) {
+    float s, c;
+    ang_sincos(ang, &s, &c);
+    *r = (mat3){{{c, -s, 0.0f}, {s, c, 0.0f}, {0.0f, 0.0f, 1.0f}}};
+}
+
+/* [m * diag(scl) | pos] as an affine 4x4 */
+static void
+compose(nj_mat4* out, const mat3* m, const float scl[3], const float pos[3]) {
+    for (int i = 0; i < 3; i++) {
+        out->m[i][0] = m->m[i][0] * scl[0];
+        out->m[i][1] = m->m[i][1] * scl[1];
+        out->m[i][2] = m->m[i][2] * scl[2];
+        out->m[i][3] = pos[i];
+    }
+    out->m[3][0] = out->m[3][1] = out->m[3][2] = 0.0f;
+    out->m[3][3] = 1.0f;
 }
 
 void
 nj_mat_object(nj_mat4* out, const float pos[3], const float scl[3], const int32_t rot[3]) {
-    nj_mat4 t, s, rx, ry, rz;
-    nj_mat_identity(&t);
-    t.m[0][3] = pos[0];
-    t.m[1][3] = pos[1];
-    t.m[2][3] = pos[2];
-    nj_mat_identity(&s);
-    s.m[0][0] = scl[0];
-    s.m[1][1] = scl[1];
-    s.m[2][2] = scl[2];
-    rot_x(&rx, nj_ang_to_rad(rot[0]));
-    rot_y(&ry, nj_ang_to_rad(rot[1]));
-    rot_z(&rz, nj_ang_to_rad(rot[2]));
-    nj_mat_mul(out, &t, &s);
-    nj_mat_mul(out, out, &rx);
-    nj_mat_mul(out, out, &ry);
-    nj_mat_mul(out, out, &rz);
+    /* T * S * Rx * Ry * Rz */
+    mat3 rx, ry, rz, r;
+    rot3_x(&rx, (float)rot[0]);
+    rot3_y(&ry, (float)rot[1]);
+    rot3_z(&rz, (float)rot[2]);
+    mul3(&r, &rx, &ry);
+    mul3(&r, &r, &rz);
+    for (int i = 0; i < 3; i++) { /* S on the left scales the rows */
+        for (int j = 0; j < 3; j++) {
+            r.m[i][j] *= scl[i];
+        }
+    }
+    static const float one[3] = {1.0f, 1.0f, 1.0f};
+    compose(out, &r, one, pos);
 }
 
 void
@@ -655,38 +720,24 @@ nj_node_matrix(const nj_node* n, const float* pos_override, const float* ang_ove
     if (ang_override) {
         memcpy(ang, ang_override, sizeof(ang));
     }
-
-    nj_mat_identity(out);
-    if (!(n->eval & NJ_EVAL_NO_TRANSLATE)) {
-        nj_mat4 t;
-        nj_mat_identity(&t);
-        t.m[0][3] = pos[0];
-        t.m[1][3] = pos[1];
-        t.m[2][3] = pos[2];
-        nj_mat_mul(out, out, &t);
-    }
+    /* T * R * S, each part only if the node's eval flags allow it */
+    static const float zero[3] = {0.0f, 0.0f, 0.0f}, one[3] = {1.0f, 1.0f, 1.0f};
+    mat3 r = {{{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
     if (!(n->eval & NJ_EVAL_NO_ROTATE)) {
-        nj_mat4 rx, ry, rz, r;
-        rot_x(&rx, nj_ang_to_rad((int32_t)ang[0]));
-        rot_y(&ry, nj_ang_to_rad((int32_t)ang[1]));
-        rot_z(&rz, nj_ang_to_rad((int32_t)ang[2]));
+        mat3 rx, ry, rz;
+        /* whole Ninja units, as the original's (int32_t) conversion of the angles */
+        rot3_x(&rx, (float)(int32_t)ang[0]);
+        rot3_y(&ry, (float)(int32_t)ang[1]);
+        rot3_z(&rz, (float)(int32_t)ang[2]);
         if (n->eval & NJ_EVAL_ZXY) {
-            nj_mat_mul(&r, &ry, &rx);
-            nj_mat_mul(&r, &r, &rz);
+            mul3(&r, &ry, &rx);
+            mul3(&r, &r, &rz);
         } else {
-            nj_mat_mul(&r, &rz, &ry);
-            nj_mat_mul(&r, &r, &rx);
+            mul3(&r, &rz, &ry);
+            mul3(&r, &r, &rx);
         }
-        nj_mat_mul(out, out, &r);
     }
-    if (!(n->eval & NJ_EVAL_NO_SCALE)) {
-        nj_mat4 s;
-        nj_mat_identity(&s);
-        s.m[0][0] = scl[0];
-        s.m[1][1] = scl[1];
-        s.m[2][2] = scl[2];
-        nj_mat_mul(out, out, &s);
-    }
+    compose(out, &r, (n->eval & NJ_EVAL_NO_SCALE) ? one : scl, (n->eval & NJ_EVAL_NO_TRANSLATE) ? zero : pos);
 }
 
 void

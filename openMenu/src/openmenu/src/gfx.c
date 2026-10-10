@@ -620,7 +620,10 @@ static int cmd_n;
 static void
 cmd_flush(void) {
     if (cmd_n) {
+        uint64_t t0 = timer_us_gettime64();
         pvr_prim(cmdbuf, cmd_n * (int)sizeof(pvr_vertex_t));
+        stats.ta_us += (unsigned)(timer_us_gettime64() - t0);
+        stats.vertices += (unsigned)cmd_n;
         cmd_n = 0;
     }
 }
@@ -663,8 +666,11 @@ send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
     stats.headers++;
 }
 
+static void strip_close(void);
+
 static void
 ensure_header(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
+    strip_close();
     pvr_ptr_t key = tex ? tex->ptr : text_ptr;
     int untextured = (key == NULL);
     if (hdr_valid && key == last_ptr && untextured == last_untextured) {
@@ -691,13 +697,15 @@ gfx_set_aspect(int wide) {
 }
 
 static void
-send_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last) {
+put_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last) {
     if (!aspect_bypass) {
         x = 320.0f + (x - 320.0f) * aspect_x;
     }
     if (!cur_poly) {
         cmd_reserve(4);
         cur_poly = &cmdbuf[cmd_n];
+    } else {
+        cmd_reserve(1); /* a long strip: the buffer may fill up in its middle (the TA takes it in pieces) */
     }
     pvr_vertex_t* vert = &cmdbuf[cmd_n++];
     vert->flags = last ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
@@ -711,6 +719,35 @@ send_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last
     if (last) {
         cur_poly = NULL;
     }
+}
+
+/* The scene sends separate triangles, but most come from the models' triangle strips: a triangle that shares the
+ * last two vertices sent is sent as one more vertex of the same strip (culling is off, so the order does not
+ * matter). A third of the vertices for the TA, the store queues and the PVR's object lists. The strip's last vertex
+ * waits here until it is known whether the strip goes on. */
+static bscene_vtx strip_l1, strip_l2;
+static const rom_tex* strip_tex;
+static int strip_pending;
+
+static void
+strip_vertex(const bscene_vtx* p, const rom_tex* tex, int last) {
+    vtx_offset = tex ? p->oargb : 0;
+    put_vertex(p->x, p->y, p->invw, p->u, p->v, p->argb, last);
+    vtx_offset = 0;
+}
+
+static void
+strip_close(void) {
+    if (strip_pending) {
+        strip_pending = 0;
+        strip_vertex(&strip_l2, strip_tex, 1);
+    }
+}
+
+static void
+send_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last) {
+    strip_close();
+    put_vertex(x, y, z, u, v, argb, last);
 }
 
 static void
@@ -727,12 +764,29 @@ sink_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
         }
     }
     tri_count++;
-    ensure_header(tex, NULL, 0);
-    for (int i = 0; i < 3; i++) {
-        vtx_offset = tex ? v[i].oargb : 0;
-        send_vertex(v[i].x, v[i].y, v[i].invw, v[i].u, v[i].v, v[i].argb, i == 2);
+    if (strip_pending && tex == strip_tex) {
+        int a = -1, b = -1;
+        for (int i = 0; i < 3; i++) {
+            if (a < 0 && !memcmp(&v[i], &strip_l1, sizeof(bscene_vtx))) {
+                a = i;
+            } else if (b < 0 && !memcmp(&v[i], &strip_l2, sizeof(bscene_vtx))) {
+                b = i;
+            }
+        }
+        if (a >= 0 && b >= 0) {
+            strip_vertex(&strip_l2, tex, 0); /* the strip goes on */
+            strip_l1 = strip_l2;
+            strip_l2 = v[3 - a - b];
+            return;
+        }
     }
-    vtx_offset = 0;
+    ensure_header(tex, NULL, 0); /* also ends a pending strip */
+    strip_vertex(&v[0], tex, 0);
+    strip_vertex(&v[1], tex, 0);
+    strip_l1 = v[1];
+    strip_l2 = v[2];
+    strip_tex = tex;
+    strip_pending = 1;
 }
 
 static const char*
@@ -1182,6 +1236,10 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
         uint64_t t0 = timer_us_gettime64();
         pvr_wait_ready();
         stats.wait_us += (unsigned)(timer_us_gettime64() - t0);
+        pvr_stats_t ps;
+        if (pvr_get_stats(&ps) == 0) {
+            stats.render_us += (unsigned)(ps.rnd_last_time / 1000u);
+        }
     }
     art_poll();
     surface_gc();
@@ -1231,6 +1289,7 @@ gfx_autosort(void) {
 
 void
 gfx_end_frame(void) {
+    strip_close();
     cmd_flush();
     pvr_list_finish();
     pvr_scene_finish();
