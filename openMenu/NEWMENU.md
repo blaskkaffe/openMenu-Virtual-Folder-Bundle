@@ -117,8 +117,11 @@ Seven rows in the dense BIOS-settings look (`bios_engine/bios_list`), about 60% 
 width. Each row has the BIOS GD-ROM disc model with the game's icon on its label; the selected
 disc spins like the CD player's. Box art and info (name, product, region, discs, players) are
 shown to the right. Art comes from `ICON.DAT` / `BOX.DAT` (+ `_EX`) and info from `META.DAT` on
-the menu disc, by product code. (The games' own `0GDTEX.PVR` labels cannot be read: only the
-mounted menu image is visible to the console.)
+the menu disc, by product code. The disc labels are the games' own `0GDTEX.PVR`: the console only
+sees the menu image, so GD MENU Card Manager reads each game's label from its image when it builds
+the menu and stores them in `DISC.DAT` (same format as ICON.DAT, 128x128, keyed by serial). A game
+without one (compressed images not yet saved to the card, discs without the file) keeps the
+ICON.DAT picture, then the BIOS disc of its region.
 
 Starting a game: the rows leave in a circle, the selected disc moves to the CD player's place and
 the game starts. Settings > Starting games > Launch animation turns this off (stored in the unused

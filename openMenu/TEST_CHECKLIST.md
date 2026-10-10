@@ -95,7 +95,7 @@ Mark OK / FAIL / n.a. and write what you saw.
 ### Game list
 Drops to 30fps
 - [x] 5 rows, titles readable, long titles scroll, multi-disc pill, GD discs, BACK + 5 buttons with info  - Back button in normal dreamcast Bios has yellow blinking frame when selected, othwerwise no blinking or yellow frame. This build it is not selectable at all.
-- [-] Art on discs is a round CD; no art -> blue (PAL) / red (NTSC) disc matching the game - yes but wrong art, Discs should use 0GDTEX.PVR from the GDI as label, but I have not tried with games missing the artwork. All games with artwork shows up ok
+- [ ] Disc labels are the games' own 0GDTEX.PVR (DISC.DAT, written by the card manager when it saves the card); no label -> ICON.DAT art; no art -> blue (PAL) / red (NTSC) disc matching the game
 - [-] Right panel: colour/alpha/radius like the rows, top/bottom line up with first/last row - corect alpha, top is a bit lower 1 or 2 pixels.
 - [x] 3D case: PAL case for PAL games, white-spine case otherwise; front = box art; tilt; fly in from the - need to move further down out of view, it currently moves to right over the buttons in the bottom and then dissapears.
       direction of the selection (down arrow: from the top, old leaves at the bottom; up arrow: reverse)

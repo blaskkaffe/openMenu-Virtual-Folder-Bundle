@@ -2810,6 +2810,48 @@ namespace GDMENUCardManager.Core
             return (menuIpBin, list.ToString(), openMenuList.ToString());
         }
 
+        /// <summary>
+        /// DISC.DAT: every game's own disc label, the 0GDTEX.PVR in the root of its data track, keyed by serial in the
+        /// same format as ICON.DAT (128x128 PVRs). The console only sees the menu disc, so the labels are collected
+        /// here when the menu is built; the launcher shows them on its disc models and falls back to ICON.DAT.
+        /// Items that cannot be read as they are (compressed, not yet converted) are skipped.
+        /// </summary>
+        private async Task BuildDiscLabelDatAsync(string dataPath)
+        {
+            var labels = new IconDatManager();
+            int added = 0;
+            foreach (var item in ItemList.ToList())
+            {
+                try
+                {
+                    if (!ImageHelper.CanExtractGdText(item) || string.IsNullOrWhiteSpace(item.ProductNumber))
+                        continue;
+                    if (labels.HasIconForSerial(item.ProductNumber))
+                        continue;
+                    var gdtex = await ImageHelper.GetGdText(Path.Combine(item.FullFolderPath, item.ImageFile));
+                    if (gdtex == null)
+                        continue;
+                    var icon = await Task.Run(() =>
+                    {
+                        var decoded = new PuyoTools.PvrTexture().GetDecoded(gdtex);
+                        return PvrEncoder.EncodeIconFromPixels(decoded.Item1, decoded.Item2, decoded.Item3);
+                    });
+                    labels.SetIconForSerial(item.ProductNumber, icon);
+                    added++;
+                }
+                catch
+                {
+                    // A disc whose label cannot be read keeps the ICON.DAT picture.
+                }
+            }
+
+            var outPath = Path.Combine(dataPath, "DISC.DAT");
+            if (added > 0)
+                labels.Save(outPath);
+            else if (File.Exists(outPath))
+                File.Delete(outPath);
+        }
+
         private async Task<GdItem> GenerateMenuImageAsync(
             string tempDirectory,
             string listText,
@@ -2906,6 +2948,9 @@ namespace GDMENUCardManager.Core
 
                 if (stageUnsavedMenuData)
                     StageUnsavedMenuData(dataPath);
+
+                // The games' own disc labels (0GDTEX.PVR) for the launcher's disc models.
+                await BuildDiscLabelDatAsync(dataPath);
 
                 await Helper.CopyDirectoryAsync(menuGdiSrc, cdiPath);
                 /* Copy to low density */

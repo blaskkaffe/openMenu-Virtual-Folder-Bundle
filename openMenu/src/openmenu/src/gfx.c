@@ -188,7 +188,7 @@ upload_texture(const bios_texture* t, rom_tex* g) {
     free(staging);
 }
 
-/* ---- Game art (ICON.DAT / BOX.DAT on the menu disc) ---------------------------------------- */
+/* ---- Game art (DISC.DAT / ICON.DAT / BOX.DAT on the menu disc) ---------------------------------- */
 
 #define ART_SLOTS 20
 #define ART_CHUNK_MAX (160 * 1024)
@@ -223,6 +223,7 @@ static kthread_t* art_thread;
 static int art_started;
 
 static dat_file dat_icon, dat_icon_ex, dat_box, dat_box_ex;
+static dat_file dat_disc; /* DISC.DAT: the games' own disc labels (their 0GDTEX.PVR), collected by the card manager */
 static int dats_loaded;
 static art_entry art_cache[ART_SLOTS];
 static char row_product[BLIST_MAX_SLOTS][16];
@@ -240,6 +241,8 @@ art_load_dats(void) {
     DAT_init(&dat_icon_ex);
     DAT_init(&dat_box);
     DAT_init(&dat_box_ex);
+    DAT_init(&dat_disc);
+    DAT_load_parse(&dat_disc, "DISC.DAT");
     DAT_load_parse(&dat_icon, "ICON.DAT");
     DAT_load_parse(&dat_icon_ex, "ICON_EX.DAT");
     DAT_load_parse(&dat_box, "BOX.DAT");
@@ -303,8 +306,9 @@ art_worker(void* param) {
             }
             j->state = JOB_READING;
             uint64_t t0 = timer_us_gettime64();
-            /* the add-on file wins over the main one */
-            int ok = art_read_job(j->box ? &dat_box_ex : &dat_icon_ex, j) || art_read_job(j->box ? &dat_box : &dat_icon, j);
+            /* disc labels: the game's own label (DISC.DAT) first; then the add-on file wins over the main one */
+            int ok = (!j->box && art_read_job(&dat_disc, j)) || art_read_job(j->box ? &dat_box_ex : &dat_icon_ex, j) ||
+                     art_read_job(j->box ? &dat_box : &dat_icon, j);
             j->us = (uint32_t)(timer_us_gettime64() - t0);
             j->state = ok ? JOB_DONE : JOB_FAILED;
         }
