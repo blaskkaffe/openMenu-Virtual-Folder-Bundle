@@ -575,10 +575,12 @@ draw_frame(void) {
         top = blend_color(START_COLOR, top, fade_step < 0 ? 0 : fade_step);
         bottom = blend_color(START_COLOR, bottom, fade_step < 0 ? 0 : fade_step);
     }
-    /* The BIOS draws its main menu with the PVR sorting the translucent polygons per pixel: where an icon's parts and
-     * its two copies overlap, the farther layer is always blended first. Other screens keep the build's default. */
+    /* The BIOS draws its menus with the PVR sorting the translucent polygons per pixel: where an icon's parts and
+     * its two copies overlap, the farther layer is always blended first. The CD player needs it too: the pictures on
+     * its buttons are separate polygons in front of the buttons, and sent first in presort mode their transparent
+     * parts would hide the buttons. Other screens keep the build's default. */
     {
-        int hw = gfx_set_autosort(screen == SCREEN_MAIN ? GFX_MAIN_AUTOSORT : !GFX_PRESORT);
+        int hw = gfx_set_autosort(screen == SCREEN_MAIN ? GFX_MAIN_AUTOSORT : (screen == SCREEN_MUSIC ? 1 : !GFX_PRESORT));
         menu.hw_autosort = hw; /* not sorted by the PVR: the CPU sorter takes over */
     }
     gfx_begin_frame(top, bottom);
