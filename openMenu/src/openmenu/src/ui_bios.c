@@ -31,11 +31,12 @@
 #include <backend/gd_list.h>
 
 #include "ui_files.h"
+#include <bios_cdplayer.h>
 #include "ui_list.h"
 #include "ui_settings.h"
 #include "video.h"
 
-typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILES } screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILES, SCREEN_MUSIC } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
  * longer; the animations were written for that rate. */
@@ -110,6 +111,7 @@ static bpage page;
 static blist glist;                 /* the game list screen */
 static const gd_item* launch_pending; /* a game waiting for the launch animation to end */
 static int have_meta;               /* META.DAT loaded: players, VMU blocks */
+static bcdplayer cdp;                 /* the Music screen: the BIOS CD player, its buttons do nothing yet */
 static bdt dtedit;                    /* the date and time editor */
 static int about_open;                /* the About box over the settings */
 static int saved_page_cursor, saved_page_top;
@@ -385,6 +387,7 @@ screen_accent(void) {
     switch (screen) {
         case SCREEN_GAMES: return BMENU_ACCENT_GAME;
         case SCREEN_FILES: return BMENU_ACCENT_FILES;
+        case SCREEN_MUSIC: return BMENU_ACCENT_MUSIC;
         case SCREEN_SETTINGS:
         case SCREEN_DATETIME: return BMENU_ACCENT_SETTINGS;
         default: return BMENU_ACCENT_MAIN;
@@ -585,6 +588,9 @@ draw_frame(void) {
     } else if (screen == SCREEN_FILES) {
         bscene_draw_background(&menu.bg, gfx_sink());
         uif_draw();
+    } else if (screen == SCREEN_MUSIC) {
+        bscene_draw_background(&menu.bg, gfx_sink());
+        bcd_draw(&cdp, gfx_sink());
     } else {
         bscene_draw_background(&menu.bg, gfx_sink());
         if (screen == SCREEN_GAMES) {
@@ -655,6 +661,11 @@ handle_main(button_t b) {
                 page.pal = console_is_pal();
                 settings_popup = 0;
                 screen = SCREEN_SETTINGS;
+            } else if (menu.selected == ICON_MUSIC) {
+                sound_sfx(BAUDIO_SFX_ENTER);
+                bcd_open(&cdp, &menu, 1, 0, 0); /* the disc of the drive is shown; nothing to play */
+                cdp.pal = console_is_pal();
+                screen = SCREEN_MUSIC;
             } else {
                 sound_sfx(BAUDIO_SFX_ERROR);
                 show_notice("Not available yet");
@@ -762,6 +773,33 @@ handle_games(button_t b) {
         screen = SCREEN_MAIN;
     } else if (r == UIL_REDRAW) {
         sound_sfx(b == BTN_A || b == BTN_START ? BAUDIO_SFX_CONFIRM : (b == BTN_B ? BAUDIO_SFX_CANCEL : BAUDIO_SFX_CURSOR));
+    }
+}
+
+/* The Music screen: the BIOS CD player (cdplayer_cursor_cb). Left / right move, A on a button makes it jump with the
+ * confirm sound, A on BACK or B leaves. */
+static void
+handle_music(button_t b) {
+    switch (b) {
+        case BTN_LEFT:
+            if (bcd_nav(&cdp, BCD_LEFT)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        case BTN_RIGHT:
+            if (bcd_nav(&cdp, BCD_RIGHT)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        case BTN_A:
+        case BTN_START:
+            if (cdp.cursor != BCD_BACK) {
+                if (bcd_press(&cdp, cdp.cursor)) sound_sfx(BAUDIO_SFX_CONFIRM);
+                break;
+            }
+            /* fall through: A on BACK */
+        case BTN_B:
+            sound_sfx(BAUDIO_SFX_CANCEL);
+            bmenu_show_main(&menu, ICON_MUSIC);
+            screen = SCREEN_MAIN;
+            break;
+        default: break;
     }
 }
 
@@ -975,6 +1013,11 @@ apply_hover(void) {
             break;
         }
         case SCREEN_FILES: uif_hover(ux, uy); break;
+        case SCREEN_MUSIC: {
+            int i = bcd_item_at_px(ux, uy);
+            if (i >= 0 && bcd_set_cursor(&cdp, i)) sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        }
         case SCREEN_SETTINGS: {
             if (bpage_back_at_px(ux, uy)) {
                 if (!page.back_selected) sound_sfx(BAUDIO_SFX_CURSOR);
@@ -1050,6 +1093,8 @@ ui_bios_run(const bios_rom* rom) {
                 bmenu_show_main(&menu, ICON_FILES);
                 screen = SCREEN_MAIN;
             }
+        } else if (screen == SCREEN_MUSIC) {
+            handle_music(b);
         } else {
             handle_settings(b);
         }
@@ -1091,6 +1136,8 @@ ui_bios_run(const bios_rom* rom) {
             bdt_sync(&dtedit);
         } else if (screen == SCREEN_FILES) {
             uif_sync();
+        } else if (screen == SCREEN_MUSIC) {
+            bcd_sync(&cdp);
         } else if (screen == SCREEN_GAMES) {
             games_sync();
         }

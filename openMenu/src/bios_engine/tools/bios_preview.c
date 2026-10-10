@@ -29,6 +29,7 @@
 #include "tex_decode.h"
 #include "bios_models.h"
 #include "bios_case.h"
+#include "bios_cdplayer.h"
 
 #define W 640
 #define H 480
@@ -382,7 +383,11 @@ main(int argc, char** argv) {
     g_autosort = frags && !getenv("BIOS_PREVIEW_PRESORT") && script == -1;
     menu.hw_autosort = g_autosort;
 
-    if (script == -2) { /* settings page demo: `selected` = cursor row, 10 rows */
+    static bcdplayer cdp;
+    if (script == -13) { /* the CD player: `selected` = cursor (0 BACK .. 5 repeat), BIOS_PREVIEW_NODISC=1 for no disc */
+        bcd_open(&cdp, &menu, !getenv("BIOS_PREVIEW_NODISC"), 12, 3725);
+        bcd_set_cursor(&cdp, selected);
+    } else if (script == -2) { /* settings page demo: `selected` = cursor row, 10 rows */
         bpage_open(&page, &menu, 10);
         for (int i = 0; i < selected; i++) {
             bpage_move(&page, 1);
@@ -473,6 +478,9 @@ main(int argc, char** argv) {
         }
         if (script == -6) {
             bdt_sync(&dt);
+        }
+        if (script == -13) {
+            bcd_sync(&cdp);
         }
         if (script == -3 || script == -4) {
             if (script == -4 && i == 20) {
@@ -589,6 +597,9 @@ main(int argc, char** argv) {
     } else if (script == -2) {
         bscene_draw_background(&menu.bg, &sink);
         bpage_draw(&page, &sink);
+    } else if (script == -13) {
+        bscene_draw_background(&menu.bg, &sink);
+        bcd_draw(&cdp, &sink);
     } else {
         bmenu_draw(&menu, &sink);
     }

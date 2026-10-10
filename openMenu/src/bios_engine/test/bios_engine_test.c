@@ -15,6 +15,7 @@
 #include "dcbg.h"
 #include "bios_datetime.h"
 #include "bios_files.h"
+#include "bios_cdplayer.h"
 #include "bios_list.h"
 #include "bios_models.h"
 #include "bios_case.h"
@@ -698,6 +699,40 @@ test_cache_screen(const bios_rom* rom, int screen) {
     }
 }
 
+
+/* CD player: cursor table 0x8C038610 and the TRACK / TIME digits of cdplayer_display_update */
+static void
+test_cdplayer_real(const bios_rom* rom) {
+    static bmenu m;
+    static bcdplayer c;
+    bmenu_init(&m, rom, NULL);
+    bcd_open(&c, &m, 1, 12, 3725); /* 12 tracks, 62:05 */
+    CHECK(c.cursor == BCD_PLAY);
+    CHECK(bcd_nav(&c, BCD_RIGHT) && c.cursor == BCD_NEXT);
+    CHECK(bcd_nav(&c, BCD_RIGHT) && c.cursor == BCD_REPEAT);
+    CHECK(bcd_nav(&c, BCD_RIGHT) && c.cursor == BCD_BACK); /* wraps */
+    CHECK(bcd_nav(&c, BCD_LEFT) && c.cursor == BCD_REPEAT);
+    for (int i = 0; i < 5; i++) {
+        bmenu_update(&m);
+        bcd_sync(&c);
+    }
+    static const int want[10] = {-1, 21 + 2, 21 + 1, -1, -1, 21 + 0, 21 + 6, 21 + 2, 21 + 0, 21 + 5};
+    for (int i = 0; i < 10; i++) {
+        bvm_obj* o = bvm_find(&m.vm, (uint16_t)(0x1310 + i));
+        CHECK(o != NULL);
+        if (o && want[i] >= 0) {
+            CHECK(o->model == want[i]);
+        }
+    }
+    bvm_obj* h = bvm_find(&m.vm, 0x1315);
+    CHECK(h && h->var[0] == 1); /* hundreds of minutes hidden */
+    bvm_obj* rep = bvm_find(&m.vm, 0x1305);
+    CHECK(rep && rep->var[0] == 1); /* the repeat button is selected */
+    CHECK(bcd_press(&c, BCD_REPEAT) && rep->var[1] == 1);
+    CHECK(!bcd_press(&c, BCD_BACK));
+    bmenu_free(&m);
+}
+
 static void
 test_real_rom(const char* path) {
     FILE* f = fopen(path, "rb");
@@ -766,6 +801,7 @@ test_real_rom(const char* path) {
     }
     CHECK(script_errors == 0);
 
+    test_cdplayer_real(&rom);
     test_cache_screen(&rom, 0);
     test_cache_screen(&rom, 1);
     test_cache_screen(&rom, 2);

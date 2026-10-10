@@ -276,3 +276,14 @@ the per-vertex lighting had tripled the main menu's cost; that is what dropped i
 
 Game list: the box art of the games next to the cursor is read ahead, and a new case waits up to 10 frames for
 its picture before flying in, so the front no longer pops in.
+
+## Music: the BIOS CD player
+
+`bios_engine/bios_cdplayer`: the Music screen as `music_screen_update` (0x8C018BC8) builds it: BACK (0x1110 at
+-19.53, -14.84), the five buttons 0x1301..0x1305 (scripts 0x17..0x1B), the disc 0x1200 (script 0x1C, shown and
+spinning as after the drive's "disc ready" event), the repeat indicator 0x1340 (script 0x47) and the readout
+0x1310..0x1319 (scripts 0x2A..0x33: TRACK, two digits, TIME, colon, (h)mm:ss as digit models 21..30, the hundreds
+of minutes hidden at 0). Cursor: the BIOS table 0x8C038610 (left / right wrap, start on Play / Pause); the selected
+button gets var0 = 1 (its script lights it and plays its motion), BACK var0 = 1 while selected. A on a button makes
+it jump (var1 = 1) with the confirm sound, as the BIOS buttons do; nothing is played. B or A on BACK leaves.
+Preview: `bios_preview dc_boot.bin out.ppm 120 <cursor> -13` (`BIOS_PREVIEW_NODISC=1`: empty drive).
