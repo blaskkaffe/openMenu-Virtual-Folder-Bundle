@@ -1934,8 +1934,9 @@ bfs_update(bfs* fs) {
                 fs->state = 0xF;
             }
             break;
-        case 0x30: /* memory reset: the icon and colour pickers are not part of this screen yet */
+        case 0x30: /* memory reset */
             fs->mode = 2;
+            fs->f_state = 0;
             fs->state = 0x31;
             break;
         case 0x31: {
@@ -1997,52 +1998,510 @@ bfs_update(bfs* fs) {
     return 0;
 }
 
-/* The memory reset (vmu_format_flow 0x8C01BF80): confirm, then reset with the card's current look. The BIOS also
- * offers its icon and colour pickers here; those follow. */
+/* ---- the memory reset: vmu_format_flow 0x8C01BF80 ------------------------------------------------------ */
+
+#define ID_PICKER 0x11B0  /* script 0x41: the picker panel (400x310) with its 512x256 text surface */
+#define ID_SELECT 0x11B9  /* script 0x36: "Select" (and "Yes") */
+#define ID_CANCEL 0x11B2  /* script 0x44: "Cancel" (and "No") */
+#define ID_PREVIEW 0x11B7 /* script 0x45: the card (model 70) in the chosen colour */
+#define ID_PUP 0x11BA     /* scripts 0x34 / 0x37: the scroll marks of the icon picker */
+#define ID_PDOWN 0x11BB
+#define ID_RESETBOX 0x11B6 /* script 0x42: "Deleting all..." */
+#define ID_RESETBAR 0x11B1 /* script 0x43: its progress bar */
+
+static const signed char icon_table[18][4] = { /* 0x8C038B04: 16 icons, 16 Select, 17 Cancel */
+    {0, 4, 16, 1},  {1, 5, 0, 2},   {2, 6, 1, 3},     {3, 7, 2, 16},  {0, 8, 16, 5},    {1, 9, 4, 6},
+    {2, 10, 5, 7},  {3, 11, 6, 16}, {4, 12, 16, 9},   {5, 13, 8, 10}, {6, 14, 9, 11},   {7, 15, 10, 16},
+    {8, 12, 16, 13}, {9, 13, 12, 14}, {10, 14, 13, 15}, {11, 15, 14, 16}, {17, 17, 15, 12}, {16, 16, 15, 12},
+};
+static signed char colour_table[35][4]; /* 0x8C038C94: 32 colours (8 rows of 4), 32 transparent, 33 Select, 34 Cancel */
+static const signed char yesno_table[2][4] = {{1, 1, 0, 0}, {0, 0, 1, 1}}; /* 0x8C038DA0 */
+
+static void
+make_colour_table(void) {
+    for (int i = 0; i < 32; i++) {
+        int r = i / 4, c = i % 4;
+        colour_table[i][0] = (signed char)(r == 0 ? i : i - 4);
+        colour_table[i][1] = (signed char)(r == 7 ? 32 : i + 4);
+        colour_table[i][2] = (signed char)(c == 0 ? 33 : i - 1);
+        colour_table[i][3] = (signed char)(c == 3 ? 33 : i + 1);
+    }
+    signed char extra[3][4] = {{28, 32, 33, 29}, {34, 34, 31, 28}, {33, 33, 31, 28}};
+    memcpy(colour_table[32], extra, sizeof(extra));
+}
+
+/* the 32 colours of the picker (DAT_8C06F578, ARGB4444) */
+static uint16_t
+palette_colour(const bfs* fs, int i) {
+    const uint8_t* p = bios_rom_ptr(fs->rom, 0x8C06F578u + (uint32_t)i * 2u, 2);
+    return p ? (uint16_t)(p[0] | (p[1] << 8)) : 0xFFFF;
+}
+
+/* FUN_8C01D200: an ARGB4444 colour as the card's ARGB8888, alpha 100 when "transparent" is ticked */
+static uint32_t
+card_colour(const bfs* fs, uint16_t c) {
+    uint32_t a = fs->f_transparent ? 100u : 0xFFu;
+    return (a << 24) | ((uint32_t)(((c & 0xF00) >> 4) + 0xF) << 16) | ((uint32_t)((c & 0xF0) + 0xF) << 8) |
+           (uint32_t)(((c & 0xF) << 4) + 0xF);
+}
+
+/* vmu_format_icon_color_pick: the help in the file window */
+static void
+reset_help(bfs* fs, int what) {
+    bsurf* s = surf(fs, ID_WINDOW, 512, 128);
+    if (!s) {
+        return;
+    }
+    bsurf_clear(s);
+    s->colour = 0xFCCC;
+    static const int ids[5] = {0xD5, 0x6A, 0x6F, 0xDA, 0xCB};
+    int id = ids[what];
+    if (what == 3) {
+        bsurf_print(s, -256, 0x3C, msg(fs, id, 0));
+        return;
+    }
+    for (int l = 0; l < 3; l++) {
+        bsurf_print(s, -256, 0x19 + l * 25, msg(fs, id, l));
+    }
+    if (what == 4) {
+        bsurf* b = surf(fs, ID_RESETBOX, 512, 128);
+        if (b) {
+            bsurf_clear(b);
+            bsurf_print(b, 100, 0x14, msg(fs, 0x269, 0));
+            bsurf_print(b, 100, 0x32, msg(fs, 0x269, 1));
+        }
+    }
+}
+
+static void
+reset_objects_flag17(bfs* fs, int on) {
+    static const uint16_t ids[] = {ID_PICKER, ID_SELECT, ID_CANCEL, ID_PREVIEW, ID_PUP, ID_PDOWN};
+    for (unsigned k = 0; k < sizeof(ids) / sizeof(ids[0]); k++) {
+        flag17(fs, ids[k], on);
+    }
+}
+
+static void
+reset_cleanup(bfs* fs) {
+    static const uint16_t ids[] = {ID_PICKER, ID_SELECT, ID_CANCEL, ID_PREVIEW, ID_PUP, ID_PDOWN};
+    for (unsigned k = 0; k < sizeof(ids) / sizeof(ids[0]); k++) {
+        destroy(fs, ids[k]);
+    }
+}
+
+static void
+place(bfs* fs, uint16_t id, float x, float y) {
+    bvm_obj* o = obj(fs, id);
+    if (o) {
+        o->pos_tw[0].cur = x;
+        o->pos_tw[1].cur = y;
+    }
+}
+
+static void
+panel_size(bfs* fs, uint16_t id, int w, int h) {
+    bvm_obj* o = obj(fs, id);
+    if (o) {
+        o->panel_w = w;
+        o->panel_h = h;
+    }
+}
+
+/* VMU picture `n` (the icon shapes are n + 5) doubled to 64x64 with its right edge at x0 + 63 */
+static void
+big_icon(bsurf* s, int x0, int y0, int n) {
+    const uint8_t* font = bsurf_font();
+    if (!s || !font) {
+        return;
+    }
+    uint16_t px[32 * 32];
+    bfs_mono_icon(font + BTEXT_VMU_ICONS + (uint32_t)n * 128u, 0xF225, px);
+    for (int y = 0; y < 64; y++) {
+        for (int x = 0; x < 64; x++) {
+            s->px[(y0 + y) * s->w + x0 + x] = px[(y / 2) * 32 + x / 2];
+        }
+    }
+    bsurf_touch(s, y0, y0 + 63);
+}
+
+static void
+picker_common(bfs* fs, bsurf* s, int page) {
+    panel_size(fs, ID_PICKER, 400, 310);
+    place(fs, ID_SELECT, -12.109375f, -5.078125f);
+    place(fs, ID_CANCEL, -12.109375f, -9.375f);
+    place(fs, ID_PREVIEW, -9.375f, 4.6875f);
+    bvm_obj* up = obj(fs, ID_PUP);
+    bvm_obj* dn = obj(fs, ID_PDOWN);
+    if (page >= 0) {
+        if (up) up->var[0] = page >= 1;
+        if (dn) dn->var[0] = page < 0x1B;
+    }
+    s->colour = 0xFCCC;
+    bsurf_print(s, 0x6E, 0xB0, msg(fs, 0x271, 0));
+    bsurf_print(s, 0x6E, 0xDE, msg(fs, 0x25F, 0));
+    big_icon(s, 0x30B3 % 512 - 63, 0x30B3 / 512, fs->f_icon + 5); /* FUN_8C01CBCA(0x3075) */
+}
+
+/* vmu_format_icon_picker_draw 0x8C01C860 */
+static void
+icon_picker(bfs* fs) {
+    bsurf* s = surf(fs, ID_PICKER, 512, 256);
+    if (!s) {
+        return;
+    }
+    bsurf_clear(s);
+    int c = fs->f_cursor;
+    if (c < 16 && fs->f_blink) {
+        bsurf_fill(s, (c & 3) * 0x38 + 0xD8, (c >> 2) * 0x38 + 0x1C, 40, 40, 0xFAA0);
+    }
+    const uint8_t* font = bsurf_font();
+    for (int k = 0; k < 16 && font; k++) {
+        uint16_t px[32 * 32];
+        bfs_mono_icon(font + BTEXT_VMU_ICONS + (uint32_t)(fs->f_page * 4 + 5 + k) * 128u, 0xF225, px);
+        int x0 = (k & 3) * 0x38 + 0xDC, y0 = (k >> 2) * 0x38 + 0x20;
+        for (int y = 0; y < 32; y++) {
+            memcpy(&s->px[(y0 + y) * 512 + x0], &px[y * 32], 64);
+        }
+    }
+    picker_common(fs, s, fs->f_page);
+}
+
+/* vmu_format_color_picker_draw 0x8C01CD60 */
+static void
+colour_picker(bfs* fs) {
+    bsurf* s = surf(fs, ID_PICKER, 512, 256);
+    if (!s) {
+        return;
+    }
+    bsurf_clear(s);
+    int c = fs->f_cursor;
+    if (c < 0x20 && fs->f_blink) {
+        bsurf_fill(s, (c & 3) * 0x2C + 0xEC, (c >> 2) * 0x18 + 0xB, 40, 24, 0xFAA0);
+    }
+    if (c == 0x20 && fs->f_blink) {
+        bsurf_fill(s, 243, 222, 32, 32, 0xFAA0);
+    }
+    s->colour = 0xFCCC;
+    bsurf_jis(s, 0xF6, 0xE2, fs->f_transparent ? 0x2223 : 0x2222);
+    bsurf_print(s, 0x11A, 0xE2, msg(fs, 0x270, 0));
+    for (int i = 0; i < 32; i++) {
+        uint16_t v = palette_colour(fs, i);
+        uint16_t d = (uint16_t)((((v & 0xF00) * 6 / 8) & 0xF00) | (((v & 0xF0) * 6 / 8) & 0xF0) | (((v & 0xF) * 6 / 8) & 0xF) | (v & 0xF000));
+        bsurf_fill(s, (i & 3) * 0x2C + 0xF0, (i >> 2) * 0x18 + 0xF, 32, 16, d);
+    }
+    picker_common(fs, s, -1);
+}
+
+/* yes_no_draw 0x8C01D0D2: "Please confirm your settings." */
+static void
+yes_no(bfs* fs) {
+    bsurf* s = surf(fs, ID_PICKER, 512, 256);
+    if (!s) {
+        return;
+    }
+    panel_size(fs, ID_PICKER, 330, 200);
+    place(fs, ID_SELECT, 600.0f / 256.0f, 400.0f / 256.0f);
+    place(fs, ID_CANCEL, 600.0f / 256.0f, -3.125f);
+    place(fs, ID_PREVIEW, -7.03125f, -0.390625f);
+    bvm_obj* up = obj(fs, ID_PUP);
+    bvm_obj* dn = obj(fs, ID_PDOWN);
+    if (up) up->var[0] = 0, up->flags |= BVM_F_HIDE;
+    if (dn) dn->var[0] = 0, dn->flags |= BVM_F_HIDE;
+    bsurf_clear(s);
+    s->colour = 0xFCCC;
+    bsurf_print(s, 0x118, 100, msg(fs, 0x263, 0));
+    bsurf_print(s, 0x118, 0x96, msg(fs, 0x264, 0));
+    big_icon(s, 0xA2CD % 512 - 63, 0xA2CD / 512, fs->f_icon + 5); /* FUN_8C01CBCA(0xA28F) */
+}
+
+static void
+buttons(bfs* fs, int select, int cancel) {
+    bvm_obj* a = obj(fs, ID_SELECT);
+    bvm_obj* b = obj(fs, ID_CANCEL);
+    if (a) a->var[1] = select;
+    if (b) b->var[1] = cancel;
+}
+
+/* vmu_format_cursor_cb_a 0x8C01C4C0: the icons */
+static void
+icon_cb(bfs* fs, int code, int* pos) {
+    int moved = 0;
+    if (code == BFS_KEY_UP) {
+        sfx(fs, 0);
+        if (fs->f_cursor >= 0 && fs->f_cursor < 4 && fs->f_page > 0) {
+            fs->f_page--;
+        }
+        moved = 1;
+    } else if (code == BFS_KEY_DOWN) {
+        sfx(fs, 0);
+        if (fs->f_cursor > 0xB && fs->f_cursor < 0x10 && fs->f_page < 0x1B) {
+            fs->f_page++;
+        }
+        moved = 1;
+    } else if (code == BFS_KEY_LEFT || code == BFS_KEY_RIGHT) {
+        sfx(fs, 0);
+        moved = 1;
+    } else if (code == BFS_KEY_A) {
+        if (*pos == 0x10) {
+            sfx(fs, 1);
+            fs->f_state = 4;
+        } else if (*pos == 0x11) {
+            sfx(fs, 2);
+            fs->f_state = 6;
+        } else {
+            sfx(fs, 1);
+            fs->f_icon = fs->f_page * 4 + *pos;
+        }
+    } else if (code == BFS_KEY_B) {
+        sfx(fs, 2);
+        fs->f_state = 6;
+    }
+    fs->f_cursor = *pos;
+    buttons(fs, *pos == 0x10, *pos == 0x11);
+    if (moved) {
+        fs->f_blink = 1;
+        fs->f_blink_t = 0x10;
+    }
+}
+
+/* vmu_format_cursor_cb_b 0x8C01C60A: the colours */
+static void
+colour_cb(bfs* fs, int code, int* pos) {
+    int moved = 0;
+    if (code == BFS_KEY_A) {
+        if (*pos == 0x20) {
+            sfx(fs, 1);
+            fs->f_transparent = 1 - fs->f_transparent;
+            fs->f_colour = (fs->f_colour & 0x00FFFFFFu) | ((fs->f_transparent ? 100u : 0xFFu) << 24);
+        } else if (*pos == 0x21) {
+            sfx(fs, 1);
+            fs->f_state = 9;
+        } else if (*pos == 0x22) {
+            sfx(fs, 2);
+            fs->f_state = 8;
+        } else {
+            sfx(fs, 1);
+            fs->f_colour = card_colour(fs, palette_colour(fs, *pos));
+        }
+    } else if (code == BFS_KEY_B) {
+        sfx(fs, 2);
+        fs->f_state = 8;
+    } else if (code >= BFS_KEY_UP && code <= BFS_KEY_RIGHT) {
+        sfx(fs, 0);
+        moved = 1;
+    }
+    fs->f_cursor = *pos;
+    buttons(fs, *pos == 0x21, *pos == 0x22);
+    if (moved) {
+        fs->f_blink = 1;
+        fs->f_blink_t = 0x10;
+    }
+}
+
+/* vmu_format_cursor_cb_c 0x8C01C766: yes / no */
+static void
+yesno_cb(bfs* fs, int code, int* pos) {
+    if (code == BFS_KEY_A) {
+        if (*pos == 0) {
+            sfx(fs, 1);
+            fs->f_state = 0xC;
+        } else {
+            sfx(fs, 2);
+            fs->f_state = 4;
+        }
+    } else if (code == BFS_KEY_B) {
+        sfx(fs, 2);
+        fs->f_state = 4;
+    } else if (code == BFS_KEY_UP || code == BFS_KEY_DOWN) {
+        sfx(fs, 0);
+    }
+    fs->f_cursor = *pos;
+    buttons(fs, *pos == 0, *pos == 1);
+}
+
+/* Returns 0 while it runs, -1 when done (reset or not). */
 int
 bfs_format_flow_(bfs* fs) {
-    static int st;
     int r;
-    switch (st) {
+    if (--fs->f_blink_t < 0) {
+        fs->f_blink = 1 - fs->f_blink;
+        fs->f_blink_t = 0x10;
+    }
+    switch (fs->f_state) {
         case 0:
+            if (fs->p_state == 0) {
+                reset_help(fs, 0);
+            }
             r = popup(fs, &pop_yes_no, 1);
             if (r == 0) {
-                st = 1;
+                fs->f_state = 1;
             } else if (r == 1) {
                 return -1;
             }
-            {
-                bsurf* s = surf(fs, ID_WINDOW, 512, 128);
-                if (s && fs->p_state == 1) {
-                    bsurf_clear(s);
-                    s->colour = 0xFCCC;
-                    for (int l = 0; l < 3; l++) {
-                        bsurf_print(s, -256, 0x19 + l * 25, msg(fs, 0xD5, l));
-                    }
-                }
+            fs->f_blink = 1;
+            fs->f_blink_t = 0x10;
+            break;
+        case 1: {
+            make_colour_table();
+            create(fs, 0x41, ID_PICKER, 0x1010);
+            create(fs, 0x36, ID_SELECT, PRIO);
+            create(fs, 0x44, ID_CANCEL, PRIO);
+            create(fs, 0x45, ID_PREVIEW, PRIO);
+            create(fs, 0x34, ID_PUP, PRIO);
+            create(fs, 0x37, ID_PDOWN, PRIO);
+            reset_objects_flag17(fs, 1);
+            bvm_obj* p = obj(fs, ID_PICKER);
+            if (p) {
+                p->text_w = 512;
+                p->text_h = 256;
             }
+            fs->f_page = 0;
+            fs->f_icon = 0;
+            fs->f_transparent = 0;
+            fs->f_colour = card_colour(fs, palette_colour(fs, 0));
+            fs->f_cursor = 0x10;
+            cursor_install(fs, 0, icon_table, 18, 0x10, icon_cb);
+            buttons(fs, 1, 0);
+            reset_help(fs, 1);
+            fly_in(fs);
+            fs->f_state = 2;
             break;
-        case 1:
-            memset(&fs->op, 0, sizeof(fs->op));
-            fs->op.kind = BFS_OP_FORMAT;
-            fs->op.src = fs->src;
-            fs->op.shape = -1;
-            st = 2;
-            break;
+        }
         case 2:
-            if (fs->op.done) {
-                fs->op.kind = BFS_OP_NONE;
-                sfx(fs, fs->op.failed ? 4 : 1);
-                st = fs->op.failed ? 4 : 3;
+            if (transition_busy(fs) != 0) {
+                return 0;
             }
+            reset_objects_flag17(fs, 0);
+            fs->f_state = 3;
             break;
         case 3:
+            if (fs->changed < 1) {
+                bvm_obj* u = obj(fs, ID_PUP);
+                bvm_obj* d = obj(fs, ID_PDOWN);
+                if (u) u->var[1] = 1;
+                if (d) d->var[1] = 1;
+                icon_picker(fs);
+            } else {
+                cursor_off(fs);
+                fs->f_state = 0x13;
+            }
+            break;
         case 4:
-            if (bfs_message_box_(fs, st == 3 ? 0x6B : 0xD6) != -1) {
-                st = 0;
+            fs->f_cursor = 0x21;
+            cursor_install(fs, 0, (const signed char(*)[4])colour_table, 35, 0x21, colour_cb);
+            buttons(fs, 1, 0);
+            {
+                bvm_obj* u = obj(fs, ID_PUP);
+                bvm_obj* d = obj(fs, ID_PDOWN);
+                if (u) u->flags &= ~(uint32_t)BVM_F_HIDE, u->var[0] = 0;
+                if (d) d->flags &= ~(uint32_t)BVM_F_HIDE, d->var[0] = 0;
+            }
+            reset_help(fs, 2);
+            fs->f_state = 5;
+            break;
+        case 5:
+            if (fs->changed < 1) {
+                colour_picker(fs);
+            } else {
+                cursor_off(fs);
+                fs->f_state = 0x13;
+            }
+            break;
+        case 6:
+            reset_objects_flag17(fs, 1);
+            cursor_off(fs);
+            fly_out(fs);
+            fs->f_state = 7;
+            break;
+        case 7:
+            if (transition_busy(fs) == 0) {
+                reset_cleanup(fs);
+                fs->f_state = 0;
                 return -1;
             }
             break;
+        case 8:
+            fs->f_cursor = 0x10;
+            cursor_install(fs, 0, icon_table, 18, 0x10, icon_cb);
+            buttons(fs, 1, 0);
+            reset_help(fs, 1);
+            fs->f_state = 3;
+            break;
+        case 9:
+            reset_help(fs, 3);
+            yes_no(fs);
+            fs->f_cursor = 0;
+            cursor_install(fs, 0, yesno_table, 2, 0, yesno_cb);
+            buttons(fs, 1, 0);
+            fs->f_state = 10;
+            break;
+        case 10:
+            if (fs->changed > 0) {
+                cursor_off(fs);
+                fs->f_state = 0x13;
+            }
+            break;
+        case 0xC:
+            reset_cleanup(fs);
+            cursor_off(fs);
+            create(fs, 0x42, ID_RESETBOX, 0x1010);
+            create(fs, 0x43, ID_RESETBAR, PRIO);
+            {
+                bvm_obj* b = obj(fs, ID_RESETBAR);
+                if (b) b->var[0] = 0;
+            }
+            flag17(fs, ID_RESETBOX, 1);
+            flag17(fs, ID_RESETBAR, 1);
+            fly_in(fs);
+            fs->f_state = 0xD;
+            break;
+        case 0xD:
+            if (transition_busy(fs) == 0) {
+                fs->f_state = 0xE;
+            }
+            break;
+        case 0xE:
+            reset_help(fs, 4);
+            memset(&fs->op, 0, sizeof(fs->op));
+            fs->op.kind = BFS_OP_FORMAT;
+            fs->op.src = fs->src;
+            fs->op.shape = fs->f_icon;
+            fs->op.colour = fs->f_colour;
+            fs->f_state = 0xF;
+            break;
+        case 0xF: {
+            bvm_obj* b = obj(fs, ID_RESETBAR);
+            if (b) b->var[0] = fs->op.progress * 0xF00 / 1000;
+            if (fs->op.done) {
+                fs->op.kind = BFS_OP_NONE;
+                destroy(fs, ID_RESETBOX);
+                destroy(fs, ID_RESETBAR);
+                if (!fs->op.failed) {
+                    sfx(fs, 1);
+                    fs->f_state = 0x10;
+                } else {
+                    sfx(fs, 4);
+                    int st = fs->card[fs->src].status;
+                    fs->f_state = st == BFS_CARD_READY || st == BFS_CARD_READING || st == BFS_CARD_UNFORMATTED ? 0x11 : 0x12;
+                }
+            }
+            break;
+        }
+        case 0x10:
+        case 0x11:
+            if (bfs_message_box_(fs, fs->f_state == 0x10 ? 0x6B : 0xD6) != -1) {
+                fs->f_state = 0;
+                return -1;
+            }
+            break;
+        case 0x12:
+            fs->f_state = 0;
+            return -1;
+        case 0x13:
+            reset_cleanup(fs);
+            fs->f_state = 0;
+            return -1;
+        default: break;
     }
     return 0;
 }
@@ -2067,6 +2526,14 @@ bfs_draw(bfs* fs, const bscene_sink* sink) {
         }
     }
     window_colours(fs, &m->scene);
+    if (obj(fs, ID_PREVIEW) && m->scene.ovr_n < BSCENE_OVR_MAX) { /* FUN_8C021BE4: the card of the memory reset */
+        m->scene.ovr[m->scene.ovr_n].model = 70;
+        m->scene.ovr[m->scene.ovr_n].node = 1;
+        m->scene.ovr[m->scene.ovr_n].poly = 0;
+        m->scene.ovr[m->scene.ovr_n].argb = fs->f_colour;
+        m->scene.ovr[m->scene.ovr_n].lit = 1;
+        m->scene.ovr_n++;
+    }
     /* The BIOS lets the PVR sort its translucent polygons by depth (autosort); this screen is drawn in presort
      * mode, so the objects go far to near, each with its text right after its model (a popup in front of the file
      * window covers the window's text too). Equal depths keep the BIOS order. */
@@ -2083,10 +2550,22 @@ bfs_draw(bfs* fs, const bscene_sink* sink) {
         }
         idx[j + 1] = k;
     }
-    (void)passes;
-    m->scene.parts = BSCENE_PART_ALL;
-    for (int i = 0; i < n; i++) {
-        bscene_draw_object(&m->scene, &m->vm.objs[idx[i]], sink);
+    /* objects at the same depth (a panel and what is attached to it at its depth) are drawn models first, then their
+     * texts, as the sprites of the text surfaces come out on top there */
+    for (int i = 0; i < n;) {
+        int j = i + 1;
+        float z = m->vm.objs[idx[i]].pos[2];
+        while (j < n && m->vm.objs[idx[j]].pos[2] - z < 0.001f) {
+            j++;
+        }
+        for (int pass = 0; pass < 2; pass++) {
+            m->scene.parts = passes[pass];
+            for (int k = i; k < j; k++) {
+                bscene_draw_object(&m->scene, &m->vm.objs[idx[k]], sink);
+            }
+        }
+        i = j;
     }
+    m->scene.parts = BSCENE_PART_ALL;
     m->scene.parts = BSCENE_PART_ALL;
 }

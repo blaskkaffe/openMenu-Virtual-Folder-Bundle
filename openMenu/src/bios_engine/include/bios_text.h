@@ -55,7 +55,11 @@ int btext_rich_width(const char* s, int advance);
 void btext_rich(uint16_t* canvas, int stride, int height, int x, int y, const uint8_t* font, const char* s, uint16_t* colour,
                 int advance);
 
-/* One 24x24 symbol (0x8C027CC0). */
+/* A 24x24 glyph (0x8C027CC0): the symbols, and the wide (JIS) characters. */
+void btext_blit24(uint16_t* canvas, int stride, int height, int x, int y, const uint8_t* glyph, uint16_t colour);
+/* The wide glyph of JIS code `jis` (rows 0x21..0x28: symbols, kana), NULL if outside. */
+const uint8_t* btext_jis_glyph(const uint8_t* font, unsigned jis);
+/* One 24x24 symbol. */
 void btext_symbol(uint16_t* canvas, int stride, int height, int x, int y, const uint8_t* font, int n, uint16_t colour);
 
 /* Message `id` line `line` (0..3) of the boot ROM's table for `language` (0 Japanese, 1 English, 2 German, 3 French,

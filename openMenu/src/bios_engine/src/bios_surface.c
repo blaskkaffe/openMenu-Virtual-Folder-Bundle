@@ -221,3 +221,12 @@ bsurf_clock_text(bsurf* s, int x, int y, const char* str) {
     }
     bsurf_touch(s, y, y + 15);
 }
+
+void
+bsurf_jis(bsurf* s, int x, int y, unsigned jis) {
+    if (!s || !font) {
+        return;
+    }
+    btext_blit24(s->px, s->w, s->h, x, y, btext_jis_glyph(font, jis), s->colour);
+    bsurf_touch(s, y, y + 25);
+}

@@ -163,6 +163,10 @@ typedef struct bfs {
     int gauge_set;               /* the plate's gauge as last set (to clear the scene cache when it changes) */
     float gauge;
 
+    /* memory reset (vmu_format_flow): the icon and colour pickers */
+    int f_state, f_page, f_icon, f_cursor, f_transparent, f_blink, f_blink_t;
+    uint32_t f_colour;
+
     bfs_op op;
 } bfs;
 

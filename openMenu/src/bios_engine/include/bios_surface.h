@@ -53,6 +53,9 @@ void bsurf_tiny_number(bsurf* s, int x, int y, int value, int width);
  * (0x8C071AB0), black, 11 pixels apart. Draws digits, ' ', '.', '/' and ':'. */
 void bsurf_clock_text(bsurf* s, int x, int y, const char* str);
 
+/* A wide (JIS) glyph, e.g. 0x2222 / 0x2223, the empty and the filled box. */
+void bsurf_jis(bsurf* s, int x, int y, unsigned jis);
+
 /* Mark rows y0..y1 changed (after writing into px directly). */
 void bsurf_touch(bsurf* s, int y0, int y1);
 

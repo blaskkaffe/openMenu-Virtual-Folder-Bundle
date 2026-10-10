@@ -16,6 +16,8 @@
 #include "bios_datetime.h"
 #include "bios_files.h"
 #include "bios_cdplayer.h"
+#include "bios_filescr.h"
+#include "bios_surface.h"
 #include "bios_list.h"
 #include "bios_models.h"
 #include "bios_case.h"
@@ -701,6 +703,73 @@ test_cache_screen(const bios_rom* rom, int screen) {
 
 
 /* CD player: cursor table 0x8C038610 and the TRACK / TIME digits of cdplayer_display_update */
+/* The File screen: grid -> browser -> delete one file (the op), and a card pulled while browsing */
+static bfs_card fsc_cards[BFS_SLOTS];
+static bfs_file fsc_files[BFS_MAX_FILES];
+
+static void
+fs_steps(bmenu* m, bfs* fs, int n, int key) {
+    for (int i = 0; i < n; i++) {
+        if (i == 0 && key) {
+            bfs_key(fs, key);
+        }
+        bmenu_update(m);
+        bfs_update(fs);
+    }
+}
+
+static void
+test_filescr_real(const bios_rom* rom) {
+    static bmenu m;
+    static bfs fs;
+    bmenu_init(&m, rom, NULL);
+    memset(fsc_cards, 0, sizeof(fsc_cards));
+    fsc_cards[2].status = BFS_CARD_READY; /* B1 */
+    fsc_cards[2].files = fsc_files;
+    fsc_cards[2].nfiles = 3;
+    fsc_cards[2].free_blocks = 100;
+    fsc_cards[2].total_blocks = 200;
+    for (int i = 0; i < 3; i++) {
+        memset(&fsc_files[i], 0, sizeof(fsc_files[i]));
+        snprintf(fsc_files[i].name, sizeof(fsc_files[i].name), "FILE%c", 'C' - i); /* sorted: FILEA FILEB FILEC */
+        fsc_files[i].blocks = 10 + i;
+        fsc_files[i].header = 2;
+    }
+    bfs_init(&fs, &m, NULL, fsc_cards);
+    bfs_open(&fs);
+    fs_steps(&m, &fs, 30, 0);
+    CHECK(fs.state == 1 && fs.g_cursor == 2); /* the only card */
+    fs_steps(&m, &fs, 60, BFS_KEY_A);
+    CHECK(fs.state == 5 && fs.b_state == 2 && fs.src == 2);
+    CHECK(fs.order[0] == 2 && fs.order[2] == 0);
+    CHECK(bsurf_find(0x1180) != NULL && bsurf_find(0x1120) != NULL);
+    fs_steps(&m, &fs, 2, BFS_KEY_RIGHT);
+    CHECK(fs.b_cursor == 3 && fs.marked[1] && !fs.marked[0]);
+    fs_steps(&m, &fs, 40, BFS_KEY_A); /* the Copy / Delete / Cancel popup */
+    CHECK(fs.state == 0xB && fs.nlist == 1 && fs.list[0] == 1);
+    fs_steps(&m, &fs, 2, BFS_KEY_DOWN);
+    fs_steps(&m, &fs, 20, BFS_KEY_A); /* Delete: are you sure? (No) */
+    CHECK(fs.state == 0x32);
+    fs_steps(&m, &fs, 2, BFS_KEY_UP);
+    fs_steps(&m, &fs, 20, BFS_KEY_A);
+    bfs_op* op = bfs_pending(&fs);
+    CHECK(op && op->kind == BFS_OP_DELETE && op->nfiles == 1 && op->files[0] == 1);
+    if (op) {
+        op->done = 1;
+    }
+    fs_steps(&m, &fs, 20, 0);
+    CHECK(fs.state == 0x35); /* "File was deleted." */
+    fs_steps(&m, &fs, 30, BFS_KEY_A);
+    CHECK(fs.state == 5);
+    fsc_cards[2].status = BFS_CARD_NONE; /* pulled out */
+    fs_steps(&m, &fs, 30, 0);
+    CHECK(fs.state == 5 && fs.b_state == 6); /* the "card removed" message */
+    fs_steps(&m, &fs, 60, BFS_KEY_A);
+    CHECK(fs.state == 0 || fs.state == 1 || fs.state == 6 || fs.state == 7);
+    bsurf_free_all();
+    bmenu_free(&m);
+}
+
 static void
 test_cdplayer_real(const bios_rom* rom) {
     static bmenu m;
@@ -802,6 +871,7 @@ test_real_rom(const char* path) {
     CHECK(script_errors == 0);
 
     test_cdplayer_real(&rom);
+    test_filescr_real(&rom);
     test_cache_screen(&rom, 0);
     test_cache_screen(&rom, 1);
     test_cache_screen(&rom, 2);

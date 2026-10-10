@@ -61,7 +61,7 @@ container does not look as expected. The status line at the bottom shows the res
 Game opens the game browser (with a detail line), Settings edits boot animation and the exit
 mode and saves them. Files and Music show "Not available yet".
 
-Still open: date/time and language settings, Files (memory card manager), Music (online).
+Still open: language settings, Music (online).
 
 ## Custom header logo
 
@@ -160,25 +160,35 @@ dark translucent body, rim in the screen's accent colour: Game orange, Settings 
 editor, the About box and the popups use it now (`bscene_draw_panel`). In the editor the green ovals
 are drawn under the names of the buttons, which start over the right half of the oval.
 
-## Files screen (sketch2)
+## Files screen: the BIOS File screen
 
-Main menu > Files: the BIOS memory card grid (`bios_engine/bios_files`: ports A-D, sockets 1 and 2,
-the card plate with the free blocks, BACK). Cards present are solid, empty sockets faded, the
-selected card flashes. A on a card lists its files in a green window (`ui_files.c`): A opens the
-file menu (Copy, Delete, Cancel), copy asks for the destination card (same checks and messages as
-the BIOS: card not ready, full, one VMU game per card, same name exists), delete asks first, the
-"do not remove the card" box is shown while a copy or delete runs. File access is `vmu_files.c`
-(KOS vmufs).
+Main menu > Files is the BIOS's own File screen, ported from the boot ROM (`bios_engine/bios_filescr`,
+`file_screen_update` 0x8C017A60 and what it calls). Same objects, scripts, positions, cursor tables, state
+machines and messages (read from the ROM's message tables) as the original:
 
-File icons: the first icon of each file's VMS header (32x32, 16 colours) is shown in the file list;
-they are read one per frame for the visible rows (`vf_file_icon`).
-Card look: X in the file list opens the card menu. "Change icon" and "Change colour" only rewrite the
-card's root block (icon shape, colour) and the file ICONDATA_VMS: no file is touched and nothing is
-formatted. The 124 icons are the BIOS's own (monochrome pictures in its font ROM, shape n is picture
-n + 5); the colours are presets (`vf_colour`), Standard uses the console's default.
-"Memory reset" asks, lets you pick icon and colour of the new card, asks again, then rewrites the
-card's directory and FAT (all files gone). Untested on hardware: back up first.
-Not yet: copying a group of files, the animated icons.
+- card grid: each card in its own colour with its picture (ICONDATA_VMS, else the root block's icon shape),
+  empty sockets, unformatted cards (orange picture), the VMU busy animation while a card is read,
+  controllers only in the ports that have one, the plate with "A-1", free blocks and the used-space gauge,
+  the selected card animating, BACK; in destination mode the copy arrow from the source card
+- the card flies between the grid and the file window (script 7)
+- file window: 24 tiles a page with the files' animated icons, block counts in the tile digits, copy
+  protected files red, VMU games green, the selected tiles blinking; the card ("ALL") selects every file,
+  X selects all files of the same game (first 9 characters of the name); file information (description,
+  name, VMU description, date, blocks, GAME/DATA, eyecatch) or the total of the selected files
+- popups and messages: Copy / Delete, Copy all / Delete all (memory reset), Start copying / View contents
+  of the destination, overwrite question, "not ready", "full", "one VMU game per card", "card removed"
+- copy box with its progress bar (grid mesh, deformer 5), "Deleting all..." box
+- memory reset: confirm, icon picker (124 BIOS icons, 4x4 a page), colour picker (the BIOS's 32 colours
+  and "Transparent"), "Please confirm your settings", then the card is rebuilt (also never formatted cards)
+- screen fly-in / fly-out fades (object flag 17)
+
+Text is printed into the BIOS's text surfaces (`bios_surface`: message strings with colour codes and
+button symbols, tile digits, the clock font); `gfx.c` uploads only the rows that change. The card data
+and the commands are the caller's (`ui_files.c` with `vmu_files.c`, KOS vmufs): one memory card access a
+frame (a card, a file header, or one file of a copy / delete), so the screen keeps running.
+Preview: `bios_preview dc_boot.bin out.ppm <frames> 0 -14` with `BIOS_PREVIEW_KEYS="40:A,90:R,..."` (keys
+UDLRABXY at frame numbers) on a demo set of cards.
+Not yet: mouse hover. Untested on hardware: copying and resetting real cards; back up first.
 
 ## Todo: Files, devices, DreamPi (from the plan, later)
 

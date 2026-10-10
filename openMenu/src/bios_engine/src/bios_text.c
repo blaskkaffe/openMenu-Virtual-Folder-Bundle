@@ -95,7 +95,23 @@ btext_symbol(uint16_t* canvas, int stride, int height, int x, int y, const uint8
     if (n < 0 || n >= 0x16) {
         n = 0;
     }
-    const uint8_t* g = font + BTEXT_SYMBOLS + (uint32_t)n * 72u;
+    btext_blit24(canvas, stride, height, x, y, font + BTEXT_SYMBOLS + (uint32_t)n * 72u, colour);
+}
+
+const uint8_t*
+btext_jis_glyph(const uint8_t* font, unsigned jis) {
+    unsigned row = jis >> 8, col = jis & 0xFF;
+    if (row < 0x21 || row > 0x28 || col < 0x21 || col > 0x7E) {
+        return NULL;
+    }
+    return font + 288u * BTEXT_GLYPH_BYTES + ((row - 0x21) * 94u + (col - 0x21)) * 72u;
+}
+
+void
+btext_blit24(uint16_t* canvas, int stride, int height, int x, int y, const uint8_t* g, uint16_t colour) {
+    if (!g) {
+        return;
+    }
     uint16_t shade = btext_shade(colour);
     for (int row = 0; row < BTEXT_SYMBOL_W; row++) {
         uint32_t bits = ((uint32_t)g[row * 3] << 16) | ((uint32_t)g[row * 3 + 1] << 8) | g[row * 3 + 2];
