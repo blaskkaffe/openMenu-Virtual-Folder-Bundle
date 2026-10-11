@@ -906,15 +906,8 @@ test_list(const bios_rom* rom) {
     blist_set_count(&l, 5); /* shorter list: everything fits */
     CHECK(l.top == 0 && l.cursor == 3 && blist_row_in_slot(&l, 5) == -1);
     blist_goto(&l, 4);
-    blist_launch_start(&l);
-    int steps = 0;
-    while (!blist_launch_step(&l) && steps < 1000) {
-        blist_sync(&l);
-        steps++;
-    }
-    CHECK(steps > 20 && steps < 100);
-    blist_launch_cancel(&l);
-    CHECK(!l.launching);
+    blist_sync(&l);
+    CHECK(l.cursor == 4);
     bmenu_free(&m);
 }
 

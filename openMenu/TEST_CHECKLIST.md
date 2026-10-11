@@ -66,7 +66,6 @@ Targets (suggestion): 60 fps in every screen, no frame drop when a picture loads
 | Game list, 5 rows, case at rest        | 29  | 2200 |       |
 | Game list, scrolling fast (hold down)  | 19  | 2100 | smooth but framerate drops, maybe too many 3d objects? |
 | Case flying in/out (single press)      | 27  | 2021 | smooth but drops a bit in frame rate|
-| Game launch animation                  |     |      |         |
 | Settings, popup open                   | | | |
 | Date/time editor                       | | | |
 | Files: card grid / file list / icons   | 19fps|3355| Doesnt look like the original really, font too thin, no vmu screen images on 3d objects and such. make a full check in bios to copy that 100%|
@@ -114,7 +113,7 @@ Drops to 30fps
 - [ ] X: cursor to the bottom buttons (lit, jump on A); "Recent" opens recently played; Left of it is BACK
 - [ ] Y or a click on the case: big case on the right; stick, d-pad (eased) and mouse drag turn it, triggers zoom, X resets; A/B/Y or a click on BACK close; pane starts where the rows start
 - [ ] Lit pill ends 6 px before the bar end (as Settings); pane corners like the row bar ends
-- [ ] Launch: the disc reaches the CD player's place twice as fast, spin unchanged, in front of the bursting bars
+- [ ] A on a game starts it at once (no launch animation, no Launch animation row in Settings)
 
 ### Settings / date and time / About
 - [ ] Help text inside the bottom right box, not over BACK

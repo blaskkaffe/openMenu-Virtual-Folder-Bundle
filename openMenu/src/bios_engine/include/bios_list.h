@@ -1,9 +1,7 @@
 /*
  * bios_list: a dense version of the BIOS Settings look for browsing games. Five or seven rows
  * (a pill, a 3D disc and a text line each) take about 60% of the screen width, leaving room on
- * the right for the box art. The selected row's disc spins like the CD player's. A launch
- * animation moves the rows out in a circle and the selected disc to the CD player's position.
- * Portable C.
+ * the right for the box art. The selected row's disc spins like the CD player's. Portable C.
  */
 #ifndef BIOS_LIST_H
 #define BIOS_LIST_H
@@ -41,13 +39,9 @@ typedef struct blist {
     int count; /* rows in the list */
     int cursor;
     int top;
-    int launching;
-    int launch_frame;
     int back_selected; /* the cursor is on the BACK marker, below the last row */
     int button;        /* the cursor is on bottom button 0..BLIST_BUTTONS-1, -1 when not (lit as in the CD player) */
     int pal_console;   /* set by the caller: the console is a PAL one (the BACK marker is blue instead of red) */
-    float base[BLIST_BUTTONS + 1][3]; /* resting positions of the five buttons and the BACK marker (for the launch animation) */
-    int base_valid;
     unsigned anim;     /* frames since the list was opened (the BACK marker's frame blinks) */
     int multi[BLIST_MAX_SLOTS]; /* set by the caller before blist_sync(): row is a multi-disc set */
 } blist;
@@ -62,11 +56,6 @@ int blist_row_in_slot(const blist* l, int slot); /* -1 if empty */
 /* Place and light the objects; call once per frame after bmenu_update(). */
 void blist_sync(blist* l);
 void blist_draw(blist* l, const bscene_sink* sink);
-
-/* Launch animation: start it, then call step once per logic frame until it returns 1. */
-void blist_launch_start(blist* l);
-int blist_launch_step(blist* l);
-void blist_launch_cancel(blist* l);
 
 /* The five buttons of the CD player along the bottom, without their pictures. The caller writes
  * text on them: this gives the centre of button i (pixels). */

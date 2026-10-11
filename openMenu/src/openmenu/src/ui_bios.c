@@ -115,7 +115,6 @@ static bmenu menu;
 static screen_t screen;
 static bpage page;
 static blist glist;                 /* the game list screen */
-static const gd_item* launch_pending; /* a game waiting for the launch animation to end */
 static int have_meta;               /* META.DAT loaded: players, VMU blocks */
 static bcdplayer cdp;                 /* the Music screen: the BIOS CD player, its buttons do nothing yet */
 static bdt dtedit;                    /* the date and time editor */
@@ -300,7 +299,7 @@ games_sync(void) {
         if (item) {
             multi = !uil_is_folder(item) && uil_disc_total(item) > 1;
             size_t keep = multi ? 19 : 24; /* a multi-disc row has the disc pill at its right end */
-            if (row == uil_cursor() && !glist.launching) {
+            if (row == uil_cursor()) {
                 snprintf(line, sizeof(line), "%.41s", item->name); /* the selected title scrolls if it is long */
             } else if (strlen(item->name) > keep) {
                 snprintf(line, sizeof(line), "%.*s..", (int)keep - 2, item->name);
@@ -310,7 +309,7 @@ games_sync(void) {
         }
         glist.multi[s] = multi;
         gfx_set_row_scroll(s, 0, 0);
-        if (item && row == uil_cursor() && !glist.launching) {
+        if (item && row == uil_cursor()) {
             int window = multi ? TITLE_WINDOW_MULTI : TITLE_WINDOW;
             int width = gfx_text_width(line);
             if (item != marquee_item) {
@@ -424,9 +423,6 @@ draw_games(void) {
     blist_draw(&glist, gfx_sink());
     if (uil_count() <= 0) {
         gfx_text("No games found.", 64.0f, 200.0f, 0.5f, 0xFFFFFFFFu, 1);
-        return;
-    }
-    if (glist.launching) {
         return;
     }
     const gd_item* cur = uil_item(uil_cursor());
@@ -977,9 +973,6 @@ handle_games(button_t b) {
         handle_recent(b);
         return;
     }
-    if (launch_pending) {
-        return; /* the launch animation is running */
-    }
     if (viewer_open) {
         handle_viewer(b);
         return;
@@ -1070,15 +1063,9 @@ handle_games(button_t b) {
     }
     uil_result r = uil_button(b, &game);
     if (r == UIL_LAUNCH) {
-        if (sf_scroll_art[0] == SCROLL_ART_ON) { /* "Launch animation" setting */
-            sound_sfx(BAUDIO_SFX_ENTER);
-            launch_pending = game;
-            blist_launch_start(&glist);
-        } else {
-            launch_disc(game); /* only returns if the launch failed */
-            sound_sfx(BAUDIO_SFX_ERROR);
-            show_notice("Could not start the game");
-        }
+        launch_disc(game); /* straight away; only returns if the launch failed */
+        sound_sfx(BAUDIO_SFX_ERROR);
+        show_notice("Could not start the game");
     } else if (r == UIL_EXIT) {
         sound_sfx(BAUDIO_SFX_CANCEL);
         bmenu_show_main(&menu, ICON_GAME);
@@ -1309,9 +1296,6 @@ apply_hover(void) {
             break;
         }
         case SCREEN_GAMES: {
-            if (launch_pending) {
-                break;
-            }
             if (viewer_open) {
                 break;
             }
@@ -1409,7 +1393,7 @@ ui_bios_run(const bios_rom* rom) {
             apply_hover();
         }
         int typed = input_typed_char();
-        if (typed && screen == SCREEN_GAMES && !recent_open && !launch_pending && uil_jump_to_letter(typed)) {
+        if (typed && screen == SCREEN_GAMES && !recent_open && uil_jump_to_letter(typed)) {
             sound_sfx(BAUDIO_SFX_CURSOR);
         }
         if (screen == SCREEN_MAIN) {
@@ -1453,14 +1437,6 @@ ui_bios_run(const bios_rom* rom) {
             if (screen == SCREEN_FILES && uif_step()) {
                 bmenu_show_main(&menu, ICON_FILES);
                 screen = SCREEN_MAIN;
-            }
-            if (launch_pending && blist_launch_step(&glist)) {
-                const gd_item* g = launch_pending;
-                launch_pending = NULL;
-                launch_disc(g); /* only returns if the launch failed */
-                blist_launch_cancel(&glist);
-                sound_sfx(BAUDIO_SFX_ERROR);
-                show_notice("Could not start the game");
             }
         }
 

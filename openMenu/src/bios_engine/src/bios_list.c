@@ -44,14 +44,10 @@
 #define Y_CENTER_5 3.53f /* five rows: centred at y = 200 px */
 #define Y_CENTER 2.47f /* the rows sit above the buttons: centred at y = 212 px */
 
-/* CD player disc (script 0x1c): position and spin per frame, in the original's angle units */
-#define CD_Z (-378.90625f)
-#define CD_SCALE 0.875f
+/* the selected disc spins as the CD player's (script 0x1c), per frame in the original's angle units */
 #define SPIN_Y 140 /* 0.77 degrees: 0x10000 = 360 degrees */
 #define SPIN_Z 500 /* 2.75 degrees */
 
-#define LAUNCH_FRAMES 14 /* everything but the chosen disc bursts outwards, the disc moves to the CD player's place */
-#define LAUNCH_HOLD 18   /* the disc alone on the screen before the game starts */
 
 static const struct {
     int anchor_script, pill_script, icon_script, text_script;
@@ -69,8 +65,6 @@ blist_open(blist* l, bmenu* m, int slots, int count) {
     l->slots = slots < 1 ? 1 : (slots > BLIST_MAX_SLOTS ? BLIST_MAX_SLOTS : slots);
     l->cursor = 0;
     l->top = 0;
-    l->launching = 0;
-    l->launch_frame = 0;
     l->back_selected = 0;
     l->button = -1;
     l->anim = 0;
@@ -271,54 +265,10 @@ set_hidden(bvm_obj* o, int hide) {
     o->flags = hide ? (o->flags | BVM_F_HIDE) : (o->flags & ~(uint32_t)BVM_F_HIDE);
 }
 
-static float
-smooth(float t) {
-    t = t < 0 ? 0 : (t > 1 ? 1 : t);
-    return t * t * (3.0f - 2.0f * t);
-}
-
-void
-blist_launch_start(blist* l) {
-    l->launching = 1;
-    l->launch_frame = 0;
-}
-
-void
-blist_launch_cancel(blist* l) {
-    l->launching = 0;
-    l->launch_frame = 0;
-}
-
-int
-blist_launch_step(blist* l) {
-    if (!l->launching) {
-        return 0;
-    }
-    l->launch_frame++;
-    return l->launch_frame >= LAUNCH_FRAMES + LAUNCH_HOLD;
-}
-
-/* Where a point of the row layout is while everything bursts outwards from the centre (e = 0..1):
- * slowly at first, then fast, with a little turn, so the screen is clear well before e = 1. */
-static void
-leave_xf(float e, float x, float y, float* ox, float* oy) {
-    float phi = e * 0.5f;
-    float k = 1.0f + 18.0f * e * e;
-    float cs = cosf(phi), sn = sinf(phi);
-    *ox = k * (cs * x - sn * y);
-    *oy = k * (sn * x + cs * y);
-}
-
 void
 blist_sync(blist* l) {
     bvm* vm = &l->m->vm;
     l->anim++;
-    float t = l->launching ? (float)l->launch_frame / (float)LAUNCH_FRAMES : 0.0f;
-    if (t > 1.0f) {
-        t = 1.0f;
-    }
-    float e = smooth(t);
-    int32_t rot_z = (int32_t)(e * 3.6f * 65536.0f / 6.2831853f);
 
     for (int s = 0; s < l->slots; s++) {
         int row = blist_row_in_slot(l, s);
@@ -333,8 +283,6 @@ blist_sync(blist* l) {
         bvm_obj* text = bvm_find(vm, (uint16_t)BLIST_TEXT_ID(s));
         bvm_obj* num = bvm_find(vm, (uint16_t)BLIST_NUM_ID(s));
         float y = row_y(l, s);
-        float x, yy;
-        int off = l->launching; /* the row is leaving the screen */
 
         /* the row bar and its parts: x of each part in the resting layout */
         struct {
@@ -351,13 +299,8 @@ blist_sync(blist* l) {
             if (!parts[i].o) {
                 continue;
             }
-            x = parts[i].x;
-            yy = y;
-            if (off) {
-                leave_xf(e, x, y, &x, &yy);
-            }
-            set_pos(parts[i].o, x, yy, parts[i].z);
-            parts[i].o->rot_tw[2].cur = off ? rot_z : 0;
+            set_pos(parts[i].o, parts[i].x, y, parts[i].z);
+            parts[i].o->rot_tw[2].cur = 0;
             set_hidden(parts[i].o, !parts[i].show);
         }
         if (anchor) {
@@ -387,24 +330,8 @@ blist_sync(blist* l) {
             icon->texlist = (uint16_t)(BLIST_TEXLIST_BASE + s);
             icon->flags &= ~(uint32_t)BVM_F_MOTION;
             icon->var[0] = sel;
-            float sc = ICON_SCALE;
-            if (off && sel) {
-                /* to the CD player's place, twice as fast as the rest bursts out (the game starts quickly); the spin
-                 * keeps its speed */
-                float f = smooth(t * 2.0f > 1.0f ? 1.0f : t * 2.0f);
-                /* it stays at the rows' depth, in front of the bars bursting past (the PVR sorts by depth), and grows
-                 * to the size the CD player's disc has at its own depth */
-                sc = ICON_SCALE + (CD_SCALE * (ICON_Z / CD_Z) - ICON_SCALE) * f;
-                set_pos(icon, ICON_X * (1.0f - f), y * (1.0f - f), ICON_Z);
-            } else {
-                x = ICON_X;
-                yy = y;
-                if (off) {
-                    leave_xf(e, x, y, &x, &yy);
-                }
-                set_pos(icon, x, yy, ICON_Z);
-            }
-            set_scale(icon, sc, sc, sc);
+            set_pos(icon, ICON_X, y, ICON_Z);
+            set_scale(icon, ICON_SCALE, ICON_SCALE, ICON_SCALE);
             /* the selected disc spins as in the CD player; the others rest */
             if (sel) {
                 icon->rot_tw[1].step = SPIN_Y;
@@ -419,19 +346,19 @@ blist_sync(blist* l) {
             text->text_w = BLIST_TEXT_W;
             text->text_h = BLIST_TEXT_H;
             set_pos(text, TEXT_X, y, ROW_Z + 1.5f);
-            int show = on && !off;
+            int show = on;
             text->flags = show ? (text->flags | BVM_F_TEXT) : (text->flags & ~(uint32_t)BVM_F_TEXT);
         }
         if (num) {
             num->text_w = BLIST_NUM_W;
             num->text_h = BLIST_TEXT_H;
             set_pos(num, NUM_TEXT_X, y, ROW_Z + 2.6f);
-            int show = multi && !off;
+            int show = multi;
             num->flags = show ? (num->flags | BVM_F_TEXT) : (num->flags & ~(uint32_t)BVM_F_TEXT);
         }
     }
 
-    /* the five buttons and the BACK marker: at rest where their scripts put them, bursting outwards on launch */
+    /* the five buttons and the BACK marker, where their scripts put them */
     for (int i = 0; i <= BLIST_BUTTONS; i++) {
         bvm_obj* o = i < BLIST_BUTTONS ? bvm_find(vm, ID_BUTTON(i)) : bvm_find(vm, 0x1110);
         if (!o) {
@@ -441,20 +368,9 @@ blist_sync(blist* l) {
             set_pos(o, BACK_X, BACK_Y, BACK_Z);
             set_scale(o, BACK_SCALE, BACK_SCALE, BACK_SCALE);
         } else {
-            o->var[0] = i == l->button && !l->launching; /* cdplayer_cursor_cb: the selected button is lit */
+            o->var[0] = i == l->button; /* cdplayer_cursor_cb: the selected button is lit */
         }
-        if (!l->launching) {
-            l->base[i][0] = o->pos[0];
-            l->base[i][1] = o->pos[1];
-            l->base[i][2] = o->pos[2];
-            l->base_valid = 1;
-            set_hidden(o, 0);
-        } else if (l->base_valid) {
-            float x, y;
-            leave_xf(e, l->base[i][0], l->base[i][1], &x, &y);
-            set_pos(o, x, y, l->base[i][2]);
-            set_hidden(o, e >= 1.0f);
-        }
+        set_hidden(o, 0);
     }
 }
 

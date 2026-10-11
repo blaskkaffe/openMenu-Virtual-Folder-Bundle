@@ -516,7 +516,7 @@ main(int argc, char** argv) {
         for (int i = 0; i < selected; i++) {
             bpage_move(&page, 1);
         }
-    } else if (script == -3 || script == -4) { /* game list demo: 7 rows; -4 = launch animation at `frames` */
+    } else if (script == -3 || script == -4) { /* game list demo: 7 rows (BLIST_SLOTS=5 as the console) */
         blist_open(&list, &menu, getenv("BLIST_SLOTS") ? atoi(getenv("BLIST_SLOTS")) : 7, 30);
         blist_goto(&list, selected);
         list.back_selected = getenv("BLIST_BACK") != NULL;
@@ -636,10 +636,6 @@ main(int argc, char** argv) {
             bcd_sync(&cdp);
         }
         if (script == -3 || script == -4) {
-            if (script == -4 && i == 20) {
-                blist_launch_start(&list);
-            }
-            blist_launch_step(&list);
             list.multi[0] = list.multi[2] = list.multi[4] = 1; /* demo: some rows are multi-disc sets */
             blist_sync(&list);
         }

@@ -123,10 +123,8 @@ the menu and stores them in `DISC.DAT` (same format as ICON.DAT, 128x128, keyed 
 without one (compressed images not yet saved to the card, discs without the file) keeps the
 ICON.DAT picture, then the BIOS disc of its region.
 
-Starting a game: the rows leave in a circle, the selected disc moves to the CD player's place and
-the game starts. Settings > Starting games > Launch animation turns this off (stored in the unused
-"scroll art" save variable, default On). Not animated: starting from the recently played popup.
-Preview: `bios_preview dc_boot.bin out.ppm 60 <row> -3` (list), `... 52 <row> -4` (launch animation).
+Starting a game: A starts it straight away (there is no launch animation).
+Preview: `bios_preview dc_boot.bin out.ppm 60 <row> -3` (list; BLIST_SLOTS=5 as the console).
 Tune on hardware: row layout constants at the top of `bios_list.c`, panel layout in `ui_bios.c`.
 
 Game list details: multi-disc sets (Compact mode) show a small pill with the gold side of a CD and

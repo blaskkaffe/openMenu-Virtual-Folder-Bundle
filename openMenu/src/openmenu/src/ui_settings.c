@@ -44,8 +44,6 @@ static const row_def rows[] = {
     {0, -1, "Display", "Music icon", "Name of the third main menu icon", &sf_dcnow, 2, music_names},
     {UIS_ACTION_DATETIME, 1, "System", "Date and time", "Set the clock of the console", NULL, 0, NULL},
     {0, -1, "Starting games", "Boot animation", "What the BIOS shows before a game", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
-    /* stored in the otherwise unused "scroll art" setting (default On) */
-    {0, -1, "Starting games", "Launch animation", "Discs fly out before a game starts", &sf_scroll_art, 2, on_off},
     {0, -1, "Starting games", "Exit to BIOS", "How other discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
     {UIS_ACTION_ABOUT, 3, "Other", "About", "Version and credits", NULL, 0, NULL},
 };
