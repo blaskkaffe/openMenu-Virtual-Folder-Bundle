@@ -107,7 +107,16 @@ Drops to 30fps
 - [x] remember last game 
 - [x] Mouse: hover, click row, wheel; keyboard: arrows, Enter, Esc, typed characters
 
+- [ ] Disc hub (row discs, music disc) shows round rings, not four arcs
+- [ ] Case in front of the right pane; row discs spin without cutting into their bar; pane colour = row bar colour
+- [ ] Every row has the pill on its right like Settings (lit orange on the selected row); row text height vs Settings
+- [ ] Folders open with A; "[..]" goes up; "<Recently Played>" opens the recent list
+- [ ] X: cursor to the bottom buttons (lit, jump on A); "Recent" opens recently played; Left of it is BACK
+- [ ] Y: big case on the right, stick turns it, triggers zoom, A resets, Y/B closes; info pane on the left
+
 ### Settings / date and time / About
+- [ ] Help text inside the bottom right box, not over BACK
+- [ ] Display > Music icon = Internet renames the third main menu icon
 - [ ] All rows scroll and change values, popups, values persist after reboot
 - [!!] Date/time editor: fields, buttons, saves to the console clock (check in the BIOS afterwards) - buttons work but after reboot time is reset to 1998
 - [-] Aspect ratio 4:3 / 16:9 on your TV - text looks bad in widescreen some pixels are dropped, most likely due to using single width text. clock in top bar not visible properly, white top bar doesnt stretch the whole width
