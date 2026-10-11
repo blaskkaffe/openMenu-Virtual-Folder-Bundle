@@ -140,6 +140,29 @@ load_ppm(const char* path, bitmap* b) {
     return 1;
 }
 
+/* a texel coordinate past the texture: repeated, mirrored every other time, or held at the edge (PVR uv modes) */
+static int
+texel_index(int i, int n, int flip, int clamp) {
+    if (clamp) {
+        return i < 0 ? 0 : (i >= n ? n - 1 : i);
+    }
+    if (flip) {
+        int p = ((i % (2 * n)) + 2 * n) % (2 * n);
+        return p < n ? p : 2 * n - 1 - p;
+    }
+    return ((i % n) + n) % n;
+}
+
+static void tri(void* user, const bscene_vtx v[3], bscene_texref ref);
+/* ui_bios near_sink: 1/w times 4 */
+static void
+near_tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
+    const bscene_sink* out = (const bscene_sink*)user;
+    bscene_vtx n[3] = {v[0], v[1], v[2]};
+    for (int i = 0; i < 3; i++) n[i].invw *= 4.0f;
+    out->triangle(out->user, n, ref);
+}
+
 static const bitmap*
 lookup(bscene_texref ref) {
     if (logo_bmp.px && ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
@@ -255,9 +278,8 @@ tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
                 float ax = fx - ix, ay = fy - iy;
                 float texel[4] = {0, 0, 0, 0};
                 for (int q = 0; q < 4; q++) {
-                    int qx = (ix + (q & 1)) % tex->w, qy = (iy + (q >> 1)) % tex->h;
-                    if (qx < 0) qx += tex->w;
-                    if (qy < 0) qy += tex->h;
+                    int qx = texel_index(ix + (q & 1), tex->w, ref.uv & NJ_TEX_FLIP_U, ref.uv & NJ_TEX_CLAMP_U);
+                    int qy = texel_index(iy + (q >> 1), tex->h, ref.uv & NJ_TEX_FLIP_V, ref.uv & NJ_TEX_CLAMP_V);
                     uint32_t p = tex->px[qy * tex->w + qx];
                     float wgt = ((q & 1) ? ax : 1.0f - ax) * ((q >> 1) ? ay : 1.0f - ay);
                     texel[0] += wgt * (float)(p >> 24);
@@ -313,6 +335,28 @@ text(void* user, const bvm_obj* o, float x, float y, float invw) {
             }
         }
         return;
+    }
+    if (getenv("BIOS_PREVIEW_LABELS") && g_rom) { /* sample labels placed as the console's gfx.c places them */
+        int list = o->id >= BLIST_TEXT_ID(0) && o->id < BLIST_TEXT_ID(BLIST_MAX_SLOTS);
+        int page = o->id >= BPAGE_TEXT_ID(0) && o->id < BPAGE_TEXT_ID(BPAGE_SLOTS);
+        if (list || page) {
+            static uint16_t canvas[32 * 512];
+            memset(canvas, 0, sizeof(canvas));
+            const uint8_t* font = g_rom->data + BTEXT_FONT_OFFSET;
+            btext_draw(canvas, 512, 32, 0, 0, font, list ? "Shenmue Disc 1" : "Music", 0xFFFF);
+            if (page) btext_draw(canvas, 512, 32, 240, 0, font, "On", 0xFFFF);
+            int lx = x0 + (page ? 10 : 0);
+            for (int j = 0; j < 26; j++)
+                for (int i = 0; i < 512; i++) {
+                    uint16_t c = canvas[j * 512 + i];
+                    int px = lx + i, py = y0 + j;
+                    if (!(c >> 12) || px < 0 || px >= W || py < 0 || py >= H) continue;
+                    float a = (float)(c >> 12) / 15.0f;
+                    float rgb[3] = {(float)((c >> 8) & 15) / 15.0f, (float)((c >> 4) & 15) / 15.0f, (float)(c & 15) / 15.0f};
+                    for (int k = 0; k < 3; k++) fb[py][px][k] = fb[py][px][k] * (1.0f - a) + rgb[k] * a;
+                }
+            return;
+        }
     }
     if (getenv("BIOS_PREVIEW_NOBOX")) { /* print the text areas instead of outlining them (id x y w h) */
         fprintf(stderr, "TEXT %x %d %d %d %d\n", o->id, x0, y0, o->text_w, o->text_h);
@@ -688,7 +732,7 @@ main(int argc, char** argv) {
                     float xs[4] = {rect[i][0], rect[i][0] + rect[i][2], rect[i][0], rect[i][0] + rect[i][2]};
                     float ys[4] = {rect[i][1], rect[i][1], rect[i][1] + rect[i][3], rect[i][1] + rect[i][3]};
                     for (int k = 0; k < 4; k++) {
-                        q[k] = (bscene_vtx){xs[k], ys[k], 0.003f, 0, 0, 0xB25A5AA0u};
+                        q[k] = (bscene_vtx){xs[k], ys[k], 0.0028f, 0, 0, 0xB2444479u};
                     }
                     bscene_vtx a[3] = {q[0], q[1], q[2]}, b2[3] = {q[1], q[3], q[2]};
                     sink.triangle(sink.user, a, (bscene_texref){BSCENE_TEX_NONE, 0, 0});
@@ -697,14 +741,15 @@ main(int argc, char** argv) {
                 for (int c = 0; c < 4; c++) {
                     for (int i = 0; i < 6; i++) {
                         float a0 = 1.5707963f * i / 6, a1 = 1.5707963f * (i + 1) / 6;
-                        bscene_vtx v[3] = {{cxs[c], cys[c], 0.003f, 0, 0, 0xB25A5AA0u},
-                                           {cxs[c] + dxs[c] * r * cosf(a0), cys[c] + dys[c] * r * sinf(a0), 0.003f, 0, 0, 0xB25A5AA0u},
-                                           {cxs[c] + dxs[c] * r * cosf(a1), cys[c] + dys[c] * r * sinf(a1), 0.003f, 0, 0, 0xB25A5AA0u}};
+                        bscene_vtx v[3] = {{cxs[c], cys[c], 0.0028f, 0, 0, 0xB2444479u},
+                                           {cxs[c] + dxs[c] * r * cosf(a0), cys[c] + dys[c] * r * sinf(a0), 0.0028f, 0, 0, 0xB2444479u},
+                                           {cxs[c] + dxs[c] * r * cosf(a1), cys[c] + dys[c] * r * sinf(a1), 0.0028f, 0, 0, 0xB2444479u}};
                         sink.triangle(sink.user, v, (bscene_texref){BSCENE_TEX_NONE, 0, 0});
                     }
                 }
             }
-            bcase_draw(&bc, &menu.scene, 529.0f, 8.0f + 75.0f + ({float t_, b_; blist_rows_extent_px(&list, &t_, &b_); t_;}), 150.0f, NULL, NULL, &sink);
+            bscene_sink nears = {&sink, near_tri, NULL}; /* as ui_bios: the case is brought in front of the pane */
+            bcase_draw(&bc, &menu.scene, 529.0f, 8.0f + 75.0f + ({float t_, b_; blist_rows_extent_px(&list, &t_, &b_); t_;}), 150.0f, NULL, NULL, &nears);
         }
     } else if (script == -2) {
         bscene_draw_background(&menu.bg, &sink);

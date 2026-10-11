@@ -17,6 +17,7 @@
 #define BAR_CAP_R 27.5f
 #define BAR_MIDDLE_F 0.638f
 #define ICON_X (-22.6f)
+#define ICON_Z (ROW_Z + 2.5f) /* clear of the bar: the spinning disc (radius ~1.8) must not cut through it */
 #define ICON_SCALE 0.125f /* the disc is as big as the Settings icons (about 40 px) */
 #define TEXT_X (-4.8f)      /* centre of the 300 px text surface */
 /* The lit part of the row (model 33, 36.9 units wide with 0.4 chamfered ends) runs from just left of
@@ -71,6 +72,7 @@ blist_open(blist* l, bmenu* m, int slots, int count) {
     l->launching = 0;
     l->launch_frame = 0;
     l->back_selected = 0;
+    l->button = -1;
     l->anim = 0;
     bvm_kill_all(&m->vm);
     for (int s = 0; s < l->slots; s++) {
@@ -341,9 +343,9 @@ blist_sync(blist* l) {
             int show;
         } parts[4] = {
             {anchor, ANCHOR_X, ROW_Z, on},
-            {pill, PILL_X, ROW_Z + 0.78f, sel},
-            {spill, SPILL_X, ROW_Z + 0.78f, multi},
-            {mini, MINI_X, ROW_Z + 1.2f, multi},
+            {pill, PILL_X, ROW_Z + 0.78f, on}, /* every row has it, as the Settings rows: lit on the selected one */
+            {spill, SPILL_X, ROW_Z + 1.6f, multi}, /* in front of the row pill */
+            {mini, MINI_X, ROW_Z + 2.2f, multi},
         };
         for (int i = 0; i < 4; i++) {
             if (!parts[i].o) {
@@ -363,7 +365,7 @@ blist_sync(blist* l) {
         }
         if (pill) {
             set_scale(pill, PILL_SCALE, ROW_SY * PILL_SCALE, PILL_SCALE);
-            pill->var[1] = 1; /* the selected row is lit */
+            pill->var[1] = sel; /* the selected row is lit */
         }
         if (spill) {
             set_scale(spill, PILL_SCALE, ROW_SY * PILL_SCALE * 0.85f, PILL_SCALE);
@@ -390,14 +392,14 @@ blist_sync(blist* l) {
                 /* to the CD player's place, keeping the spin */
                 float f = smooth(t);
                 sc = ICON_SCALE + (CD_SCALE - ICON_SCALE) * f;
-                set_pos(icon, ICON_X * (1.0f - f), y * (1.0f - f), ROW_Z + (CD_Z - ROW_Z) * f);
+                set_pos(icon, ICON_X * (1.0f - f), y * (1.0f - f), ICON_Z + (CD_Z - ICON_Z) * f);
             } else {
                 x = ICON_X;
                 yy = y;
                 if (off) {
                     leave_xf(e, x, y, &x, &yy);
                 }
-                set_pos(icon, x, yy, ROW_Z + 0.78f);
+                set_pos(icon, x, yy, ICON_Z);
             }
             set_scale(icon, sc, sc, sc);
             /* the selected disc spins as in the CD player; the others rest */
@@ -420,7 +422,7 @@ blist_sync(blist* l) {
         if (num) {
             num->text_w = BLIST_NUM_W;
             num->text_h = BLIST_TEXT_H;
-            set_pos(num, NUM_TEXT_X, y, ROW_Z + 1.5f);
+            set_pos(num, NUM_TEXT_X, y, ROW_Z + 2.6f);
             int show = multi && !off;
             num->flags = show ? (num->flags | BVM_F_TEXT) : (num->flags & ~(uint32_t)BVM_F_TEXT);
         }
@@ -435,6 +437,8 @@ blist_sync(blist* l) {
         if (i == BLIST_BUTTONS) {
             set_pos(o, BACK_X, BACK_Y, BACK_Z);
             set_scale(o, BACK_SCALE, BACK_SCALE, BACK_SCALE);
+        } else {
+            o->var[0] = i == l->button && !l->launching; /* cdplayer_cursor_cb: the selected button is lit */
         }
         if (!l->launching) {
             l->base[i][0] = o->pos[0];
@@ -449,6 +453,26 @@ blist_sync(blist* l) {
             set_hidden(o, e >= 1.0f);
         }
     }
+}
+
+void
+blist_press_button(blist* l, int i) {
+    bvm_obj* o = i >= 0 && i < BLIST_BUTTONS ? bvm_find(&l->m->vm, ID_BUTTON(i)) : NULL;
+    if (o) {
+        o->var[1] = 1; /* the button's own script makes it jump (as bcd_press) */
+    }
+}
+
+int
+blist_button_at_px(float x, float y) {
+    for (int i = 0; i < BLIST_BUTTONS; i++) {
+        float cx, cy;
+        blist_button_center_px(i, &cx, &cy);
+        if (x >= cx - 42.0f && x <= cx + 42.0f && y >= cy - 22.0f && y <= cy + 22.0f) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 void

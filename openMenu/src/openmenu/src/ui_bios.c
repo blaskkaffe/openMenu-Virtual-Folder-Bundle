@@ -356,6 +356,40 @@ draw_button_text(const gd_item* cur) {
     }
 }
 
+/* The PVR sorts the translucent polygons by depth (autosort): our own panels lie at a fixed depth, and a model meant to
+ * be seen in front of one goes through this sink, which brings it nearer. Scaling 1/w keeps the order of the model's
+ * own polygons. */
+#define PANE_Z 0.0028f
+#define NEAR_SCALE 4.0f
+
+typedef struct {
+    const bscene_sink* out;
+} near_wrap;
+
+static void
+near_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
+    const near_wrap* w = (const near_wrap*)user;
+    bscene_vtx n[3] = {v[0], v[1], v[2]};
+    for (int i = 0; i < 3; i++) {
+        n[i].invw *= NEAR_SCALE;
+    }
+    w->out->triangle(w->out->user, n, tex);
+}
+
+static void
+near_text(void* user, const bvm_obj* o, float x, float y, float invw) {
+    const near_wrap* w = (const near_wrap*)user;
+    w->out->text(w->out->user, o, x, y, invw * NEAR_SCALE);
+}
+
+static const bscene_sink*
+near_sink(const bscene_sink* out) {
+    static near_wrap w;
+    static bscene_sink s = {&w, near_triangle, near_text};
+    w.out = out;
+    return &s;
+}
+
 static void
 draw_games(void) {
     char lines[3][20];
@@ -372,8 +406,10 @@ draw_games(void) {
     float panel_top, panel_bottom;
     blist_rows_extent_px(&glist, &panel_top, &panel_bottom);
     const float art_y = panel_top + 8.0f;
-    gfx_rrect(INFO_X - 6.0f, panel_top, INFO_W + 12.0f, panel_bottom - panel_top, 9.0f, 0.4f, 0xB25A5AA0u); /* the colour, alpha and corner radius of the row bars */
-    bcase_draw(&gcase, &menu.scene, INFO_X + INFO_W / 2.0f, art_y + ART_SIZE / 2.0f, ART_SIZE + 10.0f, case_bind, NULL, gfx_sink());
+    /* the colour, alpha (BSCENE_PANE_ARGB) and corner radius of the row bars; just in front of the clouds (~0.0026), behind the case */
+    gfx_rrect(INFO_X - 6.0f, panel_top, INFO_W + 12.0f, panel_bottom - panel_top, 9.0f, PANE_Z, BSCENE_PANE_ARGB);
+    bcase_draw(&gcase, &menu.scene, INFO_X + INFO_W / 2.0f, art_y + ART_SIZE / 2.0f, ART_SIZE + 10.0f, case_bind, NULL,
+               near_sink(gfx_sink()));
     if (cur && !uil_is_folder(cur)) {
         float y = art_y + ART_SIZE + 6.0f;
         int n = wrap_text(cur->name, 15, lines, 3);
@@ -753,6 +789,19 @@ handle_recent(button_t b) {
     }
 }
 
+/* The recently played list (a popup over the game list). */
+static void
+open_recent(void) {
+    if (history_recent_count() > 0) {
+        recent_open = 1;
+        recent_row = 0;
+        sound_sfx(BAUDIO_SFX_ENTER);
+    } else {
+        sound_sfx(BAUDIO_SFX_ERROR);
+        show_notice(sf_recently_played[0] == RECENTLY_PLAYED_OFF ? "Recently played is off (Settings)" : "No games played yet");
+    }
+}
+
 static void
 handle_games(button_t b) {
     const gd_item* game = NULL;
@@ -761,15 +810,7 @@ handle_games(button_t b) {
         return;
     }
     if (b == BTN_X) {
-        if (history_recent_count() > 0) {
-            recent_open = 1;
-            recent_row = 0;
-            sound_sfx(BAUDIO_SFX_ENTER);
-        } else {
-            sound_sfx(BAUDIO_SFX_ERROR);
-            show_notice(sf_recently_played[0] == RECENTLY_PLAYED_OFF ? "Recently played is off (Settings)"
-                                                                       : "No games played yet");
-        }
+        open_recent();
         return;
     }
     if (launch_pending) {
@@ -812,6 +853,8 @@ handle_games(button_t b) {
         sound_sfx(BAUDIO_SFX_CANCEL);
         bmenu_show_main(&menu, ICON_GAME);
         screen = SCREEN_MAIN;
+    } else if (r == UIL_RECENT) {
+        open_recent();
     } else if (r == UIL_REDRAW) {
         sound_sfx(b == BTN_A || b == BTN_START ? BAUDIO_SFX_CONFIRM : (b == BTN_B ? BAUDIO_SFX_CANCEL : BAUDIO_SFX_CURSOR));
     }

@@ -1,4 +1,5 @@
 /* ui_list: navigation of the game list, see ui_list.h. */
+#include <stdio.h>
 #include <string.h>
 
 #include <stdlib.h>
@@ -221,6 +222,26 @@ move_cursor(int delta) {
     }
 }
 
+/* Up one folder, the cursor on the folder we came from. 0 at the top level. */
+static int
+folder_back(void) {
+    if (list_folder_is_root()) {
+        return 0;
+    }
+    int restored = list_folder_go_back();
+    vis_valid = 0;
+    rebuild();
+    cursor = 0;
+    for (int i = 0; i < vis_count; i++) {
+        if (vis[i] == restored) {
+            cursor = i;
+        }
+    }
+    top = cursor > UIL_VISIBLE / 2 ? cursor - UIL_VISIBLE / 2 : 0;
+    move_cursor(0);
+    return 1;
+}
+
 uil_result
 uil_button(button_t btn, const gd_item** launch) {
     const gd_item* item = uil_item(cursor);
@@ -249,10 +270,31 @@ uil_button(button_t btn, const gd_item** launch) {
                 return UIL_NONE;
             }
             if (uil_is_folder(item)) {
-                list_folder_enter(item->name, real_index(cursor));
+                if (!strcmp(item->product, "F..")) { /* "[..]": up one folder, as B */
+                    return folder_back() ? UIL_REDRAW : UIL_EXIT;
+                }
+                if (!strcmp(item->product, "RCNT")) {
+                    return UIL_RECENT;
+                }
+                if (!strcmp(item->product, "MNGE")) {
+                    return UIL_NONE;
+                }
+                /* the row shows "[name]"; the folder is called name */
+                char name[128];
+                size_t n = strlen(item->name);
+                if (n >= 2 && item->name[0] == '[' && item->name[n - 1] == ']') {
+                    n -= 2;
+                    memcpy(name, item->name + 1, n);
+                    name[n] = '\0';
+                } else {
+                    snprintf(name, sizeof(name), "%s", item->name);
+                }
+                list_folder_enter(name, real_index(cursor));
                 cursor = 0;
                 top = 0;
                 vis_valid = 0;
+                rebuild();
+                move_cursor(0);
                 return UIL_REDRAW;
             }
             if (is_set(item)) {
@@ -262,22 +304,7 @@ uil_button(button_t btn, const gd_item** launch) {
             }
             *launch = item;
             return UIL_LAUNCH;
-        case BTN_B:
-            if (!list_folder_is_root()) {
-                int restored = list_folder_go_back();
-                vis_valid = 0;
-                rebuild();
-                cursor = 0;
-                for (int i = 0; i < vis_count; i++) {
-                    if (vis[i] == restored) {
-                        cursor = i;
-                    }
-                }
-                top = cursor > UIL_VISIBLE / 2 ? cursor - UIL_VISIBLE / 2 : 0;
-                move_cursor(0);
-                return UIL_REDRAW;
-            }
-            return UIL_EXIT;
+        case BTN_B: return folder_back() ? UIL_REDRAW : UIL_EXIT;
         default: return UIL_NONE;
     }
 }

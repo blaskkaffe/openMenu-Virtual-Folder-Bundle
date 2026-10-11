@@ -44,6 +44,7 @@ typedef struct blist {
     int launching;
     int launch_frame;
     int back_selected; /* the cursor is on the BACK marker, below the last row */
+    int button;        /* the cursor is on bottom button 0..BLIST_BUTTONS-1, -1 when not (lit as in the CD player) */
     int pal_console;   /* set by the caller: the console is a PAL one (the BACK marker is blue instead of red) */
     float base[BLIST_BUTTONS + 1][3]; /* resting positions of the five buttons and the BACK marker (for the launch animation) */
     int base_valid;
@@ -70,6 +71,11 @@ void blist_launch_cancel(blist* l);
 /* The five buttons of the CD player along the bottom, without their pictures. The caller writes
  * text on them: this gives the centre of button i (pixels). */
 void blist_button_center_px(int i, float* x, float* y);
+
+/* Make bottom button i jump, as a CD player button does when pressed. */
+void blist_press_button(blist* l, int i);
+/* The bottom button under a point (pixels), -1 if none. */
+int blist_button_at_px(float x, float y);
 
 /* The BACK marker is under a point (pixels). */
 int blist_back_at_px(float x, float y);

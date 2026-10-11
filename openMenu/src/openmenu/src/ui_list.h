@@ -14,7 +14,8 @@ typedef enum {
     UIL_NONE,    /* nothing changed */
     UIL_REDRAW,  /* cursor / folder changed */
     UIL_LAUNCH,  /* *launch is the game to start */
-    UIL_EXIT     /* B pressed at the top level */
+    UIL_EXIT,    /* B pressed at the top level */
+    UIL_RECENT   /* the "Recently Played" entry was chosen */
 } uil_result;
 
 void uil_reset(void);
