@@ -60,7 +60,7 @@ typedef struct bscene_sink {
 #define BSCENE_PART_ALL (BSCENE_PART_MODEL | BSCENE_PART_TEXT)
 
 #define BSCENE_MODEL_CACHE BIOS_MODEL_COUNT
-#define BSCENE_MOTION_CACHE 16
+#define BSCENE_MOTION_CACHE 64 /* (model, motion) pairs; dropped and refilled when full */
 
 #define BSCENE_OVR_MAX 16
 

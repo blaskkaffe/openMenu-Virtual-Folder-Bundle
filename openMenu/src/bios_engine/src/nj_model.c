@@ -737,7 +737,8 @@ nj_node_matrix(const nj_node* n, const float* pos_override, const float* ang_ove
             mul3(&r, &r, &rx);
         }
     }
-    compose(out, &r, (n->eval & NJ_EVAL_NO_SCALE) ? one : scl, (n->eval & NJ_EVAL_NO_TRANSLATE) ? zero : pos);
+    compose(out, &r, (n->eval & NJ_EVAL_NO_SCALE) ? one : scl,
+            (n->eval & NJ_EVAL_NO_TRANSLATE) ? zero : pos);
 }
 
 void
@@ -751,7 +752,18 @@ nj_object_pose(const nj_object* obj, const nj_motion* motion, float frame, nj_ma
             hs = sample_channel(&motion->nodes[i].scl, frame, 0, s);
         }
         nj_mat4 local;
-        nj_node_matrix(&obj->nodes[i], hp ? p : NULL, ha ? a : NULL, hs ? s : NULL, &local);
+        if (motion) {
+            /* njDrawMotion's node walk (0x8C09558C) ignores the "unit" eval flags: every node gets its position,
+             * angles and scale -- the motion's where it has keys, the node's own otherwise -- and the angle order
+             * is the root node's for the whole object. (The File screen's selected card pulses by scaling a node
+             * marked NO_SCALE.) */
+            nj_node n = obj->nodes[i];
+            n.eval = (n.eval & ~(NJ_EVAL_NO_TRANSLATE | NJ_EVAL_NO_ROTATE | NJ_EVAL_NO_SCALE | NJ_EVAL_ZXY)) |
+                     (obj->nodes[0].eval & NJ_EVAL_ZXY);
+            nj_node_matrix(&n, hp ? p : NULL, ha ? a : NULL, hs ? s : NULL, &local);
+        } else {
+            nj_node_matrix(&obj->nodes[i], NULL, NULL, NULL, &local);
+        }
         if (obj->nodes[i].parent >= 0) {
             nj_mat_mul(&world[i], &world[obj->nodes[i].parent], &local);
         } else {

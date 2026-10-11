@@ -115,6 +115,9 @@ Drops to 30fps
 
 ### Files (memory cards)
 - [ ] Card grid: cards/VMUs present in each slot, free blocks, names
+- [ ] The selected card pulses (grows and shrinks) as in the BIOS, also after visiting the other screens first
+- [ ] BACK in Play, File, Settings and Music: coloured when selected, blinking yellow frame, identical on all four
+- [ ] Mouse pointer: moving it keeps the frame rate (compare `build` in the X overlay with the pointer still and moving)
 - [ ] File list with icons, copy to another card, delete (with confirmation text)
 - [ ] Change card icon and colour without format; memory reset (format) on a **spare** card only
 - [ ] Unplug a card while on the screen: no crash

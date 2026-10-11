@@ -86,7 +86,13 @@ get_motion(bscene* s, int model, int motion, int node_count) {
         }
     }
     if (s->motion_count >= BSCENE_MOTION_CACHE) {
-        return NULL;
+        /* full: start again (every screen uses only a few motions; what it needs is loaded again next) */
+        for (int i = 0; i < s->motion_count; i++) {
+            if (s->motions[i].state == 1) {
+                nj_motion_free(&s->motions[i].data);
+            }
+        }
+        s->motion_count = 0;
     }
     int n = s->motion_count++;
     s->motions[n].model = model;

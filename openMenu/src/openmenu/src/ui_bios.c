@@ -53,9 +53,6 @@ enum { ICON_GAME, ICON_FILES, ICON_MUSIC, ICON_SETTINGS };
 #ifndef GFX_MAIN_AUTOSORT
 #define GFX_MAIN_AUTOSORT 1
 #endif
-#ifndef GFX_PRESORT
-#define GFX_PRESORT 1
-#endif
 
 static const char* const icon_names[BMENU_ICONS] = {"Play", "File", "Music", "Settings"};
 
@@ -532,8 +529,30 @@ draw_datetime(void) {
     gfx_text("Cancel", BDT_BUTTON_X + 9.0f, BDT_CANCEL_Y - 14.0f, 0.5f, 0xFFD0D0D0u, 0);
 }
 
-/* The mouse pointer: the BIOS' green triangle (model 35) turned so its tip points to the top left
- * and sits on the pointer position. Drawn nearer than everything else. */
+/* The mouse pointer: the BIOS' green arrow (model 35, the scroll arrows of its lists) with its tip to the top left,
+ * on the pointer position, nearer than everything else.
+ *
+ * The model is drawn where it always is -- the middle of the screen, unturned, so it is lit exactly as the BIOS
+ * lights its down arrow, and the scene's output cache sends the same 7 triangles again every frame -- and this sink
+ * turns those by 225 degrees in the picture and moves them to the pointer. */
+typedef struct {
+    const bscene_sink* out;
+    float c, s, dx, dy;
+} pointer_xform;
+
+static void
+pointer_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
+    const pointer_xform* p = (const pointer_xform*)user;
+    bscene_vtx w[3];
+    for (int i = 0; i < 3; i++) {
+        float x = v[i].x - 320.0f, y = v[i].y - 240.0f;
+        w[i] = v[i];
+        w[i].x = 320.0f + p->dx + x * p->c + y * p->s;
+        w[i].y = 240.0f + p->dy - x * p->s + y * p->c;
+    }
+    p->out->triangle(p->out->user, w, tex);
+}
+
 static void
 draw_pointer(void) {
     if (!pointer.visible) {
@@ -543,21 +562,25 @@ draw_pointer(void) {
     if (sf_aspect[0] == ASPECT_WIDE) {
         ux = 320.0f + (ux - 320.0f) / 0.75f; /* the picture is squeezed: place it where the screen shows it */
     }
-    float tip = 13.6f * 0.7071f; /* the tip is 13.6 px from the model's origin, up and to the left */
-    float ox = ux + tip, oy = (float)pointer.y + tip;
+    float tip = 13.6f * 0.7071f; /* the tip is 13.6 px from the model's origin, up and to the left once turned */
+    static pointer_xform px;
+    px.out = gfx_sink();
+    px.c = -0.70710678f; /* 225 degrees, as a turn of the model about the view axis */
+    px.s = -0.70710678f;
+    px.dx = ux + tip - 320.0f;
+    px.dy = (float)pointer.y + tip - 240.0f;
+    bscene_sink sink = {&px, pointer_triangle, NULL};
     bvm_obj o;
     memset(&o, 0, sizeof(o));
     o.active = 1;
     o.flags = BVM_F_MODEL;
     o.model = 35;
     o.texlist = 35;
-    o.pos[0] = (ox - 320.0f) / 13.3333f; /* z = -300: 4000 / 300 pixels per unit */
-    o.pos[1] = (240.0f - oy) / 13.3333f;
-    o.pos[2] = -300.0f;
-    o.rot[2] = 40960; /* 225 degrees: the model's tip points down, this turns it up and to the left */
+    o.pos[2] = -300.0f; /* 4000 / 300 pixels per unit */
     o.scale_tw[0].cur = o.scale_tw[1].cur = o.scale_tw[2].cur = 1.1f;
+    menu.scene.parts = BSCENE_PART_MODEL;
+    bscene_draw_object(&menu.scene, &o, &sink);
     menu.scene.parts = BSCENE_PART_ALL;
-    bscene_draw_object(&menu.scene, &o, gfx_sink());
 }
 
 static void
@@ -578,9 +601,11 @@ draw_frame(void) {
     /* The BIOS draws its menus with the PVR sorting the translucent polygons per pixel: where an icon's parts and
      * its two copies overlap, the farther layer is always blended first. The CD player needs it too: the pictures on
      * its buttons are separate polygons in front of the buttons, and sent first in presort mode their transparent
-     * parts would hide the buttons. Other screens keep the build's default. */
+     * parts would hide the buttons. Every screen's BACK marker needs it as well: its blinking frame sits at the
+     * button's depth, and in presort mode the PVR's depth test drops it behind the button. Measured on hardware the
+     * PVR takes the same ~9 ms a frame either way. */
     {
-        int hw = gfx_set_autosort(screen == SCREEN_MAIN ? GFX_MAIN_AUTOSORT : (screen == SCREEN_MUSIC ? 1 : !GFX_PRESORT));
+        int hw = gfx_set_autosort(screen == SCREEN_MAIN ? GFX_MAIN_AUTOSORT : 1);
         menu.hw_autosort = hw; /* not sorted by the PVR: the CPU sorter takes over */
     }
     gfx_begin_frame(top, bottom);

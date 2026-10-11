@@ -460,7 +460,7 @@ main(int argc, char** argv) {
     frags = malloc(sizeof(frag) * MAX_FRAGS);
     memset(frag_head, 0xFF, sizeof(frag_head));
     /* the main menu runs with the PVR's per-pixel autosort, as the BIOS (and the console build) does */
-    g_autosort = frags && !getenv("BIOS_PREVIEW_PRESORT") && script == -1;
+    g_autosort = frags && !getenv("BIOS_PREVIEW_PRESORT") && (script == -1 || getenv("BIOS_PREVIEW_AUTOSORT"));
     menu.hw_autosort = g_autosort;
 
     static bcdplayer cdp;
