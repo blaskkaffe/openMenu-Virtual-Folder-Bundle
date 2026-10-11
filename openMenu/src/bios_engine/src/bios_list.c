@@ -25,7 +25,7 @@
 #define PILL_X (-5.45f)
 #define PILL_CAP_L (-17.1f)
 #define PILL_CAP_R 19.0f
-#define PILL_F 0.9086f
+#define PILL_F 0.9200f
 #define PILL_SCALE 0.859375f
 /* disc selector of multi-disc games: a small pill at the right end of the row, with the shiny
  * side of a CD and the disc number */

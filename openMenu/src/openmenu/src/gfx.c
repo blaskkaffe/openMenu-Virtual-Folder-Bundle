@@ -1246,6 +1246,43 @@ gfx_rrect(float x, float y, float w, float h, float r, float z, uint32_t argb) {
     }
 }
 
+/* The app's standard panel: flat, the colour of the row bars (BSCENE_PANE_ARGB), and corners shaped exactly as the
+ * right end of a row bar (model 33 as the Settings screen shows it, traced pixel by pixel): about 9 px, a little
+ * squarer than a circle. */
+static const float pane_corner[][2] = { /* inset from the side, distance from the top/bottom edge */
+    {9.5f, 0.0f}, {6.5f, 1.0f}, {4.5f, 2.0f}, {3.5f, 3.0f}, {2.5f, 4.0f}, {1.5f, 5.0f}, {0.8f, 6.5f}, {0.3f, 8.0f}, {0.0f, 9.0f}};
+#define PANE_CORNER_N ((int)(sizeof(pane_corner) / sizeof(pane_corner[0])))
+#define PANE_R 9.5f /* width of the corner */
+#define PANE_RV 9.0f /* height of the corner */
+
+void
+gfx_pane(float x, float y, float w, float h, float z, uint32_t argb) {
+    ensure_header(NULL, NULL, 0);
+    /* top and bottom bands between the corners, and the middle band */
+    float xs[3] = {x + PANE_R, x, x + PANE_R};
+    float ys[3] = {y, y + PANE_RV, y + h - PANE_RV};
+    float ws[3] = {w - 2.0f * PANE_R, w, w - 2.0f * PANE_R};
+    float hs[3] = {PANE_RV, h - 2.0f * PANE_RV, PANE_RV};
+    for (int i = 0; i < 3; i++) {
+        send_vertex(xs[i], ys[i], z, 0, 0, argb, 0);
+        send_vertex(xs[i] + ws[i], ys[i], z, 0, 0, argb, 0);
+        send_vertex(xs[i], ys[i] + hs[i], z, 0, 0, argb, 0);
+        send_vertex(xs[i] + ws[i], ys[i] + hs[i], z, 0, 0, argb, 1);
+    }
+    /* each corner: a fan from its inner point (x side + PANE_R, y side + PANE_RV) */
+    for (int c = 0; c < 4; c++) {
+        int right = c == 0 || c == 3, bottom = c >= 2;
+        float ex = right ? x + w : x, ey = bottom ? y + h : y; /* the box corner */
+        float sx = right ? -1.0f : 1.0f, sy = bottom ? -1.0f : 1.0f;
+        float ix = ex + sx * PANE_R, iy = ey + sy * PANE_RV;
+        for (int i = 0; i + 1 < PANE_CORNER_N; i++) {
+            send_vertex(ix, iy, z, 0, 0, argb, 0);
+            send_vertex(ex + sx * pane_corner[i][0], ey + sy * pane_corner[i][1], z, 0, 0, argb, 0);
+            send_vertex(ex + sx * pane_corner[i + 1][0], ey + sy * pane_corner[i + 1][1], z, 0, 0, argb, 1);
+        }
+    }
+}
+
 /* ---- Frames ------------------------------------------------------------------------------ */
 
 void
