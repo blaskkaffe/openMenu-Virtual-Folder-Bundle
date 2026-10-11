@@ -724,6 +724,8 @@ draw_datetime(void) {
  * The model is drawn where it always is -- the middle of the screen, unturned, so it is lit exactly as the BIOS
  * lights its down arrow, and the scene's output cache sends the same 7 triangles again every frame -- and this sink
  * turns those by 225 degrees in the picture and moves them to the pointer. */
+#define POINTER_NEAR 400.0f /* 1/300 -> 1.33 */
+
 typedef struct {
     const bscene_sink* out;
     float c, s, dx, dy;
@@ -738,6 +740,9 @@ pointer_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
         w[i] = v[i];
         w[i].x = 320.0f + p->dx + x * p->c + y * p->s;
         w[i].y = 240.0f + p->dy - x * p->s + y * p->c;
+        /* nearer than anything else on the screen (the PVR sorts by depth): models brought forward by near_sink are
+         * at ~0.01, text and panels at most ~0.7; scaling keeps the order of the pointer's own polygons */
+        w[i].invw = v[i].invw * POINTER_NEAR;
     }
     p->out->triangle(p->out->user, w, tex);
 }
