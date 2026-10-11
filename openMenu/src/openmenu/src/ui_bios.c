@@ -123,6 +123,13 @@ static int about_open;                /* the About box over the settings */
 static int saved_page_cursor, saved_page_top;
 static const bios_rom* g_rom;
 static mouse_t pointer;
+
+/* x of the pointer on the 640 px picture (16:9 squeezes the picture: undo that) */
+static float
+pointer_screen_x(void) {
+    float ux = (float)pointer.x;
+    return sf_aspect[0] == ASPECT_WIDE ? 320.0f + (ux - 320.0f) / 0.75f : ux;
+}
 static int settings_popup;     /* a settings row popup is open */
 static int settings_popup_sel;
 static int games_opened;  /* the game browser has been opened once (last game restored) */
@@ -428,7 +435,7 @@ draw_games(void) {
     blist_rows_extent_px(&glist, &panel_top, &panel_bottom);
     const float art_y = panel_top + 8.0f;
     /* the colour, alpha (BSCENE_PANE_ARGB) and corner radius of the row bars; just in front of the clouds (~0.0026), behind the case */
-    gfx_rrect(INFO_X - 6.0f, panel_top, INFO_W + 12.0f, panel_bottom - panel_top, 9.0f, PANE_Z, BSCENE_PANE_ARGB);
+    gfx_pane(INFO_X - 6.0f, panel_top, INFO_W + 12.0f, panel_bottom - panel_top, PANE_Z, BSCENE_PANE_ARGB);
     bcase_draw(&gcase, &menu.scene, INFO_X + INFO_W / 2.0f, art_y + ART_SIZE / 2.0f, ART_SIZE + 10.0f, case_bind, NULL,
                near_sink(gfx_sink()));
     if (cur && !uil_is_folder(cur)) {
@@ -450,26 +457,60 @@ draw_games(void) {
     }
 }
 
-/* ---- Case viewer (Y): the case large on the right two thirds, turned with the stick, zoomed with the triggers;
- * a panel on the left for the game's information. */
-#define VIEW_PANE_X 16.0f
+/* ---- Case viewer (Y, or a click on the case): the case large on the right two thirds, turned with the stick, the
+ * d-pad or by dragging with the mouse, zoomed with the triggers; a panel where the rows start, for the game's
+ * information; the BACK marker selected (A, B, Y or a click on it leave). Turning and zooming ease towards where they
+ * are heading as the cases of the list do. */
+#define VIEW_PANE_X 40.0f /* where the rows start */
 #define VIEW_PANE_W 190.0f
-#define VIEW_CX 426.0f
+#define VIEW_CX 440.0f
 #define VIEW_SIZE 300.0f
 #define VIEW_ZOOM_MIN 0.5f
 #define VIEW_ZOOM_MAX 2.2f
+#define VIEW_EASE 0.26f /* bios_case EASE: the share of the remaining way covered per frame */
+#define VIEW_DPAD_STEP 45.0f
 
-static float viewer_rot[2]; /* degrees about x (stick up/down) and y (stick left/right) */
-static float viewer_zoom = 1.0f;
+static float viewer_rot[2], viewer_target[2]; /* degrees about x (up/down) and y (left/right) */
+static float viewer_zoom = 1.0f, viewer_zoom_target = 1.0f;
+static int drag_x, drag_y, dragging;
 
+static void
+viewer_reset(void) {
+    viewer_rot[0] = viewer_rot[1] = viewer_target[0] = viewer_target[1] = 0.0f;
+    viewer_zoom = viewer_zoom_target = 1.0f;
+    dragging = 0;
+}
+
+/* once per logic frame */
 static void
 viewer_step(void) {
     int jx, jy, lt, rt;
     input_analog(&jx, &jy, &lt, &rt);
-    viewer_rot[1] += (float)jx * 0.03f; /* full deflection: about 230 degrees a second */
-    viewer_rot[0] += (float)jy * 0.03f;
-    viewer_zoom *= 1.0f + (float)(rt - lt) * (0.02f / 255.0f);
-    viewer_zoom = viewer_zoom < VIEW_ZOOM_MIN ? VIEW_ZOOM_MIN : (viewer_zoom > VIEW_ZOOM_MAX ? VIEW_ZOOM_MAX : viewer_zoom);
+    viewer_target[1] += (float)jx * 0.03f; /* full deflection: about 230 degrees a second */
+    viewer_target[0] += (float)jy * 0.03f;
+    viewer_zoom_target *= 1.0f + (float)(rt - lt) * (0.02f / 255.0f);
+    viewer_zoom_target = viewer_zoom_target < VIEW_ZOOM_MIN ? VIEW_ZOOM_MIN
+                                                            : (viewer_zoom_target > VIEW_ZOOM_MAX ? VIEW_ZOOM_MAX : viewer_zoom_target);
+    for (int k = 0; k < 2; k++) {
+        viewer_rot[k] += (viewer_target[k] - viewer_rot[k]) * VIEW_EASE;
+    }
+    viewer_zoom += (viewer_zoom_target - viewer_zoom) * VIEW_EASE;
+}
+
+/* once per frame: dragging with the left button held turns the case with the pointer */
+static void
+viewer_drag(const mouse_t* p) {
+    if (!p->left) {
+        dragging = 0;
+        return;
+    }
+    if (dragging) {
+        viewer_target[1] += (float)(p->x - drag_x) * 0.6f;
+        viewer_target[0] += (float)(p->y - drag_y) * 0.6f;
+    }
+    dragging = 1;
+    drag_x = p->x;
+    drag_y = p->y;
 }
 
 static void
@@ -477,7 +518,7 @@ draw_viewer(void) {
     char lines[3][20];
     float top, bottom;
     blist_rows_extent_px(&glist, &top, &bottom);
-    gfx_rrect(VIEW_PANE_X, top, VIEW_PANE_W, bottom - top, 9.0f, PANE_Z, BSCENE_PANE_ARGB);
+    gfx_pane(VIEW_PANE_X, top, VIEW_PANE_W, bottom - top, PANE_Z, BSCENE_PANE_ARGB);
     const gd_item* cur = uil_item(uil_cursor());
     if (cur) {
         float y = top + 10.0f;
@@ -497,21 +538,40 @@ draw_viewer(void) {
     float rot[3] = {viewer_rot[0], viewer_rot[1], 0.0f};
     bcase_draw_posed(&gcase, &menu.scene, VIEW_CX, (top + bottom) / 2.0f, VIEW_SIZE * viewer_zoom, rot, case_bind, NULL,
                      near_sink(gfx_sink()));
+    /* the BACK marker of the list, selected: lit, its frame blinking */
+    const bvm_obj* back = bvm_find(&menu.vm, 0x1110);
+    if (back) {
+        bmenu_back_style(&menu, 1, glist.anim, glist.pal_console);
+        menu.scene.parts = BSCENE_PART_ALL;
+        bscene_draw_object(&menu.scene, back, gfx_sink());
+        menu.scene.ovr_n = 0;
+    }
+}
+
+static void
+close_viewer(void) {
+    viewer_open = 0;
+    dragging = 0;
+    sound_sfx(BAUDIO_SFX_CANCEL);
 }
 
 static void
 handle_viewer(button_t b) {
     switch (b) {
         case BTN_Y:
-        case BTN_B:
-            viewer_open = 0;
-            sound_sfx(BAUDIO_SFX_CANCEL);
+        case BTN_B: close_viewer(); break;
+        case BTN_A:
+        case BTN_START:
+            /* BACK is the selected item; a click only leaves when it is on BACK (elsewhere it starts a drag) */
+            if (!pointer.clicked || blist_back_at_px(pointer_screen_x(), (float)pointer.y)) {
+                close_viewer();
+            }
             break;
-        case BTN_LEFT: viewer_rot[1] -= 15.0f; break; /* the d-pad turns it in steps */
-        case BTN_RIGHT: viewer_rot[1] += 15.0f; break;
-        case BTN_UP: viewer_rot[0] -= 15.0f; break;
-        case BTN_DOWN: viewer_rot[0] += 15.0f; break;
-        case BTN_A: viewer_rot[0] = viewer_rot[1] = 0.0f; viewer_zoom = 1.0f; break; /* back to the front */
+        case BTN_LEFT: viewer_target[1] -= VIEW_DPAD_STEP; break; /* eased there, as a held stick would */
+        case BTN_RIGHT: viewer_target[1] += VIEW_DPAD_STEP; break;
+        case BTN_UP: viewer_target[0] -= VIEW_DPAD_STEP; break;
+        case BTN_DOWN: viewer_target[0] += VIEW_DPAD_STEP; break;
+        case BTN_X: viewer_reset(); break; /* back to the front */
         default: break;
     }
 }
@@ -896,6 +956,15 @@ open_recent(void) {
     }
 }
 
+/* The case of the right panel is under a point (pixels). */
+static int
+case_at_px(float x, float y) {
+    float top, bottom;
+    blist_rows_extent_px(&glist, &top, &bottom);
+    float art_y = top + 8.0f;
+    return x >= INFO_X - 6.0f && x <= INFO_X + INFO_W + 6.0f && y >= art_y - 10.0f && y <= art_y + ART_SIZE + 10.0f;
+}
+
 static void
 handle_games(button_t b) {
     const gd_item* game = NULL;
@@ -953,12 +1022,13 @@ handle_games(button_t b) {
         sound_sfx(BAUDIO_SFX_CURSOR);
         return;
     }
-    if (b == BTN_Y) {
+    int on_case = b == BTN_A && pointer.clicked && case_at_px(pointer_screen_x(), (float)pointer.y);
+    if (b == BTN_Y || on_case) { /* Y, or a click on the case: the case viewer */
         const gd_item* cur = uil_item(uil_cursor());
-        if (cur && !uil_is_folder(cur) && !glist.back_selected) {
+        if (cur && !uil_is_folder(cur) && (on_case || !glist.back_selected)) {
+            glist.back_selected = 0;
             viewer_open = 1;
-            viewer_rot[0] = viewer_rot[1] = 0.0f;
-            viewer_zoom = 1.0f;
+            viewer_reset();
             sound_sfx(BAUDIO_SFX_ENTER);
         } else {
             sound_sfx(BAUDIO_SFX_ERROR);
@@ -1327,6 +1397,9 @@ ui_bios_run(const bios_rom* rom) {
         uint64_t logic_t0 = timer_us_gettime64();
         button_t b = input_poll();
         input_mouse(&pointer);
+        if (screen == SCREEN_GAMES && viewer_open) {
+            viewer_drag(&pointer);
+        }
         if (pointer.moved) {
             apply_hover();
         }

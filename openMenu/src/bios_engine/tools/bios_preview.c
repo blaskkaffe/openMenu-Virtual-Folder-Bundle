@@ -721,14 +721,18 @@ main(int argc, char** argv) {
         float pt, pb;
         blist_rows_extent_px(&list, &pt, &pb);
         for (int y = (int)pt; y < (int)pb; y++) /* the pane, square corners are close enough here */
-            for (int x = 16; x < 206; x++)
+            for (int x = 40; x < 230; x++)
                 for (int k = 0; k < 3; k++) {
                     static const float c[3] = {0x44 / 255.0f, 0x44 / 255.0f, 0x79 / 255.0f};
                     fb[y][x][k] = fb[y][x][k] * 0.3f + c[k] * 0.7f;
                 }
         float rot[3] = {rx, ry, 0};
         bscene_sink nears = {&sink, near_tri, NULL};
-        bcase_draw_posed(&bc, &menu.scene, 426.0f, (pt + pb) / 2.0f, 300.0f * zoom, rot, NULL, NULL, &nears);
+        bcase_draw_posed(&bc, &menu.scene, 440.0f, (pt + pb) / 2.0f, 300.0f * zoom, rot, NULL, NULL, &nears);
+        bmenu_back_style(&menu, 1, 0, 0);
+        menu.scene.parts = BSCENE_PART_ALL;
+        bscene_draw_object(&menu.scene, bvm_find(&menu.vm, 0x1110), &sink);
+        menu.scene.ovr_n = 0;
     } else if (script == -3 || script == -4) {
         bscene_draw_background(&menu.bg, &sink);
         blist_draw(&list, &sink);

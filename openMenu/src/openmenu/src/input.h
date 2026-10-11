@@ -42,6 +42,8 @@ typedef struct {
     int visible; /* it has moved lately: draw the pointer */
     int x, y;
     int moved;   /* moved since the last call */
+    int left;    /* the left button is held (dragging) */
+    int clicked; /* this frame's button event came from a mouse click (where: x, y) */
 } mouse_t;
 
 void input_mouse(mouse_t* out);
