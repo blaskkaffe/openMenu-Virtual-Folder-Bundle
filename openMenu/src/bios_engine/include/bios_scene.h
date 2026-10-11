@@ -43,6 +43,7 @@ typedef enum bscene_tex_kind {
 typedef struct bscene_texref {
     int kind;
     int a, b;
+    int uv; /* how u and v go on past 0..1: NJ_TEX_FLIP_U/V, NJ_TEX_CLAMP_U/V, 0 = repeat */
 } bscene_texref;
 
 typedef struct bscene_sink {
@@ -117,6 +118,9 @@ void bscene_draw_object(bscene* s, const bvm_obj* obj, const bscene_sink* sink);
  * 0xFFE00070 and light grey 0xFFE0E0E0), the body is dark and translucent. Drawn like any object:
  * what is submitted afterwards goes on top. */
 #define BSCENE_PANEL_Z (-335.9375f)
+/* The standard colour of the app's own flat panels: exactly what the row bars of the Settings and game list screens
+ * show (model 33 lit by the menu light, measured), 70 % opaque. */
+#define BSCENE_PANE_ARGB 0xB2444479u
 #define BSCENE_PANEL_MODEL 39
 void bscene_draw_panel(bscene* s, float x, float y, float w, float h, uint32_t accent, const bscene_sink* sink);
 

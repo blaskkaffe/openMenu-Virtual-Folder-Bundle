@@ -46,6 +46,7 @@ typedef struct nj_poly {
     uint8_t has_uv;
     uint8_t blend;        /* blend chunk flags (src/dst alpha modes), 0 when absent */
     uint8_t strip_flags;  /* flag byte of the strip chunk header (culling, double side...) */
+    uint8_t tex_flags;    /* flag byte of the texture chunk: NJ_TEX_FLIP_U/V, NJ_TEX_CLAMP_U/V */
     int ntris;
     nj_corner* corners;   /* 3 * ntris entries */
 } nj_poly;
@@ -56,6 +57,12 @@ typedef struct nj_mesh {
     int npolys;
     nj_poly* polys;
 } nj_mesh;
+
+/* texture chunk flags (nj_poly.tex_flags) */
+#define NJ_TEX_FLIP_U 0x80  /* mirrored every other repeat */
+#define NJ_TEX_FLIP_V 0x40
+#define NJ_TEX_CLAMP_U 0x20
+#define NJ_TEX_CLAMP_V 0x10
 
 /* eval flags of an NJS_OBJECT node */
 #define NJ_EVAL_NO_TRANSLATE 0x01

@@ -253,6 +253,7 @@ parse_plist(reader* r, uint32_t a, nj_mesh* m) {
         }
         if (t == 8 || t == 9) {
             tex = rd_u16(r, a + 2) & 0x1FFF;
+            state.tex_flags = fl; /* flip / clamp of u and v (NJD_FST_*) */
             a += 4;
             continue;
         }

@@ -124,6 +124,8 @@ static int num_labels;
 /* Last polygon header sent in the translucent list; avoids re-sending identical state. */
 static pvr_ptr_t last_ptr;
 static int last_untextured;
+static int last_uv;  /* NJ_TEX_* flip / clamp bits of the current header */
+static int hdr_uv;   /* the ones the next header gets (set by sink_triangle, 0 for everything else) */
 static int hdr_valid;
 
 static uint16_t text_canvas[MAX_TEXT_W * GFX_LINE_H] __attribute__((aligned(32)));
@@ -649,6 +651,9 @@ send_header_tr(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
         pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY, tex->fmt, tex->w, tex->h, tex->ptr,
                          tex->nearest ? PVR_FILTER_NONE : PVR_FILTER_BILINEAR);
         cxt.gen.specular = PVR_SPECULAR_ENABLE; /* the offset colour: the BIOS' specular on textured strips */
+        /* the model's texture chunk: mirror or hold u and v past 0..1 (the disc's hub is a quarter, mirrored) */
+        cxt.txr.uv_flip = ((hdr_uv & NJ_TEX_FLIP_U) ? PVR_UVFLIP_U : 0) | ((hdr_uv & NJ_TEX_FLIP_V) ? PVR_UVFLIP_V : 0);
+        cxt.txr.uv_clamp = ((hdr_uv & NJ_TEX_CLAMP_U) ? PVR_UVCLAMP_U : 0) | ((hdr_uv & NJ_TEX_CLAMP_V) ? PVR_UVCLAMP_V : 0);
     } else if (text_ptr) {
         pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY, PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED, text_w, GFX_LINE_H, text_ptr,
                          PVR_FILTER_NONE);
@@ -673,12 +678,17 @@ ensure_header(const rom_tex* tex, pvr_ptr_t text_ptr, int text_w) {
     strip_close();
     pvr_ptr_t key = tex ? tex->ptr : text_ptr;
     int untextured = (key == NULL);
-    if (hdr_valid && key == last_ptr && untextured == last_untextured) {
+    int uv = tex ? hdr_uv : 0;
+    hdr_uv = 0;
+    if (hdr_valid && key == last_ptr && untextured == last_untextured && uv == last_uv) {
         return;
     }
+    hdr_uv = uv;
     send_header_tr(tex, text_ptr, text_w);
+    hdr_uv = 0;
     last_ptr = key;
     last_untextured = untextured;
+    last_uv = uv;
     hdr_valid = 1;
 }
 
@@ -727,6 +737,7 @@ put_vertex(float x, float y, float z, float u, float v, uint32_t argb, int last)
  * waits here until it is known whether the strip goes on. */
 static bscene_vtx strip_l1, strip_l2;
 static const rom_tex* strip_tex;
+static int strip_uv;
 static int strip_pending;
 
 static void
@@ -764,7 +775,7 @@ sink_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
         }
     }
     tri_count++;
-    if (strip_pending && tex == strip_tex) {
+    if (strip_pending && tex == strip_tex && ref.uv == strip_uv) {
         int a = -1, b = -1;
         for (int i = 0; i < 3; i++) {
             if (a < 0 && !memcmp(&v[i], &strip_l1, sizeof(bscene_vtx))) {
@@ -780,7 +791,9 @@ sink_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
             return;
         }
     }
+    hdr_uv = ref.uv;
     ensure_header(tex, NULL, 0); /* also ends a pending strip */
+    strip_uv = ref.uv;
     strip_vertex(&v[0], tex, 0);
     strip_vertex(&v[1], tex, 0);
     strip_l1 = v[1];

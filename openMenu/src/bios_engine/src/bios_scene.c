@@ -685,6 +685,7 @@ draw_model:
                         tex.kind = BSCENE_TEX_TEXLIST;
                         tex.a = o->texlist;
                         tex.b = poly->tex;
+                        tex.uv = poly->tex_flags & (NJ_TEX_FLIP_U | NJ_TEX_FLIP_V | NJ_TEX_CLAMP_U | NJ_TEX_CLAMP_V);
                     }
                     uint32_t diffuse = poly->has_diffuse ? poly->diffuse : 0u;
                     int forced = 0; /* a colour the scripts pick is shown as it is */
