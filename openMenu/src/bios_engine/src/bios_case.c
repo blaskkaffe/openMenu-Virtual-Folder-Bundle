@@ -102,3 +102,18 @@ bcase_draw(const bcase* c, bscene* s, float cx, float cy, float size_px, bcase_b
     draw_item(c, &c->old, s, cx, cy, size_px, bind, user, sink);
     draw_item(c, &c->cur, s, cx, cy, size_px, bind, user, sink);
 }
+
+void
+bcase_draw_posed(const bcase* c, bscene* s, float cx, float cy, float size_px, const float rot[3], bcase_bind_fn bind,
+                 void* user, const bscene_sink* sink) {
+    const bcase_item* it = &c->cur;
+    if (!it->active) {
+        return;
+    }
+    if (bind) {
+        bind(user, it->tag);
+    }
+    float r[3] = {rot[0], rot[1], rot[2]};
+    float scale = size_px * (-BSCENE_PANEL_Z / 4000.0f) / BMODEL_CASE_HEIGHT;
+    bscene_draw_model(s, it->model, cx, cy, scale, r, sink);
+}

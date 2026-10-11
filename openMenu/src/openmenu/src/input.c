@@ -20,6 +20,7 @@
 #define KEY_ESCAPE 0x29
 #define KEY_BACKSPACE 0x2A
 #define KEY_TAB 0x2B
+#define KEY_SPACE 0x2C
 #define KEY_PGUP 0x4B
 #define KEY_PGDOWN 0x4E
 #define KEY_RIGHT 0x4F
@@ -50,6 +51,8 @@ pad_poll(void) {
         out = BTN_B;
     } else if (edge & CONT_X) {
         out = BTN_X;
+    } else if (edge & CONT_Y) {
+        out = BTN_Y;
     } else if (edge & CONT_START) {
         out = BTN_START;
     } else if (now & DPAD_MASK) {
@@ -143,6 +146,7 @@ keyboard_poll(void) {
         case KEY_ESCAPE:
         case KEY_BACKSPACE: return BTN_B;
         case KEY_TAB: return BTN_X;
+        case KEY_SPACE: return BTN_Y;
         case KEY_PGUP: return BTN_PAGE_UP;
         case KEY_PGDOWN: return BTN_PAGE_DOWN;
         default: return BTN_NONE;
@@ -172,6 +176,17 @@ input_typed_char(void) {
 void
 input_mouse(mouse_t* out) {
     *out = mouse;
+}
+
+void
+input_analog(int* x, int* y, int* ltrig, int* rtrig) {
+    maple_device_t* dev = maple_enum_type(0, MAPLE_FUNC_CONTROLLER);
+    cont_state_t* st = dev ? (cont_state_t*)maple_dev_status(dev) : NULL;
+    int jx = st ? st->joyx : 0, jy = st ? st->joyy : 0;
+    *x = jx > -12 && jx < 12 ? 0 : jx; /* a resting stick is seldom exactly in the middle */
+    *y = jy > -12 && jy < 12 ? 0 : jy;
+    *ltrig = st ? st->ltrig : 0;
+    *rtrig = st ? st->rtrig : 0;
 }
 
 uint32_t

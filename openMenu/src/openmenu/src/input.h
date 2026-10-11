@@ -12,6 +12,7 @@ typedef enum {
     BTN_A,
     BTN_B,
     BTN_X,
+    BTN_Y,
     BTN_START,
     BTN_PAGE_UP,  /* keyboard Page Up / mouse wheel with shift: a page of rows */
     BTN_PAGE_DOWN
@@ -23,6 +24,10 @@ typedef enum {
  * directions repeat while held (0.4 s, then every 5 frames); buttons fire once per press. Call once
  * per frame. */
 button_t input_poll(void);
+
+/* The analog stick of controller port A (-128..127 each, 0 in the middle, small deflections read as 0) and the
+ * triggers (0..255). All 0 without a controller. */
+void input_analog(int* x, int* y, int* ltrig, int* rtrig);
 
 /* Raw button mask of controller port A (CONT_* bits), for debug overlays. */
 uint32_t input_buttons(void);

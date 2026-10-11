@@ -710,6 +710,25 @@ main(int argc, char** argv) {
     } else if (script == -7 || script == -10) {
         bscene_draw_background(&menu.bg, &sink);
         bmenu_draw_objects(&menu, &sink);
+    } else if ((script == -3 || script == -4) && getenv("BIOS_PREVIEW_VIEWER")) { /* "rx,ry,zoom": ui_bios draw_viewer */
+        float rx = 0, ry = 0, zoom = 1;
+        sscanf(getenv("BIOS_PREVIEW_VIEWER"), "%f,%f,%f", &rx, &ry, &zoom);
+        bscene_draw_background(&menu.bg, &sink);
+        static bcase bc;
+        bcase_init(&bc);
+        bcase_show(&bc, BMODEL_CASE_PAL, "A", 1);
+        for (int i = 0; i < 200; i++) bcase_step(&bc);
+        float pt, pb;
+        blist_rows_extent_px(&list, &pt, &pb);
+        for (int y = (int)pt; y < (int)pb; y++) /* the pane, square corners are close enough here */
+            for (int x = 16; x < 206; x++)
+                for (int k = 0; k < 3; k++) {
+                    static const float c[3] = {0x44 / 255.0f, 0x44 / 255.0f, 0x79 / 255.0f};
+                    fb[y][x][k] = fb[y][x][k] * 0.3f + c[k] * 0.7f;
+                }
+        float rot[3] = {rx, ry, 0};
+        bscene_sink nears = {&sink, near_tri, NULL};
+        bcase_draw_posed(&bc, &menu.scene, 426.0f, (pt + pb) / 2.0f, 300.0f * zoom, rot, NULL, NULL, &nears);
     } else if (script == -3 || script == -4) {
         bscene_draw_background(&menu.bg, &sink);
         blist_draw(&list, &sink);

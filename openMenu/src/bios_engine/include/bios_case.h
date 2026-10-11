@@ -49,6 +49,11 @@ typedef void (*bcase_bind_fn)(void* user, const char* tag);
 void bcase_draw(const bcase* c, bscene* s, float cx, float cy, float size_px, bcase_bind_fn bind, void* user,
                 const bscene_sink* sink);
 
+/* The case being shown, alone, centred on (cx, cy) and turned by rot (degrees about x, y, z): the case viewer.
+ * Nothing if there is none. */
+void bcase_draw_posed(const bcase* c, bscene* s, float cx, float cy, float size_px, const float rot[3], bcase_bind_fn bind,
+                      void* user, const bscene_sink* sink);
+
 #ifdef __cplusplus
 }
 #endif

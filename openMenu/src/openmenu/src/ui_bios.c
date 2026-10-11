@@ -324,36 +324,42 @@ games_sync(void) {
     blist_sync(&glist);
 }
 
-/* Text on the five buttons at the bottom (the CD player's buttons without their pictures):
- * product code, region, players, VMU blocks, discs. */
+/* The five buttons along the bottom (the CD player's, without their pictures) are the list's tools: X moves the cursor
+ * there. The leftmost is the recently played list; the others are still free. */
+static const char* const button_names[BLIST_BUTTONS] = {"Recent", "", "", "", ""};
+
 static void
-draw_button_text(const gd_item* cur) {
-    char text[BLIST_BUTTONS][12];
+draw_button_text(void) {
     for (int i = 0; i < BLIST_BUTTONS; i++) {
-        text[i][0] = '\0';
-    }
-    if (cur && !uil_is_folder(cur)) {
-        snprintf(text[0], sizeof(text[0]), "%.6s", cur->product);
-        snprintf(text[1], sizeof(text[1]), "%.4s", cur->region);
-        int discs = cur->product[0] ? gd_item_disc_total(cur->disc) : 1;
-        snprintf(text[4], sizeof(text[4]), "%dD", discs > 0 ? discs : 1);
-        struct db_item* meta = NULL;
-        if (have_meta && !db_get_meta(cur->product, &meta) && meta) {
-            if (meta->num_players) {
-                snprintf(text[2], sizeof(text[2]), "%dP", meta->num_players);
-            }
-            if (meta->vmu_blocks) {
-                snprintf(text[3], sizeof(text[3]), "%dB", meta->vmu_blocks);
-            }
-        }
-    }
-    for (int i = 0; i < BLIST_BUTTONS; i++) {
-        if (text[i][0]) {
+        if (button_names[i][0]) {
             float x, y;
             blist_button_center_px(i, &x, &y);
-            gfx_text(text[i], x - (float)gfx_text_width(text[i]) / 2.0f, y - (float)GFX_LINE_H / 2.0f, 0.5f, 0xFFFFFFFFu, 1);
+            gfx_text(button_names[i], x - (float)gfx_text_width(button_names[i]) / 2.0f, y - (float)GFX_LINE_H / 2.0f, 0.5f,
+                     0xFFFFFFFFu, 1);
         }
     }
+}
+
+/* What we know of a game for the info panel: product code and region, then players, VMU blocks and discs. */
+static int
+game_info_lines(const gd_item* cur, char out[2][24]) {
+    out[0][0] = out[1][0] = '\0';
+    if (!cur || uil_is_folder(cur)) {
+        return 0;
+    }
+    snprintf(out[0], sizeof(out[0]), "%.10s %.4s", cur->product, cur->region);
+    int discs = cur->product[0] ? gd_item_disc_total(cur->disc) : 1;
+    int players = 0, blocks = 0;
+    struct db_item* meta = NULL;
+    if (have_meta && !db_get_meta(cur->product, &meta) && meta) {
+        players = meta->num_players;
+        blocks = meta->vmu_blocks;
+    }
+    char p[8] = "", v[8] = "";
+    if (players) snprintf(p, sizeof(p), "%dP ", players);
+    if (blocks) snprintf(v, sizeof(v), "%dB ", blocks);
+    snprintf(out[1], sizeof(out[1]), "%s%s%dD", p, v, discs > 0 ? discs : 1);
+    return 2;
 }
 
 /* The PVR sorts the translucent polygons by depth (autosort): our own panels lie at a fixed depth, and a model meant to
@@ -390,9 +396,16 @@ near_sink(const bscene_sink* out) {
     return &s;
 }
 
+static void draw_viewer(void);
+static int viewer_open;
+
 static void
 draw_games(void) {
     char lines[3][20];
+    if (viewer_open) {
+        draw_viewer();
+        return;
+    }
     blist_draw(&glist, gfx_sink());
     if (uil_count() <= 0) {
         gfx_text("No games found.", 64.0f, 200.0f, 0.5f, 0xFFFFFFFFu, 1);
@@ -402,7 +415,7 @@ draw_games(void) {
         return;
     }
     const gd_item* cur = uil_item(uil_cursor());
-    draw_button_text(cur);
+    draw_button_text();
     float panel_top, panel_bottom;
     blist_rows_extent_px(&glist, &panel_top, &panel_bottom);
     const float art_y = panel_top + 8.0f;
@@ -417,10 +430,82 @@ draw_games(void) {
             gfx_text(lines[i], INFO_X, y, 0.5f, 0xFFFFFFFFu, 1);
             y += GFX_LINE_H - 4.0f;
         }
+        char info[2][24];
+        int k = game_info_lines(cur, info);
+        y = panel_bottom - 8.0f - (float)k * (GFX_LINE_H - 4.0f);
+        for (int i = 0; i < k; i++) {
+            gfx_text(info[i], INFO_X, y, 0.5f, 0xFFC0C0C0u, 1);
+            y += GFX_LINE_H - 4.0f;
+        }
     } else if (cur) {
         gfx_text("Folder", INFO_X, art_y, 0.5f, 0xFFFFFFFFu, 1);
     }
-    gfx_text("A:go X:recent", INFO_X, panel_bottom - 34.0f, 0.5f, 0xFFA0A0A0u, 0); /* B is the BACK marker */
+}
+
+/* ---- Case viewer (Y): the case large on the right two thirds, turned with the stick, zoomed with the triggers;
+ * a panel on the left for the game's information. */
+#define VIEW_PANE_X 16.0f
+#define VIEW_PANE_W 190.0f
+#define VIEW_CX 426.0f
+#define VIEW_SIZE 300.0f
+#define VIEW_ZOOM_MIN 0.5f
+#define VIEW_ZOOM_MAX 2.2f
+
+static float viewer_rot[2]; /* degrees about x (stick up/down) and y (stick left/right) */
+static float viewer_zoom = 1.0f;
+
+static void
+viewer_step(void) {
+    int jx, jy, lt, rt;
+    input_analog(&jx, &jy, &lt, &rt);
+    viewer_rot[1] += (float)jx * 0.03f; /* full deflection: about 230 degrees a second */
+    viewer_rot[0] += (float)jy * 0.03f;
+    viewer_zoom *= 1.0f + (float)(rt - lt) * (0.02f / 255.0f);
+    viewer_zoom = viewer_zoom < VIEW_ZOOM_MIN ? VIEW_ZOOM_MIN : (viewer_zoom > VIEW_ZOOM_MAX ? VIEW_ZOOM_MAX : viewer_zoom);
+}
+
+static void
+draw_viewer(void) {
+    char lines[3][20];
+    float top, bottom;
+    blist_rows_extent_px(&glist, &top, &bottom);
+    gfx_rrect(VIEW_PANE_X, top, VIEW_PANE_W, bottom - top, 9.0f, PANE_Z, BSCENE_PANE_ARGB);
+    const gd_item* cur = uil_item(uil_cursor());
+    if (cur) {
+        float y = top + 10.0f;
+        int n = wrap_text(cur->name, 15, lines, 3);
+        for (int i = 0; i < n; i++) {
+            gfx_text(lines[i], VIEW_PANE_X + 10.0f, y, 0.5f, 0xFFFFFFFFu, 1);
+            y += GFX_LINE_H - 4.0f;
+        }
+        char info[2][24];
+        int k = game_info_lines(cur, info);
+        y += 8.0f;
+        for (int i = 0; i < k; i++) {
+            gfx_text(info[i], VIEW_PANE_X + 10.0f, y, 0.5f, 0xFFC0C0C0u, 1);
+            y += GFX_LINE_H - 4.0f;
+        }
+    }
+    float rot[3] = {viewer_rot[0], viewer_rot[1], 0.0f};
+    bcase_draw_posed(&gcase, &menu.scene, VIEW_CX, (top + bottom) / 2.0f, VIEW_SIZE * viewer_zoom, rot, case_bind, NULL,
+                     near_sink(gfx_sink()));
+}
+
+static void
+handle_viewer(button_t b) {
+    switch (b) {
+        case BTN_Y:
+        case BTN_B:
+            viewer_open = 0;
+            sound_sfx(BAUDIO_SFX_CANCEL);
+            break;
+        case BTN_LEFT: viewer_rot[1] -= 15.0f; break; /* the d-pad turns it in steps */
+        case BTN_RIGHT: viewer_rot[1] += 15.0f; break;
+        case BTN_UP: viewer_rot[0] -= 15.0f; break;
+        case BTN_DOWN: viewer_rot[0] += 15.0f; break;
+        case BTN_A: viewer_rot[0] = viewer_rot[1] = 0.0f; viewer_zoom = 1.0f; break; /* back to the front */
+        default: break;
+    }
 }
 
 #define POPUP_X 120.0f
@@ -725,6 +810,7 @@ handle_main(button_t b) {
                     }
                 }
                 blist_open(&glist, &menu, UIL_VISIBLE, uil_count());
+                viewer_open = 0;
                 blist_set_cursor(&glist, uil_cursor());
                 screen = SCREEN_GAMES;
             } else if (menu.selected == ICON_FILES) {
@@ -809,14 +895,75 @@ handle_games(button_t b) {
         handle_recent(b);
         return;
     }
-    if (b == BTN_X) {
-        open_recent();
-        return;
-    }
     if (launch_pending) {
         return; /* the launch animation is running */
     }
+    if (viewer_open) {
+        handle_viewer(b);
+        return;
+    }
+    if (glist.button >= 0) {
+        /* the cursor is on the buttons along the bottom: left of the first is BACK, as in the CD player */
+        switch (b) {
+            case BTN_LEFT:
+                if (glist.button > 0) {
+                    glist.button--;
+                } else {
+                    glist.button = -1;
+                    glist.back_selected = 1;
+                }
+                sound_sfx(BAUDIO_SFX_CURSOR);
+                break;
+            case BTN_RIGHT:
+                if (glist.button < BLIST_BUTTONS - 1) {
+                    glist.button++;
+                    sound_sfx(BAUDIO_SFX_CURSOR);
+                }
+                break;
+            case BTN_UP:
+            case BTN_X:
+            case BTN_B:
+                glist.button = -1;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+                break;
+            case BTN_A:
+            case BTN_START:
+                blist_press_button(&glist, glist.button);
+                if (glist.button == 0) {
+                    open_recent();
+                } else {
+                    sound_sfx(BAUDIO_SFX_ERROR);
+                }
+                break;
+            default: break;
+        }
+        return;
+    }
+    if (b == BTN_X) { /* to the buttons */
+        glist.back_selected = 0;
+        glist.button = 0;
+        sound_sfx(BAUDIO_SFX_CURSOR);
+        return;
+    }
+    if (b == BTN_Y) {
+        const gd_item* cur = uil_item(uil_cursor());
+        if (cur && !uil_is_folder(cur) && !glist.back_selected) {
+            viewer_open = 1;
+            viewer_rot[0] = viewer_rot[1] = 0.0f;
+            viewer_zoom = 1.0f;
+            sound_sfx(BAUDIO_SFX_ENTER);
+        } else {
+            sound_sfx(BAUDIO_SFX_ERROR);
+        }
+        return;
+    }
     if (glist.back_selected) {
+        if (b == BTN_RIGHT) { /* along the bottom row to the buttons */
+            glist.back_selected = 0;
+            glist.button = 0;
+            sound_sfx(BAUDIO_SFX_CURSOR);
+            return;
+        }
         /* the cursor is on the BACK marker below the last row: up goes back to the list, A leaves */
         if (b == BTN_UP) {
             glist.back_selected = 0;
@@ -1081,14 +1228,28 @@ apply_hover(void) {
             if (launch_pending) {
                 break;
             }
+            if (viewer_open) {
+                break;
+            }
             if (blist_back_at_px(ux, uy)) {
                 if (!glist.back_selected) sound_sfx(BAUDIO_SFX_CURSOR);
                 glist.back_selected = 1;
+                glist.button = -1;
                 break;
+            }
+            {
+                int bt = blist_button_at_px(ux, uy);
+                if (bt >= 0) {
+                    if (bt != glist.button) sound_sfx(BAUDIO_SFX_CURSOR);
+                    glist.button = bt;
+                    glist.back_selected = 0;
+                    break;
+                }
             }
             int row = blist_row_in_slot(&glist, blist_slot_at_px(&glist, ux, uy));
             if (row >= 0) {
                 glist.back_selected = 0;
+                glist.button = -1;
                 if (row != uil_cursor()) {
                     uil_set_cursor(row);
                     sound_sfx(BAUDIO_SFX_CURSOR);
@@ -1200,6 +1361,9 @@ ui_bios_run(const bios_rom* rom) {
             bmenu_update(&menu);
             if (fade_step < FADE_STEPS) {
                 fade_step++;
+            }
+            if (screen == SCREEN_GAMES && viewer_open) {
+                viewer_step();
             }
             if (screen == SCREEN_FILES && uif_step()) {
                 bmenu_show_main(&menu, ICON_FILES);
