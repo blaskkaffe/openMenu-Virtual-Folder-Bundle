@@ -26,6 +26,7 @@ static const char* const on_off[] = {"Off", "On"};
 static const char* const aspect_modes[] = {"4:3", "16:9"};
 static const char* const boot_modes[] = {"Full", "License only", "Animation only", "Fast"};
 static const char* const disc_exit[] = {"Standard", "Alternate", "Alternate 3D"};
+static const char* const music_names[] = {"Music", "Internet"};
 
 /* To add a setting, add a row here (and the choice names above). */
 static const row_def rows[] = {
@@ -34,16 +35,18 @@ static const row_def rows[] = {
      multidisc_modes},
     {0, -1, "Game list", "Disc sets from", "Where the other discs are looked for", &sf_multidisc_grouping,
      MULTIDISC_GROUPING_END + 1, multidisc_groups},
-    {0, -1, "Game list", "Recently played", "Games in the popup opened with X", &sf_recently_played, RECENTLY_PLAYED_END + 1,
+    {0, -1, "Game list", "Recently played", "Games in the Recent button's list", &sf_recently_played, RECENTLY_PLAYED_END + 1,
      recent_modes},
     {0, -1, "Game list", "Remember last game", "Start browsing where you left off", &sf_remember_last_game,
      REMEMBER_LAST_GAME_END + 1, on_off},
-    {0, -1, "Display", "Aspect ratio", "16:9 squeezes the picture for wide TVs", &sf_aspect, ASPECT_END + 1, aspect_modes},
+    {0, -1, "Display", "Aspect ratio", "16:9 is squeezed for wide TVs", &sf_aspect, ASPECT_END + 1, aspect_modes},
+    /* stored in the otherwise unused "DC Now" setting (default 0 = Music) */
+    {0, -1, "Display", "Music icon", "Name of the third main menu icon", &sf_dcnow, 2, music_names},
     {UIS_ACTION_DATETIME, 1, "System", "Date and time", "Set the clock of the console", NULL, 0, NULL},
     {0, -1, "Starting games", "Boot animation", "What the BIOS shows before a game", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
     /* stored in the otherwise unused "scroll art" setting (default On) */
     {0, -1, "Starting games", "Launch animation", "Discs fly out before a game starts", &sf_scroll_art, 2, on_off},
-    {0, -1, "Starting games", "Exit to BIOS", "How non-game discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
+    {0, -1, "Starting games", "Exit to BIOS", "How other discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
     {UIS_ACTION_ABOUT, 3, "Other", "About", "Version and credits", NULL, 0, NULL},
 };
 

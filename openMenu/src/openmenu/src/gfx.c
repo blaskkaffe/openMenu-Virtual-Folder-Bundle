@@ -38,6 +38,7 @@
 /* Settings page text lines (bios_page): left aligned, label then a value column */
 #define PAGE_TEXT_PAD 10.0f
 #define PAGE_VALUE_X 250.0f
+#define HELP_TEXT_DX (-156.0f) /* left edge of the help lines from the help text's anchor */
 #define BG_Z 0.001f /* 1/w of the gradient quad: behind everything (the clouds are at ~0.0026) */
 #define TEXT_Z_BIAS 0.00002f
 
@@ -917,6 +918,12 @@ sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
          * second column, '\n' starts a new line. */
         float x0 = x - (float)obj->text_w / 2.0f;
         float y0 = y - (float)obj->text_h / 2.0f;
+        if (obj->id == BPAGE_HELP_ID) {
+            /* the help box (model 34) runs from 170 px left of the text anchor to 265 px right of it: the two lines go
+             * inside it, clear of the BACK marker on its left, centred in its height */
+            x0 = x + HELP_TEXT_DX - PAGE_TEXT_PAD;
+            y0 += 6.0f;
+        }
         char part[LABEL_CHARS + 1];
         const char* p = label;
         for (int line = 0; *p && line < 3; line++) {

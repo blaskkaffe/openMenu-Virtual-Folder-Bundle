@@ -56,6 +56,14 @@ enum { ICON_GAME, ICON_FILES, ICON_MUSIC, ICON_SETTINGS };
 
 static const char* const icon_names[BMENU_ICONS] = {"Play", "File", "Music", "Settings"};
 
+/* The main menu's icon labels; the Music icon can be called "Internet" (Settings, Display). */
+static void
+set_icon_labels(void) {
+    for (int i = 0; i < BMENU_ICONS; i++) {
+        gfx_set_label((uint16_t)BMENU_ID_ICON(i), i == ICON_MUSIC && sf_dcnow[0] == 1 ? "Internet" : icon_names[i]);
+    }
+}
+
 #define NOTICE_FRAMES 150
 
 /* Start-up fade (decompile: gui_init 0x8C0101E0, main_menu_update 0x8C020BA0, fade_step_bg_colors 0x8C021620):
@@ -590,7 +598,7 @@ settings_sync(void) {
         }
         gfx_set_label((uint16_t)BPAGE_TEXT_ID(s), line);
     }
-    snprintf(line, sizeof(line), "%.40s\n%.40s", uis_group(page.cursor), uis_help(page.cursor));
+    snprintf(line, sizeof(line), "%.36s\n%.36s", uis_group(page.cursor), uis_help(page.cursor)); /* 36 fit the help box */
     gfx_set_label((uint16_t)BPAGE_HELP_ID, line);
     bpage_sync(&page, page_row, NULL);
 }
@@ -1045,6 +1053,7 @@ leave_settings(void) {
     /* order, multi-disc and recent list changes show up in the list again */
     list_set_folder_root();
     uil_reset();
+    set_icon_labels();
     bmenu_show_main(&menu, ICON_SETTINGS);
     screen = SCREEN_MAIN;
 }
@@ -1300,9 +1309,7 @@ ui_bios_run(const bios_rom* rom) {
     start_color = read_boot_color();
     bmenu_init(&menu, rom, NULL);
     bmenu_show_main(&menu, ICON_GAME);
-    for (int i = 0; i < BMENU_ICONS; i++) {
-        gfx_set_label((uint16_t)BMENU_ID_ICON(i), icon_names[i]);
-    }
+    set_icon_labels();
     update_clock();
 
     /* Cover the first frames (texture uploads) with the start colour so nothing pops in. */
