@@ -112,7 +112,9 @@ Drops to 30fps
 - [ ] Every row has the pill on its right like Settings (lit orange on the selected row); row text height vs Settings
 - [ ] Folders open with A; "[..]" goes up; "<Recently Played>" opens the recent list
 - [ ] X: cursor to the bottom buttons (lit, jump on A); "Recent" opens recently played; Left of it is BACK
-- [ ] Y: big case on the right, stick turns it, triggers zoom, A resets, Y/B closes; info pane on the left
+- [ ] Y or a click on the case: big case on the right; stick, d-pad (eased) and mouse drag turn it, triggers zoom, X resets; A/B/Y or a click on BACK close; pane starts where the rows start
+- [ ] Lit pill ends 6 px before the bar end (as Settings); pane corners like the row bar ends
+- [ ] Launch: the disc reaches the CD player's place twice as fast, spin unchanged, in front of the bursting bars
 
 ### Settings / date and time / About
 - [ ] Help text inside the bottom right box, not over BACK

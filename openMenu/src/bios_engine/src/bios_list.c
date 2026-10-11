@@ -389,10 +389,13 @@ blist_sync(blist* l) {
             icon->var[0] = sel;
             float sc = ICON_SCALE;
             if (off && sel) {
-                /* to the CD player's place, keeping the spin */
-                float f = smooth(t);
-                sc = ICON_SCALE + (CD_SCALE - ICON_SCALE) * f;
-                set_pos(icon, ICON_X * (1.0f - f), y * (1.0f - f), ICON_Z + (CD_Z - ICON_Z) * f);
+                /* to the CD player's place, twice as fast as the rest bursts out (the game starts quickly); the spin
+                 * keeps its speed */
+                float f = smooth(t * 2.0f > 1.0f ? 1.0f : t * 2.0f);
+                /* it stays at the rows' depth, in front of the bars bursting past (the PVR sorts by depth), and grows
+                 * to the size the CD player's disc has at its own depth */
+                sc = ICON_SCALE + (CD_SCALE * (ICON_Z / CD_Z) - ICON_SCALE) * f;
+                set_pos(icon, ICON_X * (1.0f - f), y * (1.0f - f), ICON_Z);
             } else {
                 x = ICON_X;
                 yy = y;
