@@ -501,7 +501,7 @@ draw_grid_mesh(const bscene* s, const bvm_obj* o, const nj_mat4* m, const float*
             x->oargb = 0;
         }
     }
-    bscene_texref tex = {BSCENE_TEX_GBIX, o->mesh_tex, 0};
+    bscene_texref tex = {BSCENE_TEX_GBIX, o->mesh_tex, 0, 0};
     for (int i = 0; i < cols; i++) {
         for (int j = 0; j < rows; j++) {
             if (!(ok[i][j] && ok[i + 1][j] && ok[i][j + 1] && ok[i + 1][j + 1])) {
@@ -680,7 +680,7 @@ draw_model:
                     if (s->no_decals && poly->tex == 0) { /* texture 0 of a button is its picture */
                         continue;
                     }
-                    bscene_texref tex = {BSCENE_TEX_NONE, 0, 0};
+                    bscene_texref tex = {BSCENE_TEX_NONE, 0, 0, 0};
                     if (poly->tex >= 0) {
                         tex.kind = BSCENE_TEX_TEXLIST;
                         tex.a = o->texlist;
@@ -810,7 +810,7 @@ static void
 draw_mesh(const dcbg_mesh* m, const dcbg_obj* o, const bscene_sink* sink) {
     dcbg_vertex out[(DCBG_MAX_COLS + 1) * (DCBG_MAX_ROWS + 1)];
     dcbg_project(m, o, out);
-    bscene_texref tex = {BSCENE_TEX_GBIX, m->tex, 0};
+    bscene_texref tex = {BSCENE_TEX_GBIX, m->tex, 0, 0};
     if (m->tex == 0) {
         tex.kind = BSCENE_TEX_NONE;
     }
