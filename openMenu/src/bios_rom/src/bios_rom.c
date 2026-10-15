@@ -345,15 +345,32 @@ texlist_texture_addr(const bios_rom* rom, int idx, int k) {
 
 int
 bios_header_logo(const bios_rom* rom, int region, bios_texture* out) {
+    static uint8_t blue[128 * 32 * 2]; /* the swirl logo with red and blue exchanged, for European consoles */
     uint32_t plain = texlist_texture_addr(rom, 7, 0);
     if (!plain || bios_texture_at(rom, plain, out) != 0) {
         return -1;
     }
-    if (region != BIOS_REGION_EUROPE) {
-        bios_texture swirl;
-        if (bios_texture_at(rom, plain + 0xD1E0u, &swirl) == 0 && swirl.gbix == out->gbix && swirl.width == out->width
-            && swirl.height == out->height) {
+    bios_texture swirl;
+    if (bios_texture_at(rom, plain + 0xD1E0u, &swirl) == 0 && swirl.gbix == out->gbix && swirl.width == out->width
+        && swirl.height == out->height) {
+        if (region != BIOS_REGION_EUROPE) {
             *out = swirl;
+        } else if (swirl.data_size <= sizeof(blue) && swirl.data_size % 2 == 0) {
+            /* the PAL logo: the swirl in blue. The text is grey, only the orange swirl changes (red <-> blue). */
+            for (size_t i = 0; i < swirl.data_size; i += 2) {
+                uint16_t v = (uint16_t)(swirl.data[i] | (swirl.data[i + 1] << 8));
+                if (swirl.pixel_format == BIOS_PVR_ARGB4444) {
+                    v = (uint16_t)((v & 0xF0F0u) | ((v >> 8) & 0x000Fu) | ((v & 0x000Fu) << 8));
+                } else if (swirl.pixel_format == BIOS_PVR_RGB565) {
+                    v = (uint16_t)((v & 0x07E0u) | ((v >> 11) & 0x1Fu) | ((v & 0x1Fu) << 11));
+                } else { /* ARGB1555 */
+                    v = (uint16_t)((v & 0x83E0u) | ((v >> 10) & 0x1Fu) | ((v & 0x1Fu) << 10));
+                }
+                blue[i] = (uint8_t)v;
+                blue[i + 1] = (uint8_t)(v >> 8);
+            }
+            *out = swirl;
+            out->data = blue;
         }
     }
     return 0;

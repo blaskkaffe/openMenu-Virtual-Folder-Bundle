@@ -462,6 +462,27 @@ test_strips(const bios_rom* rom) {
     bmenu_free(&m);
 }
 
+/* European consoles get the swirl logo in blue: the other regions' orange logo with red and blue exchanged. */
+static void
+test_header_logo(const bios_rom* rom) {
+    bios_texture ntsc, pal;
+    CHECK(bios_header_logo(rom, 1, &ntsc) == 0);
+    uint8_t keep[128 * 32 * 2];
+    CHECK(ntsc.data_size <= sizeof(keep));
+    memcpy(keep, ntsc.data, ntsc.data_size);
+    CHECK(bios_header_logo(rom, BIOS_REGION_EUROPE, &pal) == 0);
+    CHECK(pal.width == ntsc.width && pal.height == ntsc.height && pal.data_size == ntsc.data_size && pal.data != ntsc.data);
+    if (ntsc.pixel_format == BIOS_PVR_ARGB4444) {
+        int orange = 0;
+        for (size_t i = 0; i < ntsc.data_size; i += 2) {
+            uint16_t a = (uint16_t)(keep[i] | (keep[i + 1] << 8)), b = (uint16_t)(pal.data[i] | (pal.data[i + 1] << 8));
+            CHECK(((a >> 8) & 15) == (b & 15) && (a & 15) == ((b >> 8) & 15) && (a & 0xF0F0) == (b & 0xF0F0));
+            orange += ((a >> 12) > 8 && ((a >> 8) & 15) > 10 && (a & 15) < 6);
+        }
+        CHECK(orange > 20); /* there is a swirl to recolour */
+    }
+}
+
 static void
 test_scene(const bios_rom* rom) {
     bscene sc;
@@ -902,6 +923,7 @@ test_real_rom(const char* path) {
 
     test_cdplayer_real(&rom);
     test_filescr_real(&rom);
+    test_header_logo(&rom);
     test_strips(&rom);
     test_cache_screen(&rom, 0);
     test_cache_screen(&rom, 1);

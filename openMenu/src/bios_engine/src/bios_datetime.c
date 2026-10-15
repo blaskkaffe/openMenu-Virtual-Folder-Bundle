@@ -215,3 +215,19 @@ bdt_draw(bdt* d, const bscene_sink* sink) {
     }
     m->scene.parts = BSCENE_PART_ALL;
 }
+
+int
+bdt_field_at(const bdt* d, int pos) {
+    return pos >= 0 && pos < 5 ? field_at(d, pos) : -1;
+}
+
+int
+bdt_field_value(const bdt* d, int field) {
+    switch (field) {
+        case BDT_YEAR: return d->year;
+        case BDT_MONTH: return d->month;
+        case BDT_DAY: return d->day;
+        case BDT_HOUR: return d->hour;
+        default: return d->minute;
+    }
+}

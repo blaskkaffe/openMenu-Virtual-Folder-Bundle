@@ -45,6 +45,11 @@ void bdt_format(const bdt* d, char* out, size_t size);
 #define BDT_CHAR_W 12
 float bdt_field_center_px(const bdt* d, int field);
 
+/* The field written at position `pos` (0..4, left to right) in the region's order, and a field's value. The date is drawn
+ * field by field, each centred on its arrow (bdt_field_center_px), with the separators halfway between. */
+int bdt_field_at(const bdt* d, int pos);
+int bdt_field_value(const bdt* d, int field);
+
 /* Left edge (pixels) of the date text so that its fields sit under the arrows. */
 float bdt_text_x(const bdt* d);
 

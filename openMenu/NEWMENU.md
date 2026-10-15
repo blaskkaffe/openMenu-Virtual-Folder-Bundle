@@ -71,6 +71,8 @@ logo is used. `tools/bios-logo/biologo.py` makes the file: `convert logo.png LOG
 (any PNG, scaled to 128x32, transparency kept) and `extract dc_boot.bin logo.png` saves the
 BIOS logo as a starting point. `BIOS_PREVIEW_LOGO=LOGO.PVR bios_preview ...` shows it on a PC.
 A fully transparent picture hides the logo.
+Without a `LOGO.PVR` a European (PAL) console gets the BIOS logo with the swirl recoloured blue (red and blue exchanged in the ROM's
+orange swirl; the BIOS itself shows the plain text logo there); other regions get the orange swirl.
 
 ## Tested against real ROMs
 

@@ -707,8 +707,18 @@ draw_datetime(void) {
                  0xFFFFFFFFu, 1);
     }
     bdt_draw(&dtedit, gfx_sink());
-    bdt_format(&dtedit, text, sizeof(text));
-    gfx_text(text, bdt_text_x(&dtedit), BDT_TEXT_Y, 0.5f, 0xFFFFFFFFu, 1);
+    /* every number centred over and under its arrow, the separators halfway between the numbers */
+    for (int pos = 0; pos < 5; pos++) {
+        int f = bdt_field_at(&dtedit, pos);
+        snprintf(text, sizeof(text), f == BDT_YEAR ? "%04d" : "%02d", bdt_field_value(&dtedit, f));
+        float cx = bdt_field_center_px(&dtedit, f);
+        gfx_text(text, cx - (float)gfx_text_width(text) / 2.0f, BDT_TEXT_Y, 0.5f, 0xFFFFFFFFu, 1);
+        if (pos < 4 && pos != 2) {
+            const char* sep = pos == 3 ? ":" : "/";
+            float nx = bdt_field_center_px(&dtedit, bdt_field_at(&dtedit, pos + 1));
+            gfx_text(sep, (cx + nx) / 2.0f - (float)gfx_text_width(sep) / 2.0f, BDT_TEXT_Y, 0.5f, 0xFFFFFFFFu, 1);
+        }
+    }
     /* the names are written over the right half of the green ovals, a little lower (as in the BIOS) */
     gfx_text("Select", BDT_BUTTON_X + 9.0f, BDT_SELECT_Y - 14.0f, 0.5f, 0xFFD0D0D0u, 0);
     gfx_text("Cancel", BDT_BUTTON_X + 9.0f, BDT_CANCEL_Y - 14.0f, 0.5f, 0xFFD0D0D0u, 0);

@@ -228,7 +228,7 @@ lookup(bscene_texref ref) {
     if (ref.kind == BSCENE_TEX_GBIX) {
         ok = bios_texture_find(g_rom, (uint32_t)ref.a, &t) == 0;
     } else if (ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
-        /* BIOS_PREVIEW_REGION: console region (0 Japan, 1 America, 2 Europe: plain logo without the swirl) */
+        /* BIOS_PREVIEW_REGION: console region (0 Japan, 1 America, 2 Europe: the swirl in blue) */
         ok = bios_header_logo(g_rom, getenv("BIOS_PREVIEW_REGION") ? atoi(getenv("BIOS_PREVIEW_REGION")) : 1, &t) == 0;
     } else {
         ok = bios_texlist_texture(g_rom, ref.a >= 0x1000 ? 61 : ref.a, ref.b, &t) == 0;

@@ -110,10 +110,11 @@ uint32_t bios_texlist_addr(const bios_rom* rom, int idx);
 int bios_texlist_count(const bios_rom* rom, int idx);
 int bios_texlist_texture(const bios_rom* rom, int idx, int k, bios_texture* out);
 
-/* The "Dreamcast" logo of the header bar (model 7, texlist 7 slot 0) as the BIOS picks it: with the orange swirl,
- * except on European consoles, which keep the plain one (gui_read_sysmode 0x8C010060 and 0x8C01739C move the
- * texture pointer 0xD1E0 bytes on unless the region nibble of 0x8C000072 is 2). `region` is that nibble.
- * Falls back to the plain logo if the swirl version is not where 1.01d keeps it. */
+/* The "Dreamcast" logo of the header bar (model 7, texlist 7 slot 0): with the orange swirl as the BIOS picks it
+ * (gui_read_sysmode 0x8C010060 and 0x8C01739C move the texture pointer 0xD1E0 bytes on unless the region nibble of
+ * 0x8C000072 is 2). The BIOS shows European consoles the plain text logo; here they get the swirl in blue (the PAL
+ * logo's colour) instead. `region` is that nibble. The data of the blue one is a buffer inside this module (valid
+ * until the next call). Falls back to the plain logo if the swirl version is not where 1.01d keeps it. */
 #define BIOS_REGION_EUROPE 2
 int bios_header_logo(const bios_rom* rom, int region, bios_texture* out);
 
