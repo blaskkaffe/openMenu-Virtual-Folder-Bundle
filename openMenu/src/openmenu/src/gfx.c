@@ -825,6 +825,13 @@ static const rom_tex* strip_tex;
 static int strip_uv;
 static int strip_pending;
 
+/* the same corner of the same strip: position, colours and picture coordinates equal (word compares, no memcmp call) */
+static inline int
+vtx_same(const bscene_vtx* a, const bscene_vtx* b) {
+    return a->x == b->x && a->y == b->y && a->argb == b->argb && a->u == b->u && a->v == b->v && a->invw == b->invw
+           && a->oargb == b->oargb;
+}
+
 static void
 strip_vertex(const bscene_vtx* p, const rom_tex* tex, int last) {
     vtx_offset = tex ? p->oargb : 0;
@@ -863,9 +870,9 @@ sink_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
     if (strip_pending && tex == strip_tex && ref.uv == strip_uv) {
         int a = -1, b = -1;
         for (int i = 0; i < 3; i++) {
-            if (a < 0 && !memcmp(&v[i], &strip_l1, sizeof(bscene_vtx))) {
+            if (a < 0 && vtx_same(&v[i], &strip_l1)) {
                 a = i;
-            } else if (b < 0 && !memcmp(&v[i], &strip_l2, sizeof(bscene_vtx))) {
+            } else if (b < 0 && vtx_same(&v[i], &strip_l2)) {
                 b = i;
             }
         }
