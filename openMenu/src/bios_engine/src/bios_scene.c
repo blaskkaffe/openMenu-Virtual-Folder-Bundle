@@ -791,7 +791,9 @@ model_done:
         draw_grid_mesh(s, o, &obj_m, offs, sink);
     }
     if ((s->parts & BSCENE_PART_TEXT) && (o->flags & BVM_F_TEXT) && o->text_w > 0 && o->text_h > 0 && sink->text) {
-        nj_vec3 anchor = {o->pos[0] + o->text_off[0], o->pos[1] + o->text_off[1], o->pos[2]};
+        /* text_surface_draw (0x8C014D78) projects the surface's offset through the object's matrix: the offset is scaled and
+         * turned with the object, then moved to its place */
+        nj_vec3 anchor = nj_mat_apply(&obj_m, (nj_vec3){o->text_off[0], o->text_off[1], 0.0f});
         float sx, sy, iw;
         if (bscene_project(anchor, &sx, &sy, &iw)) {
             sink->text(sink->user, o, sx, sy, iw);

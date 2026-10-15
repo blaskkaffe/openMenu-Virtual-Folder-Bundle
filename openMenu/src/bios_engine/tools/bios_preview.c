@@ -316,6 +316,9 @@ text(void* user, const bvm_obj* o, float x, float y, float invw) {
     if (g_autosort) {
         frag_resolve(); /* outlines are a debugging aid: keep them on top */
     }
+    if (getenv("BIOS_PREVIEW_TEXTLOG")) {
+        fprintf(stderr, "text %#x at %.1f %.1f\n", o->id, x, y);
+    }
     int x0 = (int)(x - o->text_w / 2.0f), y0 = (int)(y - o->text_h / 2.0f), x1 = x0 + o->text_w, y1 = y0 + o->text_h; /* anchor = centre */
     const bsurf* sf = bsurf_find(o->id);
     if (sf) { /* a text surface the screen printed into: blend it pixel for pixel */
