@@ -32,16 +32,16 @@
 #define CUR_BACK (-1)
 
 /* The panel: from where the rows start to the right edge of the rows' area, down to just above the buttons */
-#define PANE_X 40.0f
-#define PANE_Y 52.0f
-#define PANE_W 560.0f
-#define PANE_H 322.0f
+#define PANE_X 52.0f /* the clouds show all round the box: 52 px left and right, 40 above, 36 above the buttons */
+#define PANE_Y 40.0f
+#define PANE_W 536.0f
+#define PANE_H 306.0f
 #define PANE_Z 0.0028f /* just in front of the clouds (see ui_bios.c) */
 #define TEXT_Z 0.5f
 #define PAD 14.0f
 #define ROW_H 26.0f
 #define LIST_Y (PANE_Y + 76.0f)
-#define ROWS 8 /* LIST_Y + 8 rows ends above the footer line */
+#define ROWS 7 /* LIST_Y + 7 rows ends above the footer line */
 #define CHAR_W 11 /* the BIOS font's advance */
 
 enum { PAGE_EVENTS, PAGE_PLAYERS, PAGE_GAMES, PAGE_BROWSERS };
@@ -447,7 +447,7 @@ draw_status(void) {
             snprintf(line, sizeof(line), "%s", !probed ? "Looking for a modem..." : device == DCNOW_DEV_NONE ? "No modem or network adapter" : "Not connected  X: connect");
             break;
     }
-    text_cut(line, 48, PANE_X + PAD, PANE_Y + 8.0f, conn.state == DCNOW_CONN_ONLINE ? GREY : YELLOW);
+    text_cut(line, 44, PANE_X + PAD, PANE_Y + 8.0f, conn.state == DCNOW_CONN_ONLINE ? GREY : YELLOW);
 }
 
 /* the page's heading and what is behind its list */
@@ -505,23 +505,23 @@ draw_rows(void) {
         switch (page) {
             case PAGE_EVENTS:
                 gfx_text(events[i].when, PANE_X + PAD, y, TEXT_Z, GREY, 1);
-                text_cut(events[i].title, 30, PANE_X + PAD + 210.0f, y, col);
+                text_cut(events[i].title, 27, PANE_X + PAD + 190.0f, y, col);
                 break;
             case PAGE_PLAYERS:
                 text_cut(players[i].name, 14, PANE_X + PAD, y, col);
-                gfx_text(players[i].network, PANE_X + PAD + 170.0f, y, TEXT_Z, DIM, 1);
-                text_cut(players[i].title[0] ? players[i].title : "(lobby)", 27, PANE_X + PAD + 250.0f, y, players[i].title[0] ? col : DIM);
+                gfx_text(players[i].network, PANE_X + PAD + 165.0f, y, TEXT_Z, DIM, 1);
+                text_cut(players[i].title[0] ? players[i].title : "(lobby)", 23, PANE_X + PAD + 235.0f, y, players[i].title[0] ? col : DIM);
                 break;
             case PAGE_GAMES:
                 snprintf(line, sizeof(line), "%2d", games[i].players);
                 gfx_text(line, PANE_X + PAD, y, TEXT_Z, GREY, 1);
-                text_cut(games[i].title, games[i].on_card ? 33 : 44, PANE_X + PAD + 40.0f, y, col);
+                text_cut(games[i].title, games[i].on_card ? 32 : 41, PANE_X + PAD + 40.0f, y, col);
                 if (games[i].on_card) {
                     gfx_text("on card", PANE_X + PANE_W - PAD - 77.0f, y, TEXT_Z, DIM, 1);
                 }
                 break;
             default:
-                text_cut(i < nbrowsers ? browsers[i]->name : "ISP settings...", 46, PANE_X + PAD, y, col);
+                text_cut(i < nbrowsers ? browsers[i]->name : "ISP settings...", 42, PANE_X + PAD, y, col);
                 break;
         }
     }
@@ -547,7 +547,7 @@ draw_footer(void) {
         text = sel[page] < nbrowsers ? "A: start the browser" : "Dial-up and network settings";
     }
     if (text) {
-        text_cut(text, 48, PANE_X + PAD, PANE_Y + PANE_H - 34.0f, DIM);
+        text_cut(text, 44, PANE_X + PAD, PANE_Y + PANE_H - 34.0f, DIM);
     }
 }
 
