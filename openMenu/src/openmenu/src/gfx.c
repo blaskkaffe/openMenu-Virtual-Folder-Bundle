@@ -202,6 +202,7 @@ typedef struct {
     int present; /* an entry exists (tex.valid tells if the picture could be loaded) */
     int loading; /* a job of the loader thread is reading it: do not evict */
     uint32_t last_use;
+    uint32_t retry_at; /* the disc could not be read: ask again from this frame on (0: nothing to retry) */
 } art_entry;
 
 /* Pictures are read from the DATs by a thread of their own (reading the disc takes tens of
@@ -209,7 +210,10 @@ typedef struct {
  * memory, at most ART_UPLOADS_PER_FRAME per frame. */
 #define ART_JOBS 3
 #define ART_UPLOADS_PER_FRAME 1
-enum { JOB_FREE = 0, JOB_QUEUED, JOB_READING, JOB_DONE, JOB_FAILED };
+enum { JOB_FREE = 0, JOB_QUEUED, JOB_READING, JOB_DONE, JOB_FAILED, JOB_ERROR };
+#define ART_RETRY_FRAMES 60       /* a read error: try that picture again a second later */
+#define DAT_RETRY_FRAMES 300      /* a DAT that could not be opened: try again five seconds later ... */
+#define DAT_RETRIES 3             /* ... at most this often (a DAT that is not on the disc stays missing) */
 typedef struct {
     volatile int state;
     char id[20];
@@ -228,28 +232,39 @@ static int art_started;
 static dat_file dat_icon, dat_icon_ex, dat_box, dat_box_ex;
 static dat_file dat_disc; /* DISC.DAT: the games' own disc labels (their 0GDTEX.PVR), collected by the card manager */
 static int dats_loaded;
+static int dat_ok[5], dat_tries[5];
+static uint32_t dat_retry_at;
 static art_entry art_cache[ART_SLOTS];
 static char row_product[BLIST_MAX_SLOTS][16];
 static int row_pal[BLIST_MAX_SLOTS]; /* the game of the row is a PAL release: the blue BIOS disc, not the red one */
 static int row_window[BLIST_MAX_SLOTS]; /* title scroll: visible width in px (0 = no scrolling) */
 static int row_offset[BLIST_MAX_SLOTS];
 
+static int art_jobs_idle(void);
+
+/* The DATs, parsed once; one that could not be opened or parsed is tried again a few times (the disc may not have
+ * been ready), but only while the loader thread is not reading from them. */
 static void
 art_load_dats(void) {
-    if (dats_loaded) {
+    static dat_file* const dats[5] = {&dat_disc, &dat_icon, &dat_icon_ex, &dat_box, &dat_box_ex};
+    static const char* const names[5] = {"DISC.DAT", "ICON.DAT", "ICON_EX.DAT", "BOX.DAT", "BOX_EX.DAT"};
+    if (dats_loaded == 2 || (dats_loaded && (frame_no < dat_retry_at || !art_jobs_idle()))) {
         return;
     }
-    dats_loaded = 1;
-    DAT_init(&dat_icon);
-    DAT_init(&dat_icon_ex);
-    DAT_init(&dat_box);
-    DAT_init(&dat_box_ex);
-    DAT_init(&dat_disc);
-    DAT_load_parse(&dat_disc, "DISC.DAT");
-    DAT_load_parse(&dat_icon, "ICON.DAT");
-    DAT_load_parse(&dat_icon_ex, "ICON_EX.DAT");
-    DAT_load_parse(&dat_box, "BOX.DAT");
-    DAT_load_parse(&dat_box_ex, "BOX_EX.DAT");
+    int pending = 0;
+    for (int i = 0; i < 5; i++) {
+        if (dat_ok[i] || dat_tries[i] >= DAT_RETRIES) {
+            continue;
+        }
+        DAT_init(dats[i]);
+        dat_ok[i] = DAT_load_parse(dats[i], names[i]) == 0;
+        if (!dat_ok[i]) {
+            DAT_init(dats[i]); /* nothing half set up: the readers see no table */
+            pending |= ++dat_tries[i] < DAT_RETRIES;
+        }
+    }
+    dats_loaded = pending ? 1 : 2;
+    dat_retry_at = frame_no + DAT_RETRY_FRAMES;
 }
 
 /* The PVR files in the DATs have a fixed 0x20 byte header (GBIX + PVRT): colour format, layout,
@@ -280,21 +295,32 @@ art_parse(const uint8_t* b, int* w, int* h, int* fmt) {
     return (uint32_t)(*w) * (uint32_t)(*h) * 2u;
 }
 
-/* Runs in the loader thread: read the picture `id` of the DAT into the job's buffer. */
+/* Runs in the loader thread: read the picture `id` of the DAT into the job's buffer. 1 when it is there, 0 when the
+ * DAT does not have it (or it is unusable), -1 when the disc could not be read. */
 static int
 art_read_job(const dat_file* d, art_job* j) {
-    if (!d->hash || d->chunk_size > ART_CHUNK_MAX || !DAT_get_offset_by_ID(d, j->id)) {
+    if (!d->hash || d->chunk_size > ART_CHUNK_MAX || d->chunk_size <= 0x20 || !DAT_get_offset_by_ID(d, j->id)) {
         return 0;
     }
     if (!DAT_read_file_by_ID(d, j->id, j->buf)) {
-        return 0;
+        return -1;
     }
-    uint32_t size = art_parse(j->buf, &j->w, &j->h, &j->fmt);
-    if (!size || size + 0x20 > d->chunk_size) {
-        size = d->chunk_size > 0x20 ? d->chunk_size - 0x20 : 0; /* VQ: less data than w*h*2 */
+    int w, h, fmt;
+    uint32_t size = art_parse(j->buf, &w, &h, &fmt);
+    if (!size) {
+        return 0; /* not a picture the PVR can take: no art rather than garbage */
     }
+    if (fmt & PVR_TXRFMT_VQ_ENABLE) {
+        size = 2048u + (uint32_t)w * (uint32_t)h / 4u; /* the code book, then one byte per 2x2 texels */
+    }
+    if (size + 0x20 > d->chunk_size) {
+        return 0; /* the chunk cannot hold that much */
+    }
+    j->w = w;
+    j->h = h;
+    j->fmt = fmt;
     j->size = size;
-    return size != 0;
+    return 1;
 }
 
 static void*
@@ -310,33 +336,76 @@ art_worker(void* param) {
             j->state = JOB_READING;
             uint64_t t0 = timer_us_gettime64();
             /* disc labels: the game's own label (DISC.DAT) first; then the add-on file wins over the main one */
-            int ok = (!j->box && art_read_job(&dat_disc, j)) || art_read_job(j->box ? &dat_box_ex : &dat_icon_ex, j) ||
-                     art_read_job(j->box ? &dat_box : &dat_icon, j);
+            const dat_file* order[3] = {j->box ? NULL : &dat_disc, j->box ? &dat_box_ex : &dat_icon_ex,
+                                        j->box ? &dat_box : &dat_icon};
+            int got = 0, error = 0;
+            for (int k = 0; k < 3 && got != 1; k++) {
+                if (order[k]) {
+                    got = art_read_job(order[k], j);
+                    error |= got < 0;
+                }
+            }
             j->us = (uint32_t)(timer_us_gettime64() - t0);
-            j->state = ok ? JOB_DONE : JOB_FAILED;
+            j->state = got == 1 ? JOB_DONE : (error ? JOB_ERROR : JOB_FAILED);
         }
     }
     return NULL;
 }
 
+/* The loader thread and its buffers; if they cannot be had now, it is tried again on a later request. */
 static int
 art_start(void) {
     if (art_started) {
-        return art_thread != NULL;
+        return 1;
     }
-    art_started = 1;
     for (int i = 0; i < ART_JOBS; i++) {
-        art_jobs[i].buf = (uint8_t*)memalign(32, ART_CHUNK_MAX);
         if (!art_jobs[i].buf) {
+            art_jobs[i].buf = (uint8_t*)memalign(32, ART_CHUNK_MAX);
+        }
+        if (!art_jobs[i].buf) {
+            return 0; /* the buffers already had are kept for the next try */
+        }
+    }
+    static int sem_ready;
+    if (!sem_ready) {
+        sem_init(&art_sem, 0);
+        sem_ready = 1;
+    }
+    art_thread = thd_create(1, art_worker, NULL);
+    if (!art_thread) {
+        return 0;
+    }
+    thd_set_prio(art_thread, PRIO_DEFAULT + 4); /* lower than the menu */
+    art_started = 1;
+    return 1;
+}
+
+static int
+art_jobs_idle(void) {
+    for (int i = 0; i < ART_JOBS; i++) {
+        if (art_jobs[i].state == JOB_QUEUED || art_jobs[i].state == JOB_READING) {
             return 0;
         }
     }
-    sem_init(&art_sem, 0);
-    art_thread = thd_create(1, art_worker, NULL);
-    if (art_thread) {
-        thd_set_prio(art_thread, PRIO_DEFAULT + 4); /* lower than the menu */
+    return 1;
+}
+
+/* Video memory is full: give back the picture used longest ago (not `keep`, not one being loaded). 1 if one went. */
+static int
+art_evict_one(const art_entry* keep) {
+    art_entry* oldest = NULL;
+    for (int i = 0; i < ART_SLOTS; i++) {
+        art_entry* e = &art_cache[i];
+        if (e != keep && e->present && !e->loading && e->tex.valid && (!oldest || e->last_use < oldest->last_use)) {
+            oldest = e;
+        }
     }
-    return art_thread != NULL;
+    if (!oldest) {
+        return 0;
+    }
+    pvr_mem_free(oldest->tex.ptr);
+    memset(oldest, 0, sizeof(*oldest)); /* asked for again, it is read again */
+    return 1;
 }
 
 /* Main thread, once per frame: upload the pictures the loader has finished. */
@@ -345,21 +414,31 @@ art_poll(void) {
     int uploads = 0;
     for (int i = 0; i < ART_JOBS; i++) {
         art_job* j = &art_jobs[i];
-        if (j->state == JOB_FAILED) {
-            art_cache[j->entry].loading = 0;
+        if (j->state == JOB_FAILED || j->state == JOB_ERROR) {
+            art_entry* e = &art_cache[j->entry];
+            e->loading = 0;
+            /* not in any DAT: no art, asked no more. The disc could not be read: ask again a second later */
+            e->retry_at = j->state == JOB_ERROR ? frame_no + ART_RETRY_FRAMES : 0;
             j->state = JOB_FREE;
         } else if (j->state == JOB_DONE && uploads < ART_UPLOADS_PER_FRAME) {
             art_entry* e = &art_cache[j->entry];
             uint32_t padded = (j->size + 31u) & ~31u;
             e->tex.ptr = pvr_mem_malloc(padded);
-            if (e->tex.ptr) {
-                pvr_txr_load(j->buf + 0x20, e->tex.ptr, padded);
-                e->tex.w = j->w;
-                e->tex.h = j->h;
-                e->tex.fmt = j->fmt;
-                e->tex.valid = 1;
-                uploads++;
+            if (!e->tex.ptr) {
+                /* video memory is full: make room and upload it on the next frame; with nothing to give back, it
+                 * stays without art (and is read again when asked for later) */
+                if (!art_evict_one(e)) {
+                    memset(e, 0, sizeof(*e));
+                    j->state = JOB_FREE;
+                }
+                continue;
             }
+            pvr_txr_load(j->buf + 0x20, e->tex.ptr, padded);
+            e->tex.w = j->w;
+            e->tex.h = j->h;
+            e->tex.fmt = j->fmt;
+            e->tex.valid = 1;
+            uploads++;
             stats.art_loads++;
             stats.art_us += j->us;
             e->loading = 0;
@@ -383,7 +462,12 @@ art_get(const char* product, int box) {
         art_entry* e = &art_cache[i];
         if (e->present && !strcmp(e->key, key)) {
             e->last_use = frame_no;
-            return e;
+            if (!e->retry_at || e->loading || frame_no < e->retry_at) {
+                return e;
+            }
+            memset(e, 0, sizeof(*e)); /* a read error earlier: read it again */
+            free_slot = e;
+            break;
         }
         if (!e->present) {
             free_slot = free_slot ? free_slot : e;

@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <uthash.h>
 
@@ -38,6 +39,20 @@ DAT_init(dat_file* bin) {
     memset(bin, '\0', sizeof(dat_file));
     return 0;
 }
+
+/* Reading and seeking on the open DAT, for the console and the tool alike. Return 0 on success. */
+#ifndef STANDALONE_BINARY
+#define DAT_READ(h, buf, n) (fs_read((h), (buf), (n)) == (ssize_t)(n) ? 0 : -1)
+#define DAT_SEEK(h, off) (fs_seek((h), (off), SEEK_SET) == (off_t)(off) ? 0 : -1)
+#define DAT_CLOSE(h) fs_close(h)
+#else
+#define DAT_READ(h, buf, n) (fread((buf), (n), 1, (h)) == 1 ? 0 : -1)
+#define DAT_SEEK(h, off) (fseek((h), (long)(off), SEEK_SET) == 0 ? 0 : -1)
+#define DAT_CLOSE(h) fclose(h)
+#endif
+
+#define DAT_MAX_CHUNK_SIZE (4u * 1024u * 1024u) /* far more than any picture */
+#define DAT_MAX_CHUNKS 100000u
 
 int
 DAT_load_parse(dat_file* bin, const char* path) {
@@ -70,43 +85,50 @@ DAT_load_parse(dat_file* bin, const char* path) {
 
     printf("DAT:Open %s (%s)\n", filename_safe, path);
 
-#ifndef STANDALONE_BINARY
-    fs_read(bin_fd, &file_header, sizeof(bin_header));
-#else
-    fread(&file_header, sizeof(bin_header), 1, bin_fd);
-#endif
-    if (file_header.magic.rich.version != 1) {
+    /* the header, checked before anything in it is used */
+    if (DAT_READ(bin_fd, &file_header, sizeof(bin_header)) != 0 || file_header.magic.rich.version != 1
+        || file_header.chunk_size == 0 || file_header.chunk_size > DAT_MAX_CHUNK_SIZE || file_header.num_chunks == 0
+        || file_header.num_chunks > DAT_MAX_CHUNKS) {
         printf("DAT:Error Incorrect input file format!\n");
+        DAT_CLOSE(bin_fd);
         return 1;
     }
 
     /* setup basic bin file info */
+    bin_item* items = malloc(file_header.num_chunks * sizeof(bin_item));
+    if (!items) {
+        printf("%s no free memory\n", __func__);
+        DAT_CLOSE(bin_fd);
+        return 1;
+    }
+    memset(items, 0, file_header.num_chunks * sizeof(bin_item));
+
+    /* the table: every entry must be there; the IDs are NUL terminated here whatever the file holds */
+    for (unsigned int i = 0; i < file_header.num_chunks; i++) {
+        if (DAT_READ(bin_fd, &items[i], sizeof(bin_item_raw)) != 0) {
+            printf("DAT:Error %s: table cut short\n", filename_safe);
+            free(items);
+            DAT_CLOSE(bin_fd);
+            return 1;
+        }
+        items[i].ID[sizeof(items[i].ID) - 1] = '\0';
+    }
+
     bin->chunk_size = file_header.chunk_size;
     bin->num_chunks = file_header.num_chunks;
     bin->handle = bin_fd;
-    bin->items = malloc(bin->num_chunks * sizeof(bin_item));
-    if (!bin->items) {
-        printf("%s no free memory\n", __func__);
-        return 1;
-    }
+    bin->items = items;
     bin->hash = NULL;
-
-    /* Parse file table to Hash table */
     for (unsigned int i = 0; i < file_header.num_chunks; i++) {
-#ifndef STANDALONE_BINARY
-        fs_read(bin->handle, &bin->items[i], sizeof(bin_item_raw));
-#else
-        fread(&bin->items[i], sizeof(bin_item_raw), 1, bin->handle);
-#endif
-        HASH_ADD_STR(bin->hash, ID, &bin->items[i]);
+        bin_item* dup = NULL;
+        HASH_FIND_STR(bin->hash, items[i].ID, dup);
+        if (!dup) { /* a repeated ID would make the hash table inconsistent: the first one counts */
+            HASH_ADD_STR(bin->hash, ID, &items[i]);
+        }
     }
 
     /* Leave our handle in a handy place in case we need to read after */
-#ifndef STANDALONE_BINARY
-    fs_seek(bin->handle, bin->items[0].offset * bin->chunk_size, SEEK_SET);
-#else
-    fseek(bin->handle, bin->items[0].offset * bin->chunk_size, SEEK_SET);
-#endif
+    DAT_SEEK(bin->handle, items[0].offset * bin->chunk_size);
     return 0;
 }
 
@@ -153,31 +175,19 @@ DAT_get_index_by_ID(const dat_file* bin, const char* ID) {
 int
 DAT_read_file_by_ID(const dat_file* bin, const char* ID, void* buf) {
     uint32_t offset = DAT_get_offset_by_ID(bin, ID);
-    if (offset) {
-#ifndef STANDALONE_BINARY
-        fs_seek(bin->handle, offset, SEEK_SET);
-        fs_read(bin->handle, buf, bin->chunk_size);
-#else
-        fseek(bin->handle, offset, SEEK_SET);
-        fread(buf, bin->chunk_size, 1, bin->handle);
-#endif
-        return 1;
+    if (!offset) {
+        return 0;
     }
-    return 0;
+    /* a seek or read that fails or comes up short is a failure, not a picture */
+    return DAT_SEEK(bin->handle, offset) == 0 && DAT_READ(bin->handle, buf, bin->chunk_size) == 0;
 }
 
+/* chunk_num counts chunks from the start of the file (chunk 0 holds the header): what the table's offsets are in */
 int
 DAT_read_file_by_num(const dat_file* bin, uint32_t chunk_num, void* buf) {
-    uint32_t offset = chunk_num * bin->chunk_size;
-    if (chunk_num <= bin->num_chunks) {
-#ifndef STANDALONE_BINARY
-        fs_seek(bin->handle, offset, SEEK_SET);
-        fs_read(bin->handle, buf, bin->chunk_size);
-#else
-        fseek(bin->handle, offset, SEEK_SET);
-        fread(buf, bin->chunk_size, 1, bin->handle);
-#endif
-        return 1;
+    if (chunk_num == 0 || chunk_num > bin->num_chunks + 1u) {
+        return 0;
     }
-    return 0;
+    uint32_t offset = chunk_num * bin->chunk_size;
+    return DAT_SEEK(bin->handle, offset) == 0 && DAT_READ(bin->handle, buf, bin->chunk_size) == 0;
 }
