@@ -1095,7 +1095,35 @@ sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
     }
 }
 
-static const bscene_sink the_sink = {NULL, sink_triangle, sink_text};
+/* A strip from the scene (the BIOS' strip handlers send these too): one header if the picture changes, then the vertices. */
+static void
+sink_strip(void* user, const bscene_vtx* v, int n, bscene_texref ref) {
+    (void)user;
+    int any = 0;
+    for (int i = 0; i < n; i++) {
+        any |= v[i].argb >> 24 ? 1 : 0;
+    }
+    if (!any) {
+        return; /* fully transparent */
+    }
+    rom_tex* tex = NULL;
+    if (ref.kind != BSCENE_TEX_NONE) {
+        tex = get_rom_texture(ref);
+        if (!tex) {
+            return; /* texture missing from this ROM: draw nothing rather than garbage */
+        }
+    }
+    tri_count += (unsigned)(n - 2);
+    hdr_uv = ref.uv;
+    ensure_header(tex, NULL, 0); /* also ends a pending strip of sink_triangle() */
+    for (int i = 0; i < n; i++) {
+        vtx_offset = tex ? v[i].oargb : 0;
+        put_vertex(v[i].x, v[i].y, v[i].invw, v[i].u, v[i].v, v[i].argb, i == n - 1);
+    }
+    vtx_offset = 0;
+}
+
+static const bscene_sink the_sink = {NULL, sink_triangle, sink_text, sink_strip};
 
 const bscene_sink*
 gfx_sink(void) {

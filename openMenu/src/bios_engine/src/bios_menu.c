@@ -198,7 +198,7 @@ bmenu_draw_objects(bmenu* m, const bscene_sink* sink) {
                 bscene_draw_object(&m->scene, o, to);
                 continue;
             }
-            bscene_sink cap = {NULL, twin_triangle, to->text};
+            bscene_sink cap = {NULL, twin_triangle, to->text, NULL};
             twin_out = to;
             twin_n = 0;
             twin_overflow = 0;

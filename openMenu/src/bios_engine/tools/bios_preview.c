@@ -700,7 +700,7 @@ main(int argc, char** argv) {
 
     if (getenv("BIOS_PREVIEW_BENCH")) { /* time the scene building of the main menu: no pixels, for gprof */
         int n = atoi(getenv("BIOS_PREVIEW_BENCH"));
-        bscene_sink null_sink = {NULL, bench_tri, bench_text};
+        bscene_sink null_sink = {NULL, bench_tri, bench_text, NULL};
         int move = getenv("BIOS_PREVIEW_BENCH_MOVE") ? atoi(getenv("BIOS_PREVIEW_BENCH_MOVE")) : 0; /* frames per icon */
         double seg_area = 0, seg_tris = 0, seg_tex = 0;
         int seg_n = 0;
@@ -744,7 +744,7 @@ main(int argc, char** argv) {
             }
         }
     }
-    bscene_sink sink = {NULL, tri, text};
+    bscene_sink sink = {NULL, tri, text, NULL};
     if (script == -14) {
         bscene_draw_background(&menu.bg, &sink);
         bfs_draw(&demo_fs, &sink);
@@ -797,7 +797,7 @@ main(int argc, char** argv) {
                     fb[y][x][k] = fb[y][x][k] * 0.3f + c[k] * 0.7f;
                 }
         float rot[3] = {rx, ry, 0};
-        bscene_sink nears = {&sink, near_tri, NULL};
+        bscene_sink nears = {&sink, near_tri, NULL, NULL};
         bcase_draw_posed(&bc, &menu.scene, 440.0f, (pt + pb) / 2.0f, 300.0f * zoom, rot, NULL, NULL, &nears);
         bmenu_back_style(&menu, 1, 0, 0);
         menu.scene.parts = BSCENE_PART_ALL;
@@ -841,7 +841,7 @@ main(int argc, char** argv) {
                     }
                 }
             }
-            bscene_sink nears = {&sink, near_tri, NULL}; /* as ui_bios: the case is brought in front of the pane */
+            bscene_sink nears = {&sink, near_tri, NULL, NULL}; /* as ui_bios: the case is brought in front of the pane */
             bcase_draw(&bc, &menu.scene, 529.0f, 8.0f + 75.0f + ({float t_, b_; blist_rows_extent_px(&list, &t_, &b_); t_;}), 150.0f, NULL, NULL, &nears);
         }
     } else if (script == -2) {

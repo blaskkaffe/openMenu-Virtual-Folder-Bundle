@@ -52,6 +52,10 @@ typedef struct bscene_sink {
     void (*triangle)(void* user, const bscene_vtx v[3], bscene_texref tex);
     /* A text surface of object `obj` (text_w x text_h pixels) centred on (x, y). */
     void (*text)(void* user, const bvm_obj* obj, float x, float y, float invw);
+    /* Optional: a triangle strip of n >= 3 vertices (triangle k is v[k], v[k+1], v[k+2]; culling is already done, the
+     * winding does not matter). The BIOS' strip handlers hand the TA strips like this. A sink without it gets the
+     * same triangles one by one through `triangle`. */
+    void (*strip)(void* user, const bscene_vtx* v, int n, bscene_texref tex);
 } bscene_sink;
 
 /* What bscene_draw_object() draws of an object. Text goes in a pass of its own after all the

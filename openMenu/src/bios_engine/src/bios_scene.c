@@ -120,7 +120,8 @@ bscene_project(nj_vec3 p, float* sx, float* sy, float* invw) {
  * that do not move). Their triangles are kept, keyed by everything that goes into drawing them, and sent again
  * without transforming, lighting or projecting anything. When the pool is full everything is dropped and filled
  * again from what the next frames draw. */
-#define CACHE_TRIS 6144
+#define CACHE_VERTS 12288 /* vertices of the kept strips */
+#define CACHE_RUNS 2048   /* kept strips */
 #define CACHE_ENTRIES 128
 
 typedef struct {
@@ -145,9 +146,9 @@ typedef struct {
 } draw_key;
 
 typedef struct {
-    bscene_vtx v[3];
+    int first, n; /* vertices in cache_vpool */
     bscene_texref tex;
-} cached_tri;
+} cached_run;
 
 typedef struct {
     draw_key key;
@@ -156,8 +157,10 @@ typedef struct {
     int valid;
 } cache_entry;
 
-static cached_tri cache_pool[CACHE_TRIS];
-static int cache_pool_n;
+static bscene_vtx cache_vpool[CACHE_VERTS];
+static int cache_vpool_n;
+static cached_run cache_runs[CACHE_RUNS];
+static int cache_runs_n;
 static cache_entry cache_entries[CACHE_ENTRIES];
 static int cache_entry_n;
 static int cache_disabled;
@@ -192,11 +195,12 @@ seen_before(uint32_t hash) {
 
 /* capture state while an object is drawn for the first time */
 static const bscene_sink* cap_out;
-static int cap_first, cap_overflow;
+static int cap_first_run, cap_first_vtx, cap_overflow;
 
 static void
 cache_flush(void) {
-    cache_pool_n = 0;
+    cache_vpool_n = 0;
+    cache_runs_n = 0;
     cache_entry_n = 0;
 }
 
@@ -267,19 +271,52 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* off
     }
 }
 
+#define RUN_MAX 128 /* longest strip sent in one piece */
+static bscene_vtx run_v[RUN_MAX]; /* the strip being built in the polygon loop, with the mesh vertex of each corner */
+static int run_i[RUN_MAX];
+static int run_n;
+
+/* One strip (or triangle) to a sink: as a strip if it takes them, else as its triangles. */
+static void
+emit_strip(const bscene_sink* sink, const bscene_vtx* v, int n, bscene_texref tex) {
+    if (sink->strip) {
+        sink->strip(sink->user, v, n, tex);
+    } else {
+        for (int k = 0; k + 2 < n; k++) {
+            sink->triangle(sink->user, &v[k], tex);
+        }
+    }
+}
+
+static void
+cap_store(const bscene_vtx* v, int n, bscene_texref tex) {
+    if (cap_overflow) {
+        return;
+    }
+    if (cache_runs_n >= CACHE_RUNS || cache_vpool_n + n > CACHE_VERTS) {
+        cap_overflow = 1;
+        return;
+    }
+    cached_run* r = &cache_runs[cache_runs_n++];
+    r->first = cache_vpool_n;
+    r->n = n;
+    r->tex = tex;
+    memcpy(&cache_vpool[cache_vpool_n], v, sizeof(bscene_vtx) * (size_t)n);
+    cache_vpool_n += n;
+}
+
 static void
 cap_triangle(void* user, const bscene_vtx v[3], bscene_texref tex) {
     (void)user;
-    if (!cap_overflow) {
-        if (cache_pool_n < CACHE_TRIS) {
-            cached_tri* t = &cache_pool[cache_pool_n++];
-            memcpy(t->v, v, sizeof(t->v));
-            t->tex = tex;
-        } else {
-            cap_overflow = 1;
-        }
-    }
+    cap_store(v, 3, tex);
     cap_out->triangle(cap_out->user, v, tex);
+}
+
+static void
+cap_strip(void* user, const bscene_vtx* v, int n, bscene_texref tex) {
+    (void)user;
+    cap_store(v, n, tex);
+    emit_strip(cap_out, v, n, tex);
 }
 
 static void
@@ -290,7 +327,7 @@ cap_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
     }
 }
 
-static const bscene_sink cap_sink = {NULL, cap_triangle, cap_text};
+static const bscene_sink cap_sink = {NULL, cap_triangle, cap_text, cap_strip};
 
 /* Colours are worked out in floats as the BIOS does and packed with a float to *signed* int conversion
  * (ftrc, cheap on the SH-4; float to unsigned is a slow library call there). */
@@ -582,8 +619,8 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
             cache_entry* e = &cache_entries[i];
             if (e->valid && e->hash == h && !memcmp(&e->key, &key, sizeof(key))) {
                 for (int t = 0; t < e->count; t++) {
-                    const cached_tri* ct = &cache_pool[e->first + t];
-                    sink->triangle(sink->user, ct->v, ct->tex);
+                    const cached_run* cr = &cache_runs[e->first + t];
+                    emit_strip(sink, &cache_vpool[cr->first], cr->n, cr->tex);
                 }
                 goto model_done;
             }
@@ -591,16 +628,17 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
         if (!seen_before(h)) {
             goto draw_model; /* changed since its last draw: draw it, keep nothing */
         }
-        if (cache_entry_n >= CACHE_ENTRIES || cache_pool_n > CACHE_TRIS - 256) {
+        if (cache_entry_n >= CACHE_ENTRIES || cache_runs_n > CACHE_RUNS - 128 || cache_vpool_n > CACHE_VERTS - 1024) {
             cache_flush();
         }
         ce = &cache_entries[cache_entry_n++];
         ce->key = key;
         ce->hash = h;
         ce->valid = 0;
-        ce->first = cache_pool_n;
+        ce->first = cache_runs_n;
         cap_out = sink;
-        cap_first = cache_pool_n;
+        cap_first_run = cache_runs_n;
+        cap_first_vtx = cache_vpool_n;
         cap_overflow = 0;
         sink = &cap_sink;
     }
@@ -726,6 +764,7 @@ draw_model:
                         memset(lit_stamp, 0, sizeof(lit_stamp));
                         lit_now = 1;
                     }
+                    run_n = 0;
                     for (int t = 0; t < poly->ntris; t++) {
                         bscene_vtx v[3];
                         int ok = 1;
@@ -768,8 +807,37 @@ draw_model:
                             ok = area < 0.0f;
                         }
                         if (ok) {
-                            sink->triangle(sink->user, v, tex);
+                            /* the strip handler of the BIOS (0x8C0CAD88) sends strips: a triangle that shares the last two
+                             * vertices of the one before goes on the same strip */
+                            const nj_corner* tc = &poly->corners[t * 3];
+                            int a = -1, b = -1;
+                            if (run_n >= 3 && run_n < RUN_MAX) {
+                                for (int k = 0; k < 3; k++) {
+                                    if (a < 0 && tc[k].idx == run_i[run_n - 2] && v[k].u == run_v[run_n - 2].u && v[k].v == run_v[run_n - 2].v) {
+                                        a = k;
+                                    } else if (b < 0 && tc[k].idx == run_i[run_n - 1] && v[k].u == run_v[run_n - 1].u && v[k].v == run_v[run_n - 1].v) {
+                                        b = k;
+                                    }
+                                }
+                            }
+                            if (a >= 0 && b >= 0) {
+                                run_v[run_n] = v[3 - a - b];
+                                run_i[run_n++] = tc[3 - a - b].idx;
+                            } else {
+                                if (run_n >= 3) {
+                                    emit_strip(sink, run_v, run_n, tex);
+                                }
+                                for (int k = 0; k < 3; k++) {
+                                    run_v[k] = v[k];
+                                    run_i[k] = tc[k].idx;
+                                }
+                                run_n = 3;
+                            }
                         }
+                    }
+                    if (run_n >= 3) {
+                        emit_strip(sink, run_v, run_n, tex);
+                        run_n = 0;
                     }
                 }
             }
@@ -779,9 +847,10 @@ draw_model:
     if (ce) {
         if (cap_overflow) {
             cache_entry_n--; /* did not fit: drawn, but not kept */
-            cache_pool_n = cap_first;
+            cache_runs_n = cap_first_run;
+            cache_vpool_n = cap_first_vtx;
         } else {
-            ce->count = cache_pool_n - cap_first;
+            ce->count = cache_runs_n - cap_first_run;
             ce->valid = 1;
         }
         sink = real_sink;

@@ -404,7 +404,7 @@ near_text(void* user, const bvm_obj* o, float x, float y, float invw) {
 static const bscene_sink*
 near_sink(const bscene_sink* out) {
     static near_wrap w;
-    static bscene_sink s = {&w, near_triangle, near_text};
+    static bscene_sink s = {&w, near_triangle, near_text, NULL};
     w.out = out;
     return &s;
 }
@@ -759,7 +759,7 @@ draw_pointer(void) {
     px.s = -0.70710678f;
     px.dx = ux + tip - 320.0f;
     px.dy = (float)pointer.y + tip - 240.0f;
-    bscene_sink sink = {&px, pointer_triangle, NULL};
+    bscene_sink sink = {&px, pointer_triangle, NULL, NULL};
     bvm_obj o;
     memset(&o, 0, sizeof(o));
     o.active = 1;
@@ -775,8 +775,8 @@ draw_pointer(void) {
 
 /* Debug: Y on the main screen (overlay on) isolates what costs time, one mode per press, the name is in the overlay. */
 static int debug_iso;
-static const char* const iso_names[] = {"normal", "no clouds", "no icons", "nothing", "CPU sorted", "built, not sent"};
-#define ISO_MODES 6
+static const char* const iso_names[] = {"normal", "no clouds", "no icons", "nothing", "CPU sorted", "built, not sent", "no cache"};
+#define ISO_MODES 7
 
 static void
 null_tri(void* user, const bscene_vtx v[3], bscene_texref tex) {
@@ -788,7 +788,7 @@ null_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
     (void)user; (void)obj; (void)x; (void)y; (void)invw;
 }
 
-static const bscene_sink null_sink = {NULL, null_tri, null_text};
+static const bscene_sink null_sink = {NULL, null_tri, null_text, NULL};
 
 static void
 draw_frame(void) {
@@ -881,11 +881,13 @@ handle_main(button_t b) {
             show_debug = !show_debug;
             if (!show_debug) {
                 debug_iso = 0;
+                bscene_cache_enable(1);
             }
             break;
         case BTN_Y:
             if (show_debug) {
                 debug_iso = (debug_iso + 1) % ISO_MODES;
+                bscene_cache_enable(debug_iso != 6); /* 6: every object is transformed, lit and projected every frame */
             }
             break;
         case BTN_UP:

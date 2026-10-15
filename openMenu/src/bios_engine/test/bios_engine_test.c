@@ -433,6 +433,36 @@ tally_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
 }
 
 static void
+tally_strip(void* user, const bscene_vtx* v, int n, bscene_texref tex) {
+    (void)v; (void)tex;
+    tally* t = (tally*)user;
+    CHECK(n >= 3);
+    t->tris += n - 2;
+    t->textured += 1; /* strips counted here */
+}
+
+/* The scene hands out strips when the sink takes them: the same triangles, fewer vertices, also when replayed from the cache. */
+static void
+test_strips(const bios_rom* rom) {
+    static bmenu m;
+    bmenu_init(&m, rom, NULL);
+    bmenu_show_main(&m, 1);
+    for (int i = 0; i < 40; i++) {
+        bmenu_update(&m);
+    }
+    for (int pass = 0; pass < 3; pass++) { /* the second and third draw come from the cache */
+        tally a = {0, 0, 0, 1e9f, -1e9f, 1e9f, -1e9f}, b = a;
+        bscene_sink tris = {&a, tally_tri, tally_text, NULL};
+        bscene_sink strips = {&b, tally_tri, tally_text, tally_strip};
+        bmenu_draw_objects(&m, &tris);
+        bmenu_draw_objects(&m, &strips);
+        CHECK(a.tris > 500 && a.tris == b.tris);
+        CHECK(b.textured < b.tris / 2); /* the strips counter: on average more than two triangles a strip */
+    }
+    bmenu_free(&m);
+}
+
+static void
 test_scene(const bios_rom* rom) {
     bscene sc;
     bscene_init(&sc, rom);
@@ -443,7 +473,7 @@ test_scene(const bios_rom* rom) {
     o->pos[2] = -400.0f; /* in front of the camera */
 
     tally t = {0, 0, 0, 1e9f, -1e9f, 1e9f, -1e9f};
-    bscene_sink sink = {&t, tally_tri, tally_text};
+    bscene_sink sink = {&t, tally_tri, tally_text, NULL};
     bscene_draw_objects(&sc, &vm, &sink);
     CHECK(t.tris == 2 && t.textured == 2); /* the quad: two textured triangles */
     CHECK(t.minx > 300.0f && t.maxx < 700.0f && t.miny > 0.0f && t.maxy < 480.0f);
@@ -663,7 +693,7 @@ test_cache_screen(const bios_rom* rom, int screen) {
         bmenu_show_main(&m, 1);
         if (screen == 1) bpage_open(&page, &m, 10);
         if (screen == 2) blist_open(&list, &m, 5, 40);
-        bscene_sink sink = {NULL, rec_triangle, NULL};
+        bscene_sink sink = {NULL, rec_triangle, NULL, NULL};
         for (int fr = 0; fr < 90; fr++) {
             bmenu_update(&m);
             if (screen == 1) {
@@ -872,6 +902,7 @@ test_real_rom(const char* path) {
 
     test_cdplayer_real(&rom);
     test_filescr_real(&rom);
+    test_strips(&rom);
     test_cache_screen(&rom, 0);
     test_cache_screen(&rom, 1);
     test_cache_screen(&rom, 2);
@@ -1010,7 +1041,7 @@ test_models(const bios_rom* rom) {
     o->model = BMODEL_CASE_PAL;
     o->texlist = BMODEL_CASE_PAL;
     tally t = {0, 0, 0, 1e9f, -1e9f, 1e9f, -1e9f};
-    bscene_sink sink = {&t, tally_tri, tally_text};
+    bscene_sink sink = {&t, tally_tri, tally_text, NULL};
     bscene_draw_objects(&sc, &vm, &sink);
     CHECK(t.tris >= 10 && t.textured >= 2); /* seen from the front: the picture is drawn, the back is culled */
     CHECK(t.minx > 0.0f && t.maxx < 640.0f && t.miny > 0.0f && t.maxy < 480.0f);
@@ -1050,7 +1081,7 @@ test_case(const bios_rom* rom) {
     bscene sc;
     bscene_init(&sc, rom);
     tally t = {0, 0, 0, 1e9f, -1e9f, 1e9f, -1e9f};
-    bscene_sink sink = {&t, tally_tri, tally_text};
+    bscene_sink sink = {&t, tally_tri, tally_text, NULL};
     bcase_draw(&c, &sc, 530.0f, 140.0f, 150.0f, NULL, NULL, &sink);
     CHECK(t.tris > 20 && t.minx > 380.0f && t.maxx < 640.0f && t.miny > 20.0f && t.maxy < 260.0f);
     bscene_free(&sc);
