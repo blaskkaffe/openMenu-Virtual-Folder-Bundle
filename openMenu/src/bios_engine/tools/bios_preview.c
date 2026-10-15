@@ -435,9 +435,26 @@ demo_row(void* user, int index, bpage_row* out) {
     out->icon = index < 4 ? BPAGE_ICON_BIOS(index) : BPAGE_ICON_DIGIT(index - 4);
 }
 
+static double bench_area, bench_tris, bench_tex_area, bench_vtx_count;
+
 static void
 bench_tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
-    (void)user; (void)v; (void)ref;
+    (void)user;
+    /* area clipped to the screen by bounding box ratio: good enough to see the overdraw */
+    float a = fabsf((v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (v[1].y - v[0].y)) * 0.5f;
+    float minx = fminf(v[0].x, fminf(v[1].x, v[2].x)), maxx = fmaxf(v[0].x, fmaxf(v[1].x, v[2].x));
+    float miny = fminf(v[0].y, fminf(v[1].y, v[2].y)), maxy = fmaxf(v[0].y, fmaxf(v[1].y, v[2].y));
+    float bw = maxx - minx, bh = maxy - miny;
+    float cw = fminf(maxx, 640.0f) - fmaxf(minx, 0.0f), ch = fminf(maxy, 480.0f) - fmaxf(miny, 0.0f);
+    if (cw > 0 && ch > 0 && bw > 0 && bh > 0) {
+        a *= (cw * ch) / (bw * bh);
+        bench_area += a;
+        if (ref.kind != BSCENE_TEX_NONE) {
+            bench_tex_area += a;
+        }
+    }
+    bench_tris += 1;
+    bench_vtx_count += 3;
 }
 
 static void
@@ -647,11 +664,30 @@ main(int argc, char** argv) {
     if (getenv("BIOS_PREVIEW_BENCH")) { /* time the scene building of the main menu: no pixels, for gprof */
         int n = atoi(getenv("BIOS_PREVIEW_BENCH"));
         bscene_sink null_sink = {NULL, bench_tri, bench_text};
+        int move = getenv("BIOS_PREVIEW_BENCH_MOVE") ? atoi(getenv("BIOS_PREVIEW_BENCH_MOVE")) : 0; /* frames per icon */
+        double seg_area = 0, seg_tris = 0, seg_tex = 0;
+        int seg_n = 0;
         for (int i = 0; i < n; i++) {
+            if (move && i % move == 0) {
+                if (seg_n) {
+                    printf("icon %d: %.0f tris, overdraw %.2fx (textured %.2fx) over %d frames\n", (i / move + 3) % 4, seg_tris / seg_n,
+                           seg_area / seg_n / (640.0 * 480.0), seg_tex / seg_n / (640.0 * 480.0), seg_n);
+                }
+                seg_area = seg_tris = seg_tex = 0;
+                seg_n = 0;
+                bmenu_select(&menu, (i / move) % 4);
+            }
             bmenu_update(&menu);
+            double a0 = bench_area, t0 = bench_tris, x0 = bench_tex_area;
             bscene_draw_background(&menu.bg, &null_sink);
             bmenu_draw_objects(&menu, &null_sink);
+            seg_area += bench_area - a0;
+            seg_tris += bench_tris - t0;
+            seg_tex += bench_tex_area - x0;
+            seg_n++;
         }
+        printf("all: %.0f tris/frame, overdraw %.2fx (textured %.2fx)\n", bench_tris / n, bench_area / n / (640.0 * 480.0),
+               bench_tex_area / n / (640.0 * 480.0));
         return 0;
     }
     uint32_t top, bottom;

@@ -773,6 +773,23 @@ draw_pointer(void) {
     menu.scene.parts = BSCENE_PART_ALL;
 }
 
+/* Debug: Y on the main screen (overlay on) isolates what costs time, one mode per press, the name is in the overlay. */
+static int debug_iso;
+static const char* const iso_names[] = {"normal", "no clouds", "no icons", "nothing", "CPU sorted", "built, not sent"};
+#define ISO_MODES 6
+
+static void
+null_tri(void* user, const bscene_vtx v[3], bscene_texref tex) {
+    (void)user; (void)v; (void)tex;
+}
+
+static void
+null_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
+    (void)user; (void)obj; (void)x; (void)y; (void)invw;
+}
+
+static const bscene_sink null_sink = {NULL, null_tri, null_text};
+
 static void
 draw_frame(void) {
     uint32_t top, bottom;
@@ -794,7 +811,7 @@ draw_frame(void) {
      * button's depth, and in presort mode the PVR's depth test drops it behind the button. Measured on hardware the
      * PVR takes the same ~9 ms a frame either way. */
     {
-        int hw = gfx_set_autosort(screen == SCREEN_MAIN ? GFX_MAIN_AUTOSORT : 1);
+        int hw = gfx_set_autosort(screen == SCREEN_MAIN ? (debug_iso == 4 ? 0 : GFX_MAIN_AUTOSORT) : 1);
         menu.hw_autosort = hw; /* not sorted by the PVR: the CPU sorter takes over */
     }
     gfx_begin_frame(top, bottom);
@@ -802,9 +819,14 @@ draw_frame(void) {
     phase_us[0] += t1 - t0;
 
     if (screen == SCREEN_MAIN) {
-        bscene_draw_background(&menu.bg, gfx_sink());
+        const bscene_sink* ms = debug_iso == 5 ? &null_sink : gfx_sink();
+        if (debug_iso != 1 && debug_iso != 3) {
+            bscene_draw_background(&menu.bg, ms);
+        }
         phase_us[1] += timer_us_gettime64() - t1;
-        bmenu_draw_objects(&menu, gfx_sink());
+        if (debug_iso != 2 && debug_iso != 3) {
+            bmenu_draw_objects(&menu, ms);
+        }
     } else if (screen == SCREEN_SETTINGS) {
         bscene_draw_background(&menu.bg, gfx_sink());
         draw_settings();
@@ -832,6 +854,11 @@ draw_frame(void) {
     if (show_debug) {
         if (screen == SCREEN_MAIN) {
             gfx_text(status_line, TEXT_X, STATUS_Y, 0.5f, 0x80FFFFFFu, 0);
+            if (debug_iso) {
+                char iso[32];
+                snprintf(iso, sizeof(iso), "Y: %s", iso_names[debug_iso]);
+                gfx_text(iso, TEXT_X, FPS_Y - 84.0f, 0.5f, 0xFFF0E060u, 0);
+            }
         }
         gfx_text(fps_text, TEXT_X, FPS_Y - 56.0f, 0.5f, 0xFFFFFFFFu, 0);
         gfx_text(perf_text[0], TEXT_X, FPS_Y - 28.0f, 0.5f, 0xFFFFFFFFu, 0);
@@ -852,6 +879,14 @@ handle_main(button_t b) {
     switch (b) {
         case BTN_X:
             show_debug = !show_debug;
+            if (!show_debug) {
+                debug_iso = 0;
+            }
+            break;
+        case BTN_Y:
+            if (show_debug) {
+                debug_iso = (debug_iso + 1) % ISO_MODES;
+            }
             break;
         case BTN_UP:
             if (bmenu_move(&menu, BMENU_UP)) sound_sfx(BAUDIO_SFX_CURSOR);
