@@ -28,6 +28,7 @@
 #include "sound.h"
 #include <openmenu_settings.h>
 
+#include "online.h"
 #include "ui_bios.h"
 #include <backend/gd_list.h>
 
@@ -1337,6 +1338,15 @@ apply_hover(void) {
     }
 }
 
+/* A modem connection is torn down in a way that blocks (before a launch): say so on two frames first. */
+static void
+show_hangup(void) {
+    show_notice("Hanging up...");
+    for (int i = 0; i < 2; i++) {
+        draw_frame();
+    }
+}
+
 int
 ui_bios_run(const bios_rom* rom) {
     g_rom = rom;
@@ -1362,6 +1372,7 @@ ui_bios_run(const bios_rom* rom) {
     bmenu_show_main(&menu, ICON_GAME);
     set_icon_labels();
     update_clock();
+    online_set_hangup_hook(show_hangup);
 
     /* Cover the first frames (texture uploads) with the start colour so nothing pops in. */
     for (int i = 0; i < 3; i++) {
@@ -1443,6 +1454,10 @@ ui_bios_run(const bios_rom* rom) {
         } else if (screen == SCREEN_GAMES) {
             games_sync();
         }
+
+        /* the online engine: a game the DreamPi's phone page asked for starts only on the plain main menu or game list */
+        online_tick((screen == SCREEN_MAIN || screen == SCREEN_GAMES) && !recent_open && !settings_popup && !about_open &&
+                    !viewer_open);
 
         sync_us_sum += timer_us_gettime64() - logic_t0;
         frames_this_second++;

@@ -26,7 +26,16 @@ static const char* const on_off[] = {"Off", "On"};
 static const char* const aspect_modes[] = {"4:3", "16:9"};
 static const char* const boot_modes[] = {"Full", "License only", "Animation only", "Fast"};
 static const char* const disc_exit[] = {"Standard", "Alternate", "Alternate 3D"};
-static const char* const online_modes[] = {"Off", "On (manual connect)", "On (auto connect)"};
+/* the main branch's choice names */
+static const char* const online_modes[] = {"Off", "On (Manual Connect)", "On (Auto-Connect)"};
+static const char* const refresh_modes[] = {"Off", "10 seconds", "20 seconds", "30 seconds", "45 seconds", "60 seconds"};
+static const char* const time_sync_modes[] = {
+    "Off",         "On (UTC-12)",    "On (UTC-11)", "On (UTC-10)",    "On (UTC-9:30)",  "On (UTC-9)",     "On (UTC-8)",
+    "On (UTC-7)",  "On (UTC-6)",     "On (UTC-5)",  "On (UTC-4)",     "On (UTC-3:30)",  "On (UTC-3)",     "On (UTC-2)",
+    "On (UTC-1)",  "On (UTC+0)",     "On (UTC+1)",  "On (UTC+2)",     "On (UTC+3)",     "On (UTC+3:30)",  "On (UTC+4)",
+    "On (UTC+4:30)", "On (UTC+5)",   "On (UTC+5:30)", "On (UTC+5:45)", "On (UTC+6)",    "On (UTC+6:30)",  "On (UTC+7)",
+    "On (UTC+8)",  "On (UTC+8:45)",  "On (UTC+9)",  "On (UTC+9:30)",  "On (UTC+10)",    "On (UTC+10:30)", "On (UTC+11)",
+    "On (UTC+12)", "On (UTC+12:45)", "On (UTC+13)", "On (UTC+14)"};
 
 /* To add a setting, add a row here (and the choice names above). */
 static const row_def rows[] = {
@@ -43,6 +52,12 @@ static const row_def rows[] = {
     /* the main branch's online (DC Now) setting, same values: Off, On, Auto-connect. While it is on, the third main
      * menu icon is "Internet" instead of "Music" */
     {0, -1, "Online", "Online features", "On: the Music icon becomes Internet", &sf_dcnow, DCNOW_END + 1, online_modes},
+    {0, -1, "Online", "Player list refresh", "How often the online lists update", &sf_dcnow_refresh, DCNOW_REFRESH_END + 1,
+     refresh_modes},
+    {0, -1, "Online", "VMU online status", "Online status on the VMU screen", &sf_dcnow_vmu, DCNOW_VMU_END + 1, on_off},
+    {0, -1, "Online", "Online time sync", "Set the clock from the internet", &sf_online_time_sync, ONLINE_TIME_SYNC_END + 1,
+     time_sync_modes},
+    {0, -1, "System", "VMU time sync", "Set the clock from a VMU at start", &sf_vmu_time_sync, VMU_TIME_SYNC_END + 1, on_off},
     {UIS_ACTION_DATETIME, 1, "System", "Date and time", "Set the clock of the console", NULL, 0, NULL},
     {0, -1, "Starting games", "Boot animation", "What the BIOS shows before a game", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
     {0, -1, "Starting games", "Exit to BIOS", "How other discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},

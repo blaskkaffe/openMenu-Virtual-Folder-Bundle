@@ -26,7 +26,14 @@ set(OPENMENU_SOURCES
         src/ui_settings.c
         src/video.c
         src/vmu_files.c
+        src/online.c
         src/backend/gdemu_sdk.c
+        src/backend/dcnow_net.c
+        src/backend/dcnow_fetch.c
+        src/backend/dcnow_vmu.c
+        src/backend/dreampi_link.c
+        src/backend/online_games.c
+        src/backend/online_time_sync.c
 )
 
 add_executable(openmenu ${OPENMENU_SOURCES})
@@ -62,6 +69,7 @@ target_link_libraries(openmenu
         openmenu_settings
         openmenu_shared
         uthash
+        ppp
 )
 
 if (NOT DEFINED KOS_OBJCOPY)

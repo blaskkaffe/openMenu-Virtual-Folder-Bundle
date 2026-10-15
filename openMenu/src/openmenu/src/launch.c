@@ -2,8 +2,7 @@
  * File: launch.c
  * Mount a GDEMU disc image and hand control to the game.
  *
- * This is the launch path of the full openMenu reduced to the essentials: no
- * history, no VM2 ids, no background music, no network teardown.
+ * This is the launch path of the full openMenu reduced to the essentials: no VM2 ids, no background music.
  */
 #include <stdint.h>
 #include <string.h>
@@ -21,6 +20,7 @@
 #include "bloader.h"
 #include "history.h"
 #include "launch.h"
+#include "online.h"
 #include "sound.h"
 
 /* Wait for the GDEMU to present the newly selected image. 0 when it is ready, -1 after ten seconds without. */
@@ -76,8 +76,9 @@ launch_disc(const gd_item* disc) {
         return;
     }
 
-    /* the image first: if it cannot be selected or does not come up, nothing has changed and the caller says so (no
-     * entry in the recently played list, the menu's sound still running) */
+    /* the image first: if it cannot be selected or does not come up, the caller says so (no entry in the recently
+     * played list, the menu's sound still running; an online connection has been let go) */
+    online_shutdown(); /* as the main branch: the modem or adapter is let go before the image changes */
     if (select_image(disc) != 0) {
         return;
     }

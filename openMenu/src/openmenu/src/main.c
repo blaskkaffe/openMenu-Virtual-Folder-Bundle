@@ -1,8 +1,7 @@
 /*
  * File: main.c
  * openMenu with a BIOS-style front end: boot, list the games on the GDEMU SD card,
- * launch one. Everything else the full openMenu does (themes, artwork, online
- * features, music, VMU integration) is left out on purpose.
+ * launch one. The online features are the full openMenu's (see online.h); its themes and music are left out.
  *
  * If the console's boot ROM is a revision we know, the menu is built from its own
  * models, textures and scripts (see bios_rom / bios_engine). Otherwise a plain
@@ -22,6 +21,7 @@
 #include <openmenu_savefile.h>
 #include <openmenu_settings.h>
 
+#include "online.h"
 #include "ui_bios.h"
 #include "video.h"
 #include "ui_fallback.h"
@@ -47,6 +47,7 @@ main(int argc, char* argv[]) {
     }
 
     savefile_init();
+    online_boot(); /* Auto-Connect dials on its own thread while the game list loads */
 
     if (list_read_default() == 0) {
         list_folder_init();
