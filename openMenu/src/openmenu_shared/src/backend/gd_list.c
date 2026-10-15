@@ -237,13 +237,29 @@ filelength(FILE* f) {
 }
 #endif
 
+/* An INI value into a field of gd_item: cut to fit and NUL terminated; a one byte field (vga) holds just the
+ * character, as it always has. */
+static void
+cfg_copy(char* dst, size_t size, const char* value) {
+    if (size == 1) {
+        dst[0] = value[0];
+        return;
+    }
+    snprintf(dst, size, "%s", value);
+}
+
 static int
 read_openmenu_ini(void* user, const char* section, const char* name, const char* value) {
     /* unused */
     (void)user;
 
     if ((strcmp(section, "OPENMENU") == 0) && (strcmp(name, "num_items") == 0)) {
-        num_items_BASE = atoi(value) /* It can occur that GDMenuCardManager under reports by 1 */;
+        int n = atoi(value);
+        if (n < 1 || n > 10000 || gd_slots_BASE) { /* nonsense, or a second num_items: keep what there is */
+            printf("INI:Error num_items %s\n", value);
+            return 1;
+        }
+        num_items_BASE = n /* It can occur that GDMenuCardManager under reports by 1 */;
         num_items_temp = num_items_BASE - 1;
         gd_slots_BASE = malloc((num_items_BASE + 1) * sizeof(struct gd_item));
         if (!gd_slots_BASE) {
@@ -261,12 +277,21 @@ read_openmenu_ini(void* user, const char* section, const char* name, const char*
         memset(list_multidisc, '\0', MULTIDISC_MAX_GAMES_PER_SET * sizeof(struct gd_item*));
     } else {
         /* Parsing games */
-        char slot_string[4] = {0, 0, 0, 0};
+        char slot_string[8] = {0};
         uintptr_t seperator = (uintptr_t)strchr(name, '.');
         if (seperator) {
             size_t temp_len = (size_t)(seperator - (uintptr_t)name);
+            if (temp_len == 0 || temp_len >= sizeof(slot_string)) {
+                printf("INI:Error bad key [%s] %s\n", section, name);
+                return 1;
+            }
             memcpy(slot_string, name, temp_len);
             int slot = atoi(slot_string);
+            /* the slots the num_items allocation holds (it may be under reported by one) */
+            if (!gd_slots_BASE || slot < 1 || slot > num_items_BASE + 1) {
+                printf("INI:Error slot out of range [%s] %s\n", section, name);
+                return 1;
+            }
             num_items_read = slot;
 
             gd_item* item = &gd_slots_BASE[slot - 1];
@@ -281,7 +306,7 @@ read_openmenu_ini(void* user, const char* section, const char* name, const char*
             if (0)
                 ;
 #define CFG(s, n, default)                                                                                             \
-    else if (strcasecmp(section, #s) == 0 && strcasecmp(plain_name, #n) == 0) strcpy(item->n, value);
+    else if (strcasecmp(section, #s) == 0 && strcasecmp(plain_name, #n) == 0) cfg_copy(item->n, sizeof(item->n), value);
 #include "backend/gd_item.def"
             /* Alt folder paths for Folders mode (folder_alt1..folder_alt5) */
             else if (strcasecmp(section, "ITEMS") == 0 && strncasecmp(plain_name, "folder_alt", 10) == 0) {
