@@ -1054,7 +1054,11 @@ file_info(bfs* fs, int pos) {
     if (fs->eye_slot != fs->b_card || fs->eye_file != fi) {
         fs->eye_slot = fs->b_card;
         fs->eye_file = fi;
-        fs->eye_ok = f->eyecatch && fs->host.eyecatch && fs->host.eyecatch(fs->host.user, fs->b_card, fi, fs->eye) == 0;
+        int r = f->eyecatch && fs->host.eyecatch ? fs->host.eyecatch(fs->host.user, fs->b_card, fi, fs->eye) : -1;
+        fs->eye_ok = r == 0;
+        if (r > 0) { /* the host is reading it: asked again when the screen redraws */
+            fs->eye_slot = -1;
+        }
     }
     for (int y = 0; y < 56; y++) {
         for (int x = 0; x < 72; x++) {

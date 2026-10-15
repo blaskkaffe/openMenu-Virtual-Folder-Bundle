@@ -84,7 +84,8 @@ typedef struct bfs_op {
 typedef struct bfs_host {
     void* user;
     void (*sfx)(void* user, int id); /* ui_sfx: BAUDIO_SFX_* numbers */
-    /* The eyecatch of a file as 72x56 ARGB4444. Returns 0 if there is one. May be NULL. */
+    /* The eyecatch of a file as 72x56 ARGB4444. Returns 0 if there is one, > 0 if it is still being read (asked again when the
+     card's serial changes), < 0 if there is none. May be NULL. */
     int (*eyecatch)(void* user, int slot, int file, uint16_t out[72 * 56]);
 } bfs_host;
 

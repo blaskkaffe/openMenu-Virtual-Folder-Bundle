@@ -4,6 +4,8 @@
 #include <string.h>
 
 #include <dc/maple.h>
+#include <kos/sem.h>
+#include <kos/thread.h>
 
 #include <bios_audio.h>
 #include <bios_filescr.h>
@@ -32,36 +34,136 @@ host_sfx(void* user, int id) {
     sound_sfx(id);
 }
 
+/* ---- the card reader -------------------------------------------------------------------------------------------------
+ * Reading a card is slow: every 512-byte block is a maple transaction of tens of milliseconds, a directory is 13 of them,
+ * a file's header 4, an eyecatch a few more. Done in the frame, opening a card stopped the screen for seconds. The BIOS runs
+ * these as a state machine in the background (vmu_update, 0x8C023520); here one worker thread does one read at a time and
+ * the frame applies what it finished. */
+enum { J_CARD = 1, J_HEADER, J_EYE };
+
+static struct {
+    volatile int state; /* 0 idle, 1 asked, 2 finished */
+    int kind, slot, file;
+    unsigned gen;
+    vf_file vf;
+    int eye_type, eye_icons;
+    vf_card_info info;
+    int n;
+    vf_file list[BFS_MAX_FILES];
+    vf_header hdr;
+    int rc;
+    uint16_t eye[72 * 56];
+} job;
+static unsigned slot_gen[BFS_SLOTS]; /* bumped when a card changes: an answer for an older state is thrown away */
+static semaphore_t job_sem;
+static kthread_t* job_thread;
+static int eye_slot = -1, eye_file = -1, eye_state; /* the eyecatch asked for / ready (1 ok, -1 failed, 0 not yet) */
+static uint16_t eye_px[72 * 56];
+
+static void*
+reader(void* param) {
+    (void)param;
+    for (;;) {
+        sem_wait(&job_sem);
+        if (job.state != 1) {
+            continue;
+        }
+        if (job.kind == J_CARD) {
+            vf_card_info_read(job.slot, &job.info);
+            job.n = 0;
+            if (job.info.status == VF_CARD_READY) {
+                job.n = vf_list(job.slot, job.list, BFS_MAX_FILES);
+            }
+        } else if (job.kind == J_HEADER) {
+            job.rc = vf_file_header(job.slot, &job.vf, &job.hdr);
+        } else {
+            job.rc = vf_file_eyecatch(job.slot, &job.vf, job.eye_type, job.eye_icons, job.eye);
+        }
+        job.state = 2;
+    }
+    return NULL;
+}
+
+static void
+start_reader(void) {
+    if (!job_thread) {
+        sem_init(&job_sem, 0);
+        job_thread = thd_create(1, reader, NULL);
+        if (job_thread) {
+            thd_set_prio(job_thread, PRIO_DEFAULT + 4); /* below the menu */
+        }
+    }
+}
+
+static void
+ask(int kind, int slot, int file, const vf_file* vf) {
+    job.kind = kind;
+    job.slot = slot;
+    job.file = file;
+    job.gen = slot_gen[slot];
+    if (vf) {
+        job.vf = *vf;
+    }
+    job.state = 1;
+    if (job_thread) {
+        sem_signal(&job_sem);
+    } else { /* no thread: do it here, as before */
+        job.state = 1;
+        if (kind == J_CARD) {
+            vf_card_info_read(slot, &job.info);
+            job.n = job.info.status == VF_CARD_READY ? vf_list(slot, job.list, BFS_MAX_FILES) : 0;
+        } else if (kind == J_HEADER) {
+            job.rc = vf_file_header(slot, &job.vf, &job.hdr);
+        } else {
+            job.rc = vf_file_eyecatch(slot, &job.vf, job.eye_type, job.eye_icons, job.eye);
+        }
+        job.state = 2;
+    }
+}
+
+/* The eyecatch of a file of the card being browsed: 1 = not read yet (asked for), 0 = in `out`, -1 = none. */
 static int
 host_eyecatch(void* user, int slot, int file, uint16_t out[72 * 56]) {
     (void)user;
     if (slot < 0 || slot >= BFS_SLOTS || file < 0 || file >= cards[slot].nfiles) {
         return -1;
     }
-    return vf_file_eyecatch(slot, &vfiles[slot][file], files[slot][file].eyecatch, files[slot][file].icons, out);
+    if (eye_slot == slot && eye_file == file && eye_state != 0) {
+        if (eye_state > 0) {
+            memcpy(out, eye_px, sizeof(eye_px));
+            return 0;
+        }
+        return -1;
+    }
+    if (eye_slot != slot || eye_file != file) {
+        eye_slot = slot;
+        eye_file = file;
+        eye_state = 0;
+    }
+    return 1;
 }
 
-/* Root block, picture and directory of a card (several card accesses: done when the card is not in use). */
+/* A card's root block, picture and directory as the reader brought them. */
 static void
-read_card(int slot) {
-    static vf_card_info info;
+apply_card(int slot) {
     bfs_card* c = &cards[slot];
-    vf_card_info_read(slot, &info);
-    c->status = info.status;
-    c->colour = info.colour;
-    memcpy(c->icon, info.icon, sizeof(c->icon));
-    c->free_blocks = info.free_blocks;
-    c->total_blocks = info.total_blocks;
+    const vf_card_info* info = &job.info;
+    c->status = info->status;
+    c->colour = info->colour;
+    memcpy(c->icon, info->icon, sizeof(c->icon));
+    c->free_blocks = info->free_blocks;
+    c->total_blocks = info->total_blocks;
     c->nfiles = 0;
-    if (info.status == VF_CARD_READY) {
-        int n = vf_list(slot, vfiles[slot], BFS_MAX_FILES);
+    if (info->status == VF_CARD_READY) {
+        int n = job.n;
         if (n < 0) {
             c->status = BFS_CARD_ERROR;
             n = 0;
         }
         for (int i = 0; i < n; i++) {
             bfs_file* f = &files[slot][i];
-            const vf_file* v = &vfiles[slot][i];
+            const vf_file* v = &job.list[i];
+            vfiles[slot][i] = *v;
             memset(f, 0, sizeof(*f));
             memcpy(f->name, v->name, sizeof(f->name));
             memset(f->vmdesc, ' ', 16);
@@ -76,17 +178,86 @@ read_card(int slot) {
     }
     c->files = files[slot];
     c->serial++;
+    slot_gen[slot]++;
     if (header_card == slot) {
         header_card = -1; /* the headers have to be read again */
     }
+    if (eye_slot == slot) {
+        eye_slot = -1;
+    }
 }
 
-/* The VMS header of one file of the card being browsed (the BIOS reads them one after the other too). */
-static int
-read_one_header(void) {
+/* Ask for a card to be read again (the card shows its busy animation meanwhile). */
+static void
+queue_card_read(int slot) {
+    cards[slot].status = BFS_CARD_READING;
+    cards[slot].serial++;
+    slot_gen[slot]++;
+    need_read[slot] = 1;
+}
+
+/* What the reader finished: put it where the screen looks. */
+static void
+apply_job(void) {
+    int slot = job.slot;
+    int fresh = job.gen == slot_gen[slot] && present[slot];
+    if (job.kind == J_CARD) {
+        if (fresh) {
+            apply_card(slot);
+        }
+    } else if (job.kind == J_HEADER) {
+        if (fresh && header_card == slot && job.file < cards[slot].nfiles) {
+            bfs_file* f = &files[slot][job.file];
+            const vf_header* h = &job.hdr;
+            if (job.rc == 0) {
+                memcpy(f->vmdesc, h->vmdesc, sizeof(f->vmdesc));
+                memcpy(f->desc, h->desc, sizeof(f->desc));
+                memcpy(f->app, h->app, sizeof(f->app));
+                f->icons = (uint8_t)h->icons;
+                f->speed = (int16_t)(h->speed > 0 ? h->speed : 1);
+                f->wait = 1;
+                f->eyecatch = (uint8_t)h->eyecatch;
+                memcpy(f->palette, h->palette, sizeof(f->palette));
+                memcpy(bitmaps[job.file], h->bitmaps, sizeof(bitmaps[job.file]));
+                f->bitmaps = bitmaps[job.file];
+            } else {
+                f->icons = 0;
+                f->bitmaps = NULL;
+            }
+            f->header = 2;
+            cards[slot].serial++;
+        }
+    } else if (fresh && eye_slot == slot && eye_file == job.file) {
+        if (job.rc == 0) {
+            memcpy(eye_px, job.eye, sizeof(eye_px));
+        }
+        eye_state = job.rc == 0 ? 1 : -1;
+        cards[slot].serial++;
+        fs.b_dirty_info = 1; /* the info panel asks again and gets it */
+    }
+    job.state = 0;
+}
+
+/* The next read the screen is waiting for, if any: eyecatch of the file in view, card, then the headers one by one. */
+static void
+next_read(void) {
+    if (eye_slot >= 0 && eye_state == 0 && eye_slot < BFS_SLOTS && eye_file < cards[eye_slot].nfiles && eye_file >= 0) {
+        const bfs_file* f = &files[eye_slot][eye_file];
+        job.eye_type = f->eyecatch;
+        job.eye_icons = f->icons;
+        ask(J_EYE, eye_slot, eye_file, &vfiles[eye_slot][eye_file]);
+        return;
+    }
+    for (int i = 0; i < BFS_SLOTS; i++) {
+        if (need_read[i]) {
+            need_read[i] = 0;
+            ask(J_CARD, i, 0, NULL);
+            return;
+        }
+    }
     int slot = fs.browse_card;
     if (slot < 0 || slot >= BFS_SLOTS || cards[slot].status != BFS_CARD_READY) {
-        return 0;
+        return;
     }
     if (header_card != slot) {
         for (int i = 0; i < cards[slot].nfiles; i++) {
@@ -95,31 +266,12 @@ read_one_header(void) {
         header_card = slot;
     }
     for (int i = 0; i < cards[slot].nfiles; i++) {
-        bfs_file* f = &files[slot][i];
-        if (f->header) {
-            continue;
+        if (!files[slot][i].header) {
+            files[slot][i].header = 1; /* asked for */
+            ask(J_HEADER, slot, i, &vfiles[slot][i]);
+            return;
         }
-        static vf_header h;
-        if (vf_file_header(slot, &vfiles[slot][i], &h) == 0) {
-            memcpy(f->vmdesc, h.vmdesc, sizeof(f->vmdesc));
-            memcpy(f->desc, h.desc, sizeof(f->desc));
-            memcpy(f->app, h.app, sizeof(f->app));
-            f->icons = (uint8_t)h.icons;
-            f->speed = (int16_t)(h.speed > 0 ? h.speed : 1);
-            f->wait = 1;
-            f->eyecatch = (uint8_t)h.eyecatch;
-            memcpy(f->palette, h.palette, sizeof(f->palette));
-            memcpy(bitmaps[i], h.bitmaps, sizeof(bitmaps[i]));
-            f->bitmaps = bitmaps[i];
-        } else {
-            f->icons = 0;
-            f->bitmaps = NULL;
-        }
-        f->header = 2;
-        cards[slot].serial++;
-        return 1;
     }
-    return 0;
 }
 
 static int
@@ -140,14 +292,13 @@ poll_cards(void) {
     for (int i = 0; i < BFS_SLOTS; i++) {
         int now = vf_present(i);
         if (now && !present[i]) {
-            cards[i].status = BFS_CARD_READING;
-            cards[i].serial++;
-            need_read[i] = 1;
+            queue_card_read(i);
         } else if (!now && present[i]) {
             cards[i].status = BFS_CARD_NONE;
             cards[i].nfiles = 0;
             cards[i].serial++;
             need_read[i] = 0;
+            slot_gen[i]++;
             if (header_card == i) {
                 header_card = -1;
             }
@@ -168,7 +319,7 @@ run_op(bfs_op* op) {
         int custom = c != 0xFFFFFFFFu && c != 0;
         unsigned char bgra[4] = {(unsigned char)c, (unsigned char)(c >> 8), (unsigned char)(c >> 16), (unsigned char)(c >> 24)};
         op->failed = vf_format_raw(op->src, shape, custom, bgra) != 0;
-        read_card(op->src);
+        queue_card_read(op->src);
         op->progress = 1000;
         op->done = 1;
         return;
@@ -192,9 +343,9 @@ run_op(bfs_op* op) {
         return;
     }
     /* finished: the cards as they are now */
-    read_card(op->src);
+    queue_card_read(op->src);
     if (op->kind == BFS_OP_COPY && op->dst >= 0) {
-        read_card(op->dst);
+        queue_card_read(op->dst);
     }
     op->done = 1;
 }
@@ -207,6 +358,7 @@ uif_set_pal(int pal) {
 void
 uif_open(bmenu* m) {
     static const bfs_host host = {NULL, host_sfx, host_eyecatch};
+    start_reader();
     bfs_init(&fs, m, &host, cards);
     fs.date_order = clock_date_order();
     memset(present, 0, sizeof(present));
@@ -264,14 +416,12 @@ uif_sync(void) {
         poll_timer = 0;
         poll_cards();
     }
-    for (int i = 0; i < BFS_SLOTS; i++) { /* one card read a frame */
-        if (need_read[i]) {
-            need_read[i] = 0;
-            read_card(i);
-            return;
-        }
+    if (job.state == 2) {
+        apply_job();
     }
-    read_one_header();
+    if (job.state == 0) {
+        next_read();
+    }
 }
 
 void
