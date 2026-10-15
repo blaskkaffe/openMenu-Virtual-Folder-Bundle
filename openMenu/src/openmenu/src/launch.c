@@ -23,29 +23,36 @@
 #include "launch.h"
 #include "sound.h"
 
-/* Wait for the GDEMU to present the newly selected image. */
-static void
+/* Wait for the GDEMU to present the newly selected image. 0 when it is ready, -1 after ten seconds without. */
+static int
 wait_cd_ready(const gd_item* disc) {
     /* Audio CDs and other non-game images never pass cdrom_reinit(). */
     if (!strcmp(disc->type, "other")) {
         thd_sleep(100);
-        return;
+        return 0;
     }
 
     for (int i = 0; i < 500; i++) {
         if (cdrom_reinit() == ERR_OK) {
-            return;
+            return 0;
         }
         thd_sleep(20);
     }
+    return -1;
 }
 
-/* Non-game discs: mount the image, then leave through the BIOS. */
-static void
-launch_other(const gd_item* disc) {
-    gdemu_set_img_num((uint16_t)disc->slot_num);
-    wait_cd_ready(disc);
+/* Put the disc's image in the GDEMU and wait until it is there. 0 on success. */
+static int
+select_image(const gd_item* disc) {
+    if (gdemu_set_img_num((uint16_t)disc->slot_num) != 0) {
+        return -1;
+    }
+    return wait_cd_ready(disc);
+}
 
+/* Non-game discs (their image already selected): leave through the BIOS. */
+static void
+launch_other(void) {
     if (sf_bios_3d[0] == BIOS_3D_STANDARD) {
         arch_menu();
     }
@@ -69,11 +76,16 @@ launch_disc(const gd_item* disc) {
         return;
     }
 
+    /* the image first: if it cannot be selected or does not come up, nothing has changed and the caller says so (no
+     * entry in the recently played list, the menu's sound still running) */
+    if (select_image(disc) != 0) {
+        return;
+    }
     history_record(disc);
     sound_shutdown(); /* the next program must not inherit a running sound driver */
 
     if (!strcmp(disc->type, "other")) {
-        launch_other(disc);
+        launch_other();
         return;
     }
 
@@ -95,9 +107,6 @@ launch_disc(const gd_item* disc) {
             default: param.game_region = (int)(((uint8_t*)0x8C000072)[0] & 7); break;
         }
     }
-
-    gdemu_set_img_num((uint16_t)disc->slot_num);
-    wait_cd_ready(disc);
 
     int status = 0, disc_type = 0;
     cdrom_get_status(&status, &disc_type);

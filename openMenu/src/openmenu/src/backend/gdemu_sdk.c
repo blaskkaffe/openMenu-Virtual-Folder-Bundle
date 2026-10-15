@@ -51,27 +51,50 @@
 #define IN16(addr)           *((volatile uint16_t*)addr)
 #define IN8(addr)            *((volatile uint8_t*)addr)
 
-#define g1_ata_wait_interrupt()                                                                                        \
-    do {                                                                                                               \
-    } while (!(IN32(EXT_INT_STAT) & 1));
-
-#define g1_ata_wait_status(n)                                                                                          \
-    do {                                                                                                               \
-    } while ((IN8(G1_ATA_ALTSTATUS) & (n)))
-
-#define g1_ata_wait_nstatus(n)                                                                                         \
-    do {                                                                                                               \
-    } while (!(IN8(G1_ATA_ALTSTATUS) & (n)))
-
-#define g1_ata_wait_drq()    g1_ata_wait_nstatus(ATA_SR_DRQ)
-
-#define g1_ata_wait_bsydrq() g1_ata_wait_status(ATA_SR_DRQ | ATA_SR_BSY)
+/* Waits on the drive with a time limit: a GDEMU that never answers must not hang the menu. 0 when the condition came,
+ * -1 after ATA_TIMEOUT_MS. */
+#define ATA_TIMEOUT_MS 5000
 
 static int
+ata_wait(int (*done)(void)) {
+    uint64_t start = timer_ms_gettime64();
+    while (!done()) {
+        if (timer_ms_gettime64() - start > ATA_TIMEOUT_MS) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int
+ata_interrupt(void) {
+    return (IN32(EXT_INT_STAT) & 1) != 0;
+}
+
+static int
+ata_drq(void) {
+    return (IN8(G1_ATA_ALTSTATUS) & ATA_SR_DRQ) != 0;
+}
+
+static int
+ata_not_busy(void) {
+    return (IN8(G1_ATA_ALTSTATUS) & (ATA_SR_DRQ | ATA_SR_BSY)) == 0;
+}
+
+#define g1_ata_wait_interrupt() ata_wait(ata_interrupt)
+#define g1_ata_wait_drq()       ata_wait(ata_drq)
+#define g1_ata_wait_bsydrq()    ata_wait(ata_not_busy)
+
+/* -1: the drive did not answer in time; otherwise the ERR bit of the status (0 = done) */
+static int
 send_packet_command(uint16_t* cmd_buff) {
-    g1_ata_wait_bsydrq();
+    if (g1_ata_wait_bsydrq() != 0) {
+        return -1;
+    }
     OUT8(G1_ATA_COMMAND_REG, ATAPI_CMD_PACKET);
-    g1_ata_wait_drq();
+    if (g1_ata_wait_drq() != 0) {
+        return -1;
+    }
 
     (void)IN32(G1_ATA_STATUS_REG);
     int i;
@@ -79,7 +102,9 @@ send_packet_command(uint16_t* cmd_buff) {
         OUT16(G1_ATA_DATA, cmd_buff[i]);
     }
 
-    g1_ata_wait_interrupt();
+    if (g1_ata_wait_interrupt() != 0) {
+        return -1;
+    }
 
     (void)IN32(G1_ATA_STATUS_REG);
 
@@ -88,11 +113,18 @@ send_packet_command(uint16_t* cmd_buff) {
 
 static int
 send_packet_data_command(uint16_t* cmd_buff, uint16_t* buffer, uint32_t* size) {
-    g1_ata_wait_bsydrq();
+    if (size) {
+        *size = 0;
+    }
+    if (g1_ata_wait_bsydrq() != 0) {
+        return -1;
+    }
 
     OUT8(G1_ATA_FEATURES, 0);
     OUT8(G1_ATA_COMMAND_REG, ATAPI_CMD_PACKET);
-    g1_ata_wait_drq();
+    if (g1_ata_wait_drq() != 0) {
+        return -1;
+    }
 
     (void)IN32(G1_ATA_STATUS_REG);
     int i;
@@ -100,19 +132,19 @@ send_packet_data_command(uint16_t* cmd_buff, uint16_t* buffer, uint32_t* size) {
         OUT16(G1_ATA_DATA, cmd_buff[i]);
     }
 
-    g1_ata_wait_interrupt();
+    if (g1_ata_wait_interrupt() != 0) {
+        return -1;
+    }
 
     if (!(IN8(G1_ATA_STATUS_REG) & ATA_SR_DRQ)) {
-        if (size) {
-            *size = 0;
-        }
-
         return 0;
     }
 
     uint16_t len = (IN8(G1_ATA_LBA_MID) | (IN8(G1_ATA_LBA_HIGH) << 8));
 
-    *size = (uint32_t)len;
+    if (size) {
+        *size = (uint32_t)len;
+    }
 
     len >>= 1;
 
@@ -121,7 +153,9 @@ send_packet_data_command(uint16_t* cmd_buff, uint16_t* buffer, uint32_t* size) {
         buffer[i] = IN16(G1_ATA_DATA);
     }
 
-    g1_ata_wait_interrupt();
+    if (g1_ata_wait_interrupt() != 0) {
+        return -1;
+    }
 
     (void)IN32(G1_ATA_STATUS_REG);
 
