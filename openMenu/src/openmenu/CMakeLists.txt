@@ -36,6 +36,7 @@ set(OPENMENU_SOURCES
         src/backend/dreampi_link.c
         src/backend/online_games.c
         src/backend/online_time_sync.c
+        src/backend/serial_port.c
 )
 
 add_executable(openmenu ${OPENMENU_SOURCES})

@@ -118,6 +118,11 @@ Drops to 30fps
 ### Internet (Settings > Online > Online features On)
 - [ ] The Music icon reads Internet and opens the Internet screen (Off: Music and the CD player as before)
 - [ ] X connects (modem: dials DreamPi; adapter: the console's settings), X again hangs up; Auto-Connect dials at boot
+- [ ] Serial cable to DreamPi 2.0+ (no adapter): X shows "Serial: Looking for DreamPi... OK", dials, "PPP: Connected", status reads "Online via serial cable"; DreamPi log shows AT / OK / ATDT1111111 / CONNECT
+- [ ] Serial + modem both fitted: serial wins when DreamPi answers on it; unplug the serial cable and the modem dials (about a second later)
+- [ ] Serial: X hangs up, the 5 s cooldown runs, X connects again; pulling the cable while online shows "Connection lost." within a few seconds
+- [ ] Serial: launch a game while online (hangs up first); Alien Front Online then dials over serial by itself (needs the console's ISP settings set to the serial port)
+- [ ] Nothing on the serial port and no modem: "No modem, network adapter, or DreamPi on the serial port"
 - [ ] Events: upcoming DC99 events from the DreamPi add-on; without the add-on from dc99.net (only if it answers plain http)
 - [ ] Players: DCNow! and DCNET players (from the DreamPi add-on, else dreamcast.online), refresh as set
 - [ ] Games: games being played with player counts, "on card" for the ones on the SD card

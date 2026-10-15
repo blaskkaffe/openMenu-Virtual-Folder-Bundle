@@ -8,7 +8,10 @@
 
 #include <stdint.h>
 
-typedef enum dcnow_device { DCNOW_DEV_NONE = 0, DCNOW_DEV_MODEM, DCNOW_DEV_BBA, DCNOW_DEV_LAN } dcnow_device_t;
+/* DCNOW_DEV_SERIAL is a USB-serial cable from the rear serial port to DreamPi 2.0+ (Hayes AT dial, then PPP at
+ * 115200 with RTS/CTS). It is never found by the expansion port probe: a connect without an adapter asks the serial
+ * port first and dials the modem only when DreamPi does not answer there. */
+typedef enum dcnow_device { DCNOW_DEV_NONE = 0, DCNOW_DEV_MODEM, DCNOW_DEV_BBA, DCNOW_DEV_LAN, DCNOW_DEV_SERIAL } dcnow_device_t;
 
 /* Probes the expansion slot once per boot and remembers the answer. */
 dcnow_device_t dcnow_detect_device(void);
@@ -27,7 +30,7 @@ typedef struct dcnow_isp {
     uint8_t dns[4];
 } dcnow_isp_t;
 
-/* What the modem dials. DreamPi answers any number and accepts any login. */
+/* What the modem (and the serial link) dials. DreamPi answers any number and accepts any login. */
 #define DCNOW_DIAL_NUMBER   "1111111"
 #define DCNOW_DIAL_LOGIN    "openMenu"
 #define DCNOW_DIAL_PASSWORD "openMenu"
@@ -61,15 +64,16 @@ typedef struct dcnow_status {
     int hanging_up; /* a Disconnect or a lost carrier is being torn down */
 } dcnow_status_t;
 
-/* Starts the modem dial or the adapter bring-up on the worker thread.
- * Returns 0 when started, -1 when busy, already online, or nothing is fitted. */
+/* Starts the modem or serial dial, or the adapter bring-up, on the worker thread. With DCNOW_DEV_MODEM or
+ * DCNOW_DEV_NONE the serial port is tried first. Returns 0 when started, -1 when busy or already online. */
 int dcnow_conn_start(dcnow_device_t dev, const dcnow_isp_t* isp);
 
 /* Probes the device and reads the ISP settings on the worker, then connects.
  * For the boot-time Auto-Connect, where no frame may stall. */
 void dcnow_conn_autostart(void);
 
-/* The probed device without probing: DCNOW_DEV_NONE until the probe has run. */
+/* The device of the link in use (or being set up), else the probed device without probing: DCNOW_DEV_NONE until the
+ * probe has run. */
 dcnow_device_t dcnow_device_hint(void);
 
 /* The ISP settings the engine last connected with. Returns 0 before the first connection. */

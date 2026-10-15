@@ -374,7 +374,7 @@ draw_screen(const dcnow_status_t* status) {
          * which shows the strip alone. */
         dcnow_device_t dev = dcnow_device_hint();
         strip("OFFLINE", NULL);
-        if (dev == DCNOW_DEV_MODEM) {
+        if (dev == DCNOW_DEV_MODEM || dev == DCNOW_DEV_SERIAL) {
             put_centered(15, "DIALING");
             put_centered(21, "DREAMPI");
         } else if (dev != DCNOW_DEV_NONE) {

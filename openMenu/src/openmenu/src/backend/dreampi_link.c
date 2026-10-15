@@ -729,7 +729,9 @@ dreampi_link_tick(void) {
 
     if (sf_dcnow[0] != DCNOW_OFF) {
         dcnow_conn_poll(&snap);
-        modem_online = snap.state == DCNOW_CONN_ONLINE && dcnow_device_hint() == DCNOW_DEV_MODEM;
+        /* a modem or a serial cable both mean the console reached the internet through DreamPi */
+        modem_online = snap.state == DCNOW_CONN_ONLINE
+                       && (dcnow_device_hint() == DCNOW_DEV_MODEM || dcnow_device_hint() == DCNOW_DEV_SERIAL);
     }
     link_up = modem_online;
     event_tick();

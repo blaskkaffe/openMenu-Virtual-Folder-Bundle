@@ -216,13 +216,9 @@ connect_or_hang_up(void) {
             break;
         case DCNOW_CONN_COOLDOWN: sound_sfx(BAUDIO_SFX_ERROR); break; /* the DreamPi needs a moment between calls */
         default:
-            if (device == DCNOW_DEV_NONE) {
-                sound_sfx(BAUDIO_SFX_ERROR);
-                say("No modem or network adapter");
-                break;
-            }
+            /* with no adapter the engine asks the serial port for DreamPi first, then dials the modem if one is fitted */
             /* a flash ROM read runs with interrupts off: the engine's own copy when it has one (as the main branch) */
-            if (device != DCNOW_DEV_MODEM && !dcnow_conn_isp(&isp)) {
+            if ((device == DCNOW_DEV_BBA || device == DCNOW_DEV_LAN) && !dcnow_conn_isp(&isp)) {
                 dcnow_read_isp(&isp);
             }
             if (dcnow_conn_start(device, &isp) == 0) {
@@ -431,7 +427,11 @@ text_cut(const char* text, int chars, float x, float y, uint32_t argb) {
 static void
 draw_status(void) {
     char line[64];
-    const char* how = device == DCNOW_DEV_MODEM ? "modem" : device == DCNOW_DEV_NONE ? "" : "network adapter";
+    dcnow_device_t used = dcnow_device_hint();
+    const char* how = used == DCNOW_DEV_MODEM    ? "modem"
+                      : used == DCNOW_DEV_SERIAL ? "serial cable"
+                      : used == DCNOW_DEV_NONE   ? ""
+                                                 : "network adapter";
     switch (conn.state) {
         case DCNOW_CONN_ONLINE:
             snprintf(line, sizeof(line), "Online%s%s  X: hang up", how[0] ? " via " : "", how);
@@ -444,7 +444,7 @@ draw_status(void) {
             snprintf(line, sizeof(line), "%s  X: retry", conn.count > 0 ? conn.lines[conn.count - 1] : "Connection failed");
             break;
         default:
-            snprintf(line, sizeof(line), "%s", !probed ? "Looking for a modem..." : device == DCNOW_DEV_NONE ? "No modem or network adapter" : "Not connected  X: connect");
+            snprintf(line, sizeof(line), "%s", !probed ? "Looking for a modem..." : device == DCNOW_DEV_NONE ? "Not connected  X: connect by serial cable" : "Not connected  X: connect");
             break;
     }
     text_cut(line, 44, PANE_X + PAD, PANE_Y + 8.0f, conn.state == DCNOW_CONN_ONLINE ? GREY : YELLOW);
