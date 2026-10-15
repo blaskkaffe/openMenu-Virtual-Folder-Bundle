@@ -115,6 +115,15 @@ Drops to 30fps
 - [ ] Lit pill ends 6 px before the bar end (as Settings); pane corners like the row bar ends
 - [ ] A on a game starts it at once (no launch animation, no Launch animation row in Settings)
 
+### Internet (Settings > Online > Online features On)
+- [ ] The Music icon reads Internet and opens the Internet screen (Off: Music and the CD player as before)
+- [ ] X connects (modem: dials DreamPi; adapter: the console's settings), X again hangs up; Auto-Connect dials at boot
+- [ ] Events: upcoming DC99 events from the DreamPi add-on; without the add-on from dc99.net (only if it answers plain http)
+- [ ] Players: DCNow! and DCNET players (from the DreamPi add-on, else dreamcast.online), refresh as set
+- [ ] Games: games being played with player counts, "on card" for the ones on the SD card
+- [ ] Browsers: browser discs on the card start with A; ISP settings row says "coming soon"
+- [ ] VMU online status, Online time sync, phone page launch (DreamPi openMenu link) work as on the main branch
+
 ### Settings / date and time / About
 - [ ] Help text inside the bottom right box, not over BACK
 - [ ] Display > Music icon = Internet renames the third main menu icon

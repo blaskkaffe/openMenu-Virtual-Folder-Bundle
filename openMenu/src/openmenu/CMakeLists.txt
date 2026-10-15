@@ -22,6 +22,7 @@ set(OPENMENU_SOURCES
         src/ui_bios.c
         src/ui_fallback.c
         src/ui_files.c
+        src/ui_internet.c
         src/ui_list.c
         src/ui_settings.c
         src/video.c
@@ -31,6 +32,7 @@ set(OPENMENU_SOURCES
         src/backend/dcnow_net.c
         src/backend/dcnow_fetch.c
         src/backend/dcnow_vmu.c
+        src/backend/events_fetch.c
         src/backend/dreampi_link.c
         src/backend/online_games.c
         src/backend/online_time_sync.c

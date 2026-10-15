@@ -30,6 +30,7 @@
 
 #include "online.h"
 #include "ui_bios.h"
+#include "ui_internet.h"
 #include <backend/gd_list.h>
 
 #include "ui_files.h"
@@ -38,7 +39,7 @@
 #include "ui_settings.h"
 #include "video.h"
 
-typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILES, SCREEN_MUSIC } screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILES, SCREEN_MUSIC, SCREEN_INTERNET } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
  * longer; the animations were written for that rate. */
@@ -581,7 +582,8 @@ screen_accent(void) {
     switch (screen) {
         case SCREEN_GAMES: return BMENU_ACCENT_GAME;
         case SCREEN_FILES: return BMENU_ACCENT_FILES;
-        case SCREEN_MUSIC: return BMENU_ACCENT_MUSIC;
+        case SCREEN_MUSIC:
+        case SCREEN_INTERNET: return BMENU_ACCENT_MUSIC;
         case SCREEN_SETTINGS:
         case SCREEN_DATETIME: return BMENU_ACCENT_SETTINGS;
         default: return BMENU_ACCENT_MAIN;
@@ -815,6 +817,9 @@ draw_frame(void) {
     } else if (screen == SCREEN_MUSIC) {
         bscene_draw_background(&menu.bg, gfx_sink());
         bcd_draw(&cdp, gfx_sink());
+    } else if (screen == SCREEN_INTERNET) {
+        bscene_draw_background(&menu.bg, gfx_sink());
+        uin_draw();
     } else {
         bscene_draw_background(&menu.bg, gfx_sink());
         if (screen == SCREEN_GAMES) {
@@ -886,6 +891,10 @@ handle_main(button_t b) {
                 page.pal = console_is_pal();
                 settings_popup = 0;
                 screen = SCREEN_SETTINGS;
+            } else if (menu.selected == ICON_MUSIC && sf_dcnow[0] != DCNOW_OFF) {
+                sound_sfx(BAUDIO_SFX_ENTER); /* online features on: the icon is Internet */
+                uin_open(&menu, console_is_pal());
+                screen = SCREEN_INTERNET;
             } else if (menu.selected == ICON_MUSIC) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 bcd_open(&cdp, &menu, 1, 0, 0); /* the disc of the drive is shown; nothing to play */
@@ -1319,6 +1328,7 @@ apply_hover(void) {
             break;
         }
         case SCREEN_FILES: uif_hover(ux, uy); break;
+        case SCREEN_INTERNET: uin_hover(ux, uy); break;
         case SCREEN_MUSIC: {
             int i = bcd_item_at_px(ux, uy);
             if (i >= 0 && bcd_set_cursor(&cdp, i)) sound_sfx(BAUDIO_SFX_CURSOR);
@@ -1409,6 +1419,11 @@ ui_bios_run(const bios_rom* rom) {
             uif_handle(b);
         } else if (screen == SCREEN_MUSIC) {
             handle_music(b);
+        } else if (screen == SCREEN_INTERNET) {
+            if (uin_handle(b)) {
+                bmenu_show_main(&menu, ICON_MUSIC);
+                screen = SCREEN_MAIN;
+            }
         } else {
             handle_settings(b);
         }
@@ -1451,6 +1466,8 @@ ui_bios_run(const bios_rom* rom) {
             uif_sync();
         } else if (screen == SCREEN_MUSIC) {
             bcd_sync(&cdp);
+        } else if (screen == SCREEN_INTERNET) {
+            uin_sync();
         } else if (screen == SCREEN_GAMES) {
             games_sync();
         }
