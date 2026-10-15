@@ -3,6 +3,7 @@
 #include <arch/rtc.h>
 #include <crayon_savefile/peripheral.h>
 #include <dc/flashrom.h>
+#include <dc/g2bus.h>
 #include <dc/maple.h>
 #include <dc/maple/vmu.h>
 #include <dc/video.h>
@@ -646,6 +647,16 @@ update_flashrom_syscfg_date(time_t unix_time) {
     buffer[4] = (dc_time >> 16) & 0xFF;
     buffer[5] = (dc_time >> 24) & 0xFF;
 
+    /* As the BIOS (settings_save_syscfg 0x8C0228C0 -> syscfg_write_fields(0x17) 0x8C0A0944): language, mono and
+     * autostart go into the block from the BIOS's RAM copy at 0x8C00007D..7F (what it read from this block at boot),
+     * at block offsets 7, 8, 9. Values the BIOS would not have written leave the block's own bytes. */
+    {
+        volatile uint8_t* sys = (volatile uint8_t*)0x8C000078;
+        if (sys[5] <= 5) buffer[7] = sys[5]; /* language */
+        if (sys[6] <= 1) buffer[8] = sys[6]; /* mono */
+        if (sys[7] <= 1) buffer[9] = sys[7]; /* autostart */
+    }
+
     /* Recalculate CRC and store at offset 62 (little-endian, 2 bytes) */
     crc = calc_flashrom_crc(buffer);
     buffer[62] = crc & 0xFF;
@@ -731,16 +742,58 @@ cleanup:
     return rv;
 }
 
-/* Sets the console clock, then the SYSCFG date the BIOS checks at boot so it
- * does not ask for the time. Returns 0 when the clock was set. */
+/* The clock as the BIOS's own date screen sets it (datetime_cursor_cb 0x8C01ADBC):
+ * 1. syRtcSetDate (0x8C0903F8), tried up to 11 times: enable writing (0xA0710008 = 1), low 16 bits to 0xA0710004,
+ *    high 16 bits to 0xA0710000 (which locks writing again), read the counter back; it took if it reads the value
+ *    written or one second later. Writing is enabled again for every try (KOS's rtc_set_unix_secs enables it once,
+ *    so its retries cannot write, and it wants the exact value back).
+ * 2. g_clock_secs = the new count, kept in the BIOS's RAM copy of the system settings at 0x8C000078.
+ * 3. settings_save_syscfg (0x8C0228C0): the system config block 5 of flash partition 2 rewritten with the date (and
+ *    language, mono, autostart from the same RAM copy), tried up to 10 times.
+ * The counter counts seconds from 1950-01-01 00:00. Returns 0 when the clock was set. */
+#define RTC_HIGH 0xA0710000u
+#define RTC_LOW 0xA0710004u
+#define RTC_CTRL 0xA0710008u
+
+static uint32_t
+rtc_read_count(void) {
+    uint32_t a, b;
+    do { /* the low half may roll over between the two reads */
+        a = ((g2_read_32(RTC_HIGH) & 0xFFFF) << 16) | (g2_read_32(RTC_LOW) & 0xFFFF);
+        b = ((g2_read_32(RTC_HIGH) & 0xFFFF) << 16) | (g2_read_32(RTC_LOW) & 0xFFFF);
+    } while (a != b);
+    return a;
+}
+
 int8_t
 set_rtc_and_syscfg(time_t local_time) {
-    if (rtc_set_unix_secs(local_time) != 0) {
+    if (local_time + (time_t)DC_EPOCH_DELTA < 0 || (uint64_t)(local_time + DC_EPOCH_DELTA) > 0xFFFFFFFFull) {
         return -1;
     }
-    /* If the flash ROM write fails the time is still set. The user may just
-     * see the BIOS date screen on the next boot. */
-    update_flashrom_syscfg_date(local_time);
+    uint32_t count = (uint32_t)(local_time + DC_EPOCH_DELTA);
+    int ok = 0;
+    for (int attempt = 0; attempt < 11 && !ok; attempt++) {
+        g2_write_32(RTC_CTRL, 1);
+        g2_write_32(RTC_LOW, count & 0xFFFF);
+        g2_write_32(RTC_HIGH, count >> 16);
+        uint32_t back = rtc_read_count();
+        ok = back == count || back == count + 1;
+    }
+    if (!ok) {
+        return -1;
+    }
+    /* KOS keeps its own copy of the time at boot for time(): bring it up to date (this writes the counter's current
+     * value again, nothing changes) */
+    rtc_set_unix_secs((time_t)rtc_read_count() - (time_t)DC_EPOCH_DELTA);
+
+    *(volatile uint32_t*)0x8C000078 = count; /* g_clock_secs */
+
+    /* If the flash write fails the clock is still set; the BIOS may then ask for the date on the next boot. */
+    for (int attempt = 0; attempt < 10; attempt++) {
+        if (update_flashrom_syscfg_date(local_time) == 0) {
+            break;
+        }
+    }
     return 0;
 }
 

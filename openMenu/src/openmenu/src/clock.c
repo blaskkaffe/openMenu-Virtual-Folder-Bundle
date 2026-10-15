@@ -4,6 +4,8 @@
 
 #include <arch/rtc.h>
 
+#include <openmenu_savefile.h>
+
 #include "clock.h"
 #include "clock_math.h"
 
@@ -20,7 +22,8 @@ clock_get(int* year, int* month, int* day, int* hour, int* minute) {
 
 int
 clock_set(int year, int month, int day, int hour, int minute) {
-    return rtc_set_unix_secs((time_t)clock_unix_secs(year, month, day, hour, minute)) == 0 ? 0 : -1;
+    /* exactly as the BIOS's date screen saves: the clock, its RAM copy and the system config block in flash */
+    return set_rtc_and_syscfg((time_t)clock_unix_secs(year, month, day, hour, minute)) == 0 ? 0 : -1;
 }
 
 int
