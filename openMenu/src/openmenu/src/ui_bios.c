@@ -41,10 +41,6 @@ typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCRE
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
  * longer; the animations were written for that rate. */
-/* Temporary performance aids: the frame rate readout, and while holding X the cloud layers
- * are skipped, while holding Y the icons are skipped. */
-#define UI_DEBUG 1
-
 #define STEPS_PER_SECOND 60
 #define MAX_STEPS_PER_FRAME 4
 
@@ -56,11 +52,12 @@ enum { ICON_GAME, ICON_FILES, ICON_MUSIC, ICON_SETTINGS };
 
 static const char* const icon_names[BMENU_ICONS] = {"Play", "File", "Music", "Settings"};
 
-/* The main menu's icon labels; the Music icon can be called "Internet" (Settings, Display). */
+/* The main menu's icon labels: the Music icon is "Internet" while the online features are on, manual or automatic
+ * connect (Settings, Online). The Internet screen is still to come: the icon opens the music player for now. */
 static void
 set_icon_labels(void) {
     for (int i = 0; i < BMENU_ICONS; i++) {
-        gfx_set_label((uint16_t)BMENU_ID_ICON(i), i == ICON_MUSIC && sf_dcnow[0] == 1 ? "Internet" : icon_names[i]);
+        gfx_set_label((uint16_t)BMENU_ID_ICON(i), i == ICON_MUSIC && sf_dcnow[0] != DCNOW_OFF ? "Internet" : icon_names[i]);
     }
 }
 
@@ -777,7 +774,6 @@ static void
 draw_frame(void) {
     uint32_t top, bottom;
     uint64_t t0 = timer_us_gettime64();
-    uint32_t held = UI_DEBUG ? input_buttons() : 0;
     gfx_set_aspect(sf_aspect[0] == ASPECT_WIDE);
     dcbg_gradient(&menu.bg, &top, &bottom);
     {
@@ -803,13 +799,9 @@ draw_frame(void) {
     phase_us[0] += t1 - t0;
 
     if (screen == SCREEN_MAIN) {
-        if (!(held & CONT_X)) {
-            bscene_draw_background(&menu.bg, gfx_sink());
-        }
+        bscene_draw_background(&menu.bg, gfx_sink());
         phase_us[1] += timer_us_gettime64() - t1;
-        if (!(held & CONT_Y)) {
-            bmenu_draw_objects(&menu, gfx_sink());
-        }
+        bmenu_draw_objects(&menu, gfx_sink());
     } else if (screen == SCREEN_SETTINGS) {
         bscene_draw_background(&menu.bg, gfx_sink());
         draw_settings();
@@ -1389,8 +1381,8 @@ ui_bios_run(const bios_rom* rom) {
         if (screen == SCREEN_GAMES && viewer_open) {
             viewer_drag(&pointer);
         }
-        if (pointer.moved) {
-            apply_hover();
+        if (pointer.moved || pointer.clicked) {
+            apply_hover(); /* a click acts on what is under the pointer, even if it has not moved */
         }
         int typed = input_typed_char();
         if (typed && screen == SCREEN_GAMES && !recent_open && uil_jump_to_letter(typed)) {
