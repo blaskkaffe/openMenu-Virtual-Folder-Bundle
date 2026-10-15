@@ -476,10 +476,17 @@ test_header_logo(const bios_rom* rom) {
         int orange = 0;
         for (size_t i = 0; i < ntsc.data_size; i += 2) {
             uint16_t a = (uint16_t)(keep[i] | (keep[i + 1] << 8)), b = (uint16_t)(pal.data[i] | (pal.data[i + 1] << 8));
-            CHECK(((a >> 8) & 15) == (b & 15) && (a & 15) == ((b >> 8) & 15) && (a & 0xF0F0) == (b & 0xF0F0));
+            CHECK((a & 0xF000) == (b & 0xF000)); /* the alpha stays */
             orange += ((a >> 12) > 8 && ((a >> 8) & 15) > 10 && (a & 15) < 6);
         }
         CHECK(orange > 20); /* there is a swirl to recolour */
+        /* a full orange pixel (238, 68, 0) comes out as the PAL blue (74, 116, 190), within a 4 bit step */
+        for (size_t i = 0; i < ntsc.data_size; i += 2) {
+            uint16_t a = (uint16_t)(keep[i] | (keep[i + 1] << 8)), b = (uint16_t)(pal.data[i] | (pal.data[i + 1] << 8));
+            if ((a >> 12) == 15 && ((a >> 8) & 15) == 14 && ((a >> 4) & 15) == 4 && (a & 15) == 0) {
+                CHECK(((b >> 8) & 15) == 4 && ((b >> 4) & 15) == 7 && (b & 15) == 11);
+            }
+        }
     }
 }
 

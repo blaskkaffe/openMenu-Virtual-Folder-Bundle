@@ -360,7 +360,18 @@ bios_header_logo(const bios_rom* rom, int region, bios_texture* out) {
             for (size_t i = 0; i < swirl.data_size; i += 2) {
                 uint16_t v = (uint16_t)(swirl.data[i] | (swirl.data[i + 1] << 8));
                 if (swirl.pixel_format == BIOS_PVR_ARGB4444) {
-                    v = (uint16_t)((v & 0xF0F0u) | ((v >> 8) & 0x000Fu) | ((v & 0x000Fu) << 8));
+                    /* the orange (238, 68, 0) becomes the PAL logo's blue (74, 116, 190); a pixel that is part orange (the
+                     * smoothed edge) moves the same part of the way, the grey text stays */
+                    int r = ((v >> 8) & 15) * 17, g = ((v >> 4) & 15) * 17, b = (v & 15) * 17;
+                    int k = (r - b) * 256 / 238; /* 0 grey .. 256 full orange */
+                    k = k < 0 ? 0 : (k > 256 ? 256 : k);
+                    r += k * (74 - 238) / 256;
+                    g += k * (116 - 68) / 256;
+                    b += k * (190 - 0) / 256;
+                    r = r < 0 ? 0 : (r > 255 ? 255 : r);
+                    g = g < 0 ? 0 : (g > 255 ? 255 : g);
+                    b = b < 0 ? 0 : (b > 255 ? 255 : b);
+                    v = (uint16_t)((v & 0xF000u) | (uint16_t)(((r + 8) / 17) << 8) | (uint16_t)(((g + 8) / 17) << 4) | (uint16_t)((b + 8) / 17));
                 } else if (swirl.pixel_format == BIOS_PVR_RGB565) {
                     v = (uint16_t)((v & 0x07E0u) | ((v >> 11) & 0x1Fu) | ((v & 0x1Fu) << 11));
                 } else { /* ARGB1555 */
