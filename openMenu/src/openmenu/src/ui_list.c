@@ -43,6 +43,7 @@ is_set(const gd_item* it) {
 static void
 rebuild(void) {
     int n = list_length();
+    members_of = NULL; /* a set's discs depend on the folder shown: collect them again */
     free(vis);
     vis = n > 0 ? malloc((size_t)n * sizeof(int)) : NULL;
     vis_count = 0;

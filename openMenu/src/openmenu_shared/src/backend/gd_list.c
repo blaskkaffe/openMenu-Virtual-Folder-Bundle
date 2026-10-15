@@ -548,6 +548,9 @@ list_set_multidisc(const char* product_id) {
             continue;
         }
 
+        if (temp_idx >= MULTIDISC_MAX_GAMES_PER_SET) {
+            break; /* list_multidisc holds MULTIDISC_MAX_GAMES_PER_SET entries */
+        }
         list_multidisc[temp_idx++] = &gd_slots_BASE[base_idx];
     }
     num_items_multidisc = temp_idx;
@@ -569,6 +572,9 @@ list_set_multidisc_filtered(const char* product_id, const char* folder_path) {
             continue;
         }
 
+        if (temp_idx >= MULTIDISC_MAX_GAMES_PER_SET) {
+            break; /* list_multidisc holds MULTIDISC_MAX_GAMES_PER_SET entries */
+        }
         list_multidisc[temp_idx++] = &gd_slots_BASE[base_idx];
     }
     num_items_multidisc = temp_idx;

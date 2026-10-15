@@ -57,6 +57,7 @@ vf_list(int slot, vf_file* out, int max) {
     return n;
 }
 
+/* 1 if the card has a file called `name`, 0 if not, -1 if its directory cannot be read (then nothing is known). */
 static int
 has_file(int slot, const char* name, int* game_present) {
     vf_file* list = (vf_file*)malloc(sizeof(vf_file) * VF_MAX_FILES);
@@ -65,9 +66,13 @@ has_file(int slot, const char* name, int* game_present) {
         *game_present = 0;
     }
     if (!list) {
-        return 0;
+        return -1;
     }
     int n = vf_list(slot, list, VF_MAX_FILES);
+    if (n < 0) {
+        free(list);
+        return -1;
+    }
     for (int i = 0; i < n; i++) {
         found |= !strncmp(list[i].name, name, 12);
         if (game_present && list[i].is_game) {
@@ -89,6 +94,9 @@ vf_copy_check(int src, const vf_file* file, int dst) {
     }
     int game_there = 0;
     int exists = has_file(dst, file->name, &game_there);
+    if (exists < 0) {
+        return VF_ERR_DEST; /* the destination's directory cannot be read */
+    }
     if (file->is_game && game_there && !exists) {
         return VF_ERR_GAME;
     }
@@ -332,7 +340,16 @@ root_valid(const vmu_root_t* root) {
             return 0;
         }
     }
-    return root->fat_size == 1 && root->dir_size > 0 && root->dir_size <= 20 && root->dir_loc < 256 && root->fat_loc < 256;
+    if (root->fat_size != 1 || root->dir_size == 0 || root->dir_size > 20) {
+        return 0;
+    }
+    /* the FAT and the directory (which runs downwards from dir_loc) lie inside the card, below the root block (255),
+     * and do not overlap: the formatter writes FAT entries for all of them */
+    int dir_last = (int)root->dir_loc - (int)root->dir_size + 1;
+    if (root->dir_loc >= 255 || root->fat_loc >= 255 || dir_last < 0) {
+        return 0;
+    }
+    return root->fat_loc < dir_last || root->fat_loc > root->dir_loc;
 }
 
 /* A new root block as a formatted card has it: 256 blocks, FAT at 254, 13 directory blocks from 253, 200 for files. */
