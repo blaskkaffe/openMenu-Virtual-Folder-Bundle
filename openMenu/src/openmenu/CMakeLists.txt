@@ -43,6 +43,8 @@ add_executable(openmenu ${OPENMENU_SOURCES})
 
 set(GFX_PRESORT 1 CACHE STRING "Draw translucent polygons in submission order instead of PVR autosort")
 target_compile_definitions(openmenu PRIVATE GFX_PRESORT=${GFX_PRESORT})
+set(GFX_VERTEX_DMA 1 CACHE STRING "Send the TA lists by DMA as the BIOS does (KOS vertex DMA mode), 0 = store queues")
+target_compile_definitions(openmenu PRIVATE GFX_VERTEX_DMA=${GFX_VERTEX_DMA})
 set(GFX_MAIN_AUTOSORT 1 CACHE STRING "Main menu: let the PVR sort translucent polygons per pixel, as the BIOS does (exact look of the icons)")
 target_compile_definitions(openmenu PRIVATE GFX_MAIN_AUTOSORT=${GFX_MAIN_AUTOSORT})
 # Switching the sort mode per frame needs KOS's internal PVR state (see gfx.c, set_tile_presort): KOS 2.1.1's

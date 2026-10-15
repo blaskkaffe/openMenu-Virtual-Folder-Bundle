@@ -131,6 +131,15 @@ static int hdr_valid;
 
 static uint16_t text_canvas[MAX_TEXT_W * GFX_LINE_H] __attribute__((aligned(32)));
 
+#ifndef GFX_VERTEX_DMA
+#define GFX_VERTEX_DMA 1
+#endif
+#define OP_DMA_BYTES (128 * 1024)  /* the gradient quad only */
+#define TR_DMA_BYTES (1024 * 1024) /* two halves of 512 KB: 16000 vertices a frame */
+static void *op_dma_buf, *tr_dma_buf;
+static int cur_list_op = 1; /* the list pvr_prim() sends to now: 1 = OP, 0 = TR */
+static unsigned frame_bytes[2]; /* sent so far this frame, per list: never past a buffer half (KOS only asserts) */
+
 /* ---- Setup -------------------------------------------------------------------- */
 
 int
@@ -141,11 +150,30 @@ gfx_init(const bios_rom* rom) {
         /* OP, OP modifier, TR, TR modifier, punch-through */
         {PVR_BINSIZE_32, PVR_BINSIZE_0, PVR_BINSIZE_32, PVR_BINSIZE_0, PVR_BINSIZE_0},
         512 * 1024, /* vertex buffer */
-        0,          /* no DMA */
+        GFX_VERTEX_DMA, /* the BIOS builds each list in RAM and sends it to the TA by DMA (0x8C0DA614): the CPU is free meanwhile */
         0,          /* no FSAA */
         GFX_PRESORT, /* 1 = translucent autosort disabled */
         1};         /* one extra set of object pointer blocks */
-    return pvr_init(&params);
+    int r = pvr_init(&params);
+#if GFX_VERTEX_DMA
+    if (r == 0) {
+        /* KOS's vertex DMA mode: pvr_prim() copies into these (each buffer is split in two, one half per frame in flight) */
+        op_dma_buf = memalign(32, OP_DMA_BYTES);
+        tr_dma_buf = memalign(32, TR_DMA_BYTES);
+        if (op_dma_buf && tr_dma_buf) {
+            pvr_set_vertbuf(PVR_LIST_OP_POLY, op_dma_buf, OP_DMA_BYTES);
+            pvr_set_vertbuf(PVR_LIST_TR_POLY, tr_dma_buf, TR_DMA_BYTES);
+        } else {
+            free(op_dma_buf);
+            free(tr_dma_buf);
+            op_dma_buf = tr_dma_buf = NULL;
+            pvr_shutdown();
+            params.dma_enabled = 0; /* no memory for the buffers: the store queues as before */
+            r = pvr_init(&params);
+        }
+    }
+#endif
+    return r;
 }
 
 /* ---- ROM textures ----------------------------------------------------------------- */
@@ -708,6 +736,18 @@ static void
 cmd_flush(void) {
     if (cmd_n) {
         uint64_t t0 = timer_us_gettime64();
+#if GFX_VERTEX_DMA
+        if (tr_dma_buf) {
+            unsigned bytes = (unsigned)cmd_n * (unsigned)sizeof(pvr_vertex_t);
+            int op = cur_list_op;
+            unsigned room = op ? OP_DMA_BYTES / 2 : TR_DMA_BYTES / 2;
+            if (frame_bytes[op] + bytes + 128u > room) {
+                cmd_n = 0; /* this frame's list is full: drop the rest rather than run over the buffer */
+                return;
+            }
+            frame_bytes[op] += bytes;
+        }
+#endif
         pvr_prim(cmdbuf, cmd_n * (int)sizeof(pvr_vertex_t));
         stats.ta_us += (unsigned)(timer_us_gettime64() - t0);
         stats.vertices += (unsigned)cmd_n;
@@ -1403,6 +1443,8 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
     pvr_scene_begin();
 
     pvr_poly_cxt_t cxt;
+    frame_bytes[0] = frame_bytes[1] = 0;
+    cur_list_op = 1;
     pvr_list_begin(PVR_LIST_OP_POLY);
     pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
     cxt.gen.culling = PVR_CULLING_NONE;
@@ -1416,6 +1458,7 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
     cmd_flush();
     pvr_list_finish();
 
+    cur_list_op = 0;
     pvr_list_begin(PVR_LIST_TR_POLY);
     hdr_valid = 0;
 }

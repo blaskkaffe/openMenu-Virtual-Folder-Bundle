@@ -288,6 +288,12 @@ the per-vertex lighting had tripled the main menu's cost; that is what dropped i
 Game list: the box art of the games next to the cursor is read ahead, and a new case waits up to 10 frames for
 its picture before flying in, so the front no longer pops in.
 
+Why the main menu stayed under 60 fps (hardware numbers, `Y` isolation modes): the scene build takes about 6 ms, but sending
+the vertices to the TA with the store queues took about 9 ms of CPU (about 4000 vertices, 2 us each: the CPU waits for the TA).
+The BIOS builds each list in RAM and sends it by DMA (`km_ta_list_init`, 0x8C0DA614: DMA channel 2 to 0x10000000), so the CPU is
+free meanwhile. The build now uses KOS's vertex DMA mode (`GFX_VERTEX_DMA`, `pvr_set_vertbuf`, 1 MB for the translucent list, 128 KB
+for the opaque one; a full buffer drops the rest of the frame instead of overrunning it). The CPU sorter costs 15 ms more (30 fps).
+
 ## Music: the BIOS CD player
 
 `bios_engine/bios_cdplayer`: the Music screen as `music_screen_update` (0x8C018BC8) builds it: BACK (0x1110 at

@@ -436,6 +436,14 @@ demo_row(void* user, int index, bpage_row* out) {
 }
 
 static double bench_area, bench_tris, bench_tex_area, bench_vtx_count;
+static bscene_vtx bs_l1, bs_l2;
+static int bs_pending, bs_tex_kind = -1, bs_tex_a, bs_tex_b;
+static double bench_strips, bench_sent;
+
+static int
+bs_same(const bscene_vtx* a, const bscene_vtx* b) {
+    return a->x == b->x && a->y == b->y && a->argb == b->argb && a->u == b->u && a->v == b->v && a->invw == b->invw && a->oargb == b->oargb;
+}
 
 static void
 bench_tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
@@ -455,6 +463,32 @@ bench_tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
     }
     bench_tris += 1;
     bench_vtx_count += 3;
+    /* the strip merge of gfx.c's sink_triangle: how many vertices the TA really gets */
+    int same_tex = bs_pending && bs_tex_kind == ref.kind && bs_tex_a == ref.a && bs_tex_b == ref.b;
+    if (same_tex) {
+        int a = -1, b = -1;
+        for (int i = 0; i < 3; i++) {
+            if (a < 0 && bs_same(&v[i], &bs_l1)) {
+                a = i;
+            } else if (b < 0 && bs_same(&v[i], &bs_l2)) {
+                b = i;
+            }
+        }
+        if (a >= 0 && b >= 0) {
+            bench_sent += 1;
+            bs_l1 = bs_l2;
+            bs_l2 = v[3 - a - b];
+            return;
+        }
+    }
+    bench_sent += 3;
+    bench_strips += 1;
+    bs_l1 = v[1];
+    bs_l2 = v[2];
+    bs_pending = 1;
+    bs_tex_kind = ref.kind;
+    bs_tex_a = ref.a;
+    bs_tex_b = ref.b;
 }
 
 static void
@@ -686,6 +720,7 @@ main(int argc, char** argv) {
             seg_tex += bench_tex_area - x0;
             seg_n++;
         }
+        printf("TA vertices/frame %.0f in %.0f strips (%.2f per triangle)\n", bench_sent / n, bench_strips / n, bench_sent / bench_tris);
         printf("all: %.0f tris/frame, overdraw %.2fx (textured %.2fx)\n", bench_tris / n, bench_area / n / (640.0 * 480.0),
                bench_tex_area / n / (640.0 * 480.0));
         return 0;
