@@ -615,10 +615,18 @@ calc_flashrom_crc(const uint8_t* buffer) {
 
 /* update flashrom BLOCK_1/SYSCFG date so BIOS doesn't prompt for time on next boot.
  * writes bitmap before block data; skips physical block 1 (KOS never reads it).
+ * The BIOS's own routine (syscfg_write_fields 0x8C0A0944 and the block library under it, 0x8C0C2B48): the block is read,
+ * the date (block offsets 2..5) and language, mono, autostart (7, 8, 9) are replaced, the other bytes stay as they are,
+ * CRC over the first 62 bytes (CRC-16 CCITT, 0x1021, start 0xFFFF, inverted; its table at 0x8C0E2F68 was compared),
+ * the bitmap bit of the next free block is cleared first, then the block is programmed into that slot.
+ * The BIOS formats (erases) a partition whose header is wrong and compacts a full one; this routine does neither: it
+ * leaves the flash alone and fails. It also writes nothing when the block would stay as it is (the BIOS writes a new
+ * block on every visit to Settings; there are only about 250 free slots), and reads the block back afterwards.
+ * keep_date: leave the date of the block as it is (else the date is unix_time).
  * returns 0 on success, -1 on failure */
 static int8_t
-update_flashrom_syscfg_date(time_t unix_time) {
-    uint8_t buffer[64];
+update_flashrom_syscfg_date(time_t unix_time, int keep_date) {
+    uint8_t buffer[64], original[64];
     int start, size;
     int bmcnt, i;
     uint8_t* bitmap = NULL;
@@ -637,15 +645,28 @@ update_flashrom_syscfg_date(time_t unix_time) {
     if (buffer[0] != 0x05 || buffer[1] != 0x00) {
         return -1; /* Unexpected block structure */
     }
+    memcpy(original, buffer, sizeof(original));
 
-    /* Convert Unix time to DC epoch (seconds since Jan 1, 1950) */
-    dc_time = (uint32_t)(unix_time + DC_EPOCH_DELTA);
+    /* The partition must have the header the BIOS checks (0x8C0C2CC8): "KATANA_FLASH____", the partition number
+     * (2), the format 0 or 1. The BIOS would format a partition without it; we leave it alone. */
+    {
+        uint8_t header[64];
+        if (flashrom_info(FLASHROM_PT_BLOCK_1, &start, &size) != 0 || flashrom_read(start, header, 64) < 0 ||
+            memcmp(header, "KATANA_FLASH____", 16) != 0 || header[16] != 2 || header[17] > 1) {
+            return -1;
+        }
+    }
 
-    /* Update the date field at offset 2 (little-endian, 4 bytes) */
-    buffer[2] = (dc_time) & 0xFF;
-    buffer[3] = (dc_time >> 8) & 0xFF;
-    buffer[4] = (dc_time >> 16) & 0xFF;
-    buffer[5] = (dc_time >> 24) & 0xFF;
+    if (!keep_date) {
+        /* Convert Unix time to DC epoch (seconds since Jan 1, 1950) */
+        dc_time = (uint32_t)(unix_time + DC_EPOCH_DELTA);
+
+        /* Update the date field at offset 2 (little-endian, 4 bytes) */
+        buffer[2] = (dc_time) & 0xFF;
+        buffer[3] = (dc_time >> 8) & 0xFF;
+        buffer[4] = (dc_time >> 16) & 0xFF;
+        buffer[5] = (dc_time >> 24) & 0xFF;
+    }
 
     /* As the BIOS (settings_save_syscfg 0x8C0228C0 -> syscfg_write_fields(0x17) 0x8C0A0944): language, mono and
      * autostart go into the block from the BIOS's RAM copy at 0x8C00007D..7F (what it read from this block at boot),
@@ -657,6 +678,10 @@ update_flashrom_syscfg_date(time_t unix_time) {
         if (sys[7] <= 1) buffer[9] = sys[7]; /* autostart */
     }
 
+    if (memcmp(original, buffer, 62) == 0) {
+        return 0; /* nothing to change: no slot is used */
+    }
+
     /* Recalculate CRC and store at offset 62 (little-endian, 2 bytes) */
     crc = calc_flashrom_crc(buffer);
     buffer[62] = crc & 0xFF;
@@ -666,11 +691,6 @@ update_flashrom_syscfg_date(time_t unix_time) {
     verify_crc = (uint16_t)buffer[62] | ((uint16_t)buffer[63] << 8);
     if (verify_crc != crc) {
         return -1; /* CRC storage failed somehow */
-    }
-
-    /* Get partition info */
-    if (flashrom_info(FLASHROM_PT_BLOCK_1, &start, &size) != 0) {
-        return -1;
     }
 
     /* Calculate bitmap size (one bit per 64-byte block, rounded to 64 bytes) */
@@ -735,6 +755,14 @@ update_flashrom_syscfg_date(time_t unix_time) {
         goto cleanup;
     }
 
+    /* Read it back: the newest block of this id must be the one just written */
+    {
+        uint8_t check[64];
+        if (flashrom_get_block(FLASHROM_PT_BLOCK_1, FLASHROM_B1_SYSCFG, check) < 0 || memcmp(check, buffer, 64) != 0) {
+            goto cleanup;
+        }
+    }
+
     rv = 0; /* Success */
 
 cleanup:
@@ -789,8 +817,8 @@ set_rtc_and_syscfg(time_t local_time) {
     *(volatile uint32_t*)0x8C000078 = count; /* g_clock_secs */
 
     /* If the flash write fails the clock is still set; the BIOS may then ask for the date on the next boot. */
-    for (int attempt = 0; attempt < 10; attempt++) {
-        if (update_flashrom_syscfg_date(local_time) == 0) {
+    for (int attempt = 0; attempt < 9; attempt++) {
+        if (update_flashrom_syscfg_date(local_time, 0) == 0) {
             break;
         }
     }
@@ -799,9 +827,12 @@ set_rtc_and_syscfg(time_t local_time) {
 
 int8_t
 save_syscfg_settings(void) {
-    time_t now = (time_t)rtc_read_count() - (time_t)DC_EPOCH_DELTA;
-    for (int attempt = 0; attempt < 10; attempt++) {
-        if (update_flashrom_syscfg_date(now) == 0) {
+    /* As settings_save_syscfg (0x8C0228C0): the date written is the BIOS's RAM copy g_clock_secs (0x8C000078, what
+     * it read from the flash at boot, or the date set since); up to 9 tries. A RAM copy of 0 was never set: the
+     * block's date stays. */
+    uint32_t count = *(volatile uint32_t*)0x8C000078;
+    for (int attempt = 0; attempt < 9; attempt++) {
+        if (update_flashrom_syscfg_date((time_t)count - (time_t)DC_EPOCH_DELTA, count == 0) == 0) {
             return 0;
         }
     }
