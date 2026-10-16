@@ -306,3 +306,11 @@ of minutes hidden at 0). Cursor: the BIOS table 0x8C038610 (left / right wrap, s
 button gets var0 = 1 (its script lights it and plays its motion), BACK var0 = 1 while selected. A on a button makes
 it jump (var1 = 1) with the confirm sound, as the BIOS buttons do; nothing is played. B or A on BACK leaves.
 Preview: `bios_preview dc_boot.bin out.ppm 120 <cursor> -13` (`BIOS_PREVIEW_NODISC=1`: empty drive).
+
+## Debug log page
+
+X on the main menu switches the debug overlay on (it stays on in the other menus). While it is on, every second's numbers
+(fps, triangles, sync/build/wait, gpu/ta time, vertices, headers, sort mode, phase times) are stored per screen and per Y
+mode (`dbglog.c`); the first second after a change is dropped, the following ones replace each other and the lowest fps is
+kept. B on the main menu (overlay on) opens the log page: a table to photograph, then (B again) a QR code (`qr.c`, byte
+mode, level L) with the same numbers as text, then B closes. A on the table clears the log.

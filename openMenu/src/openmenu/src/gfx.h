@@ -43,6 +43,9 @@ void gfx_set_label(uint16_t obj_id, const char* text);
  * `shadow` is ignored: the BIOS glyphs carry their own shade. */
 void gfx_text(const char* str, float x, float y, float z, uint32_t argb, int shadow);
 
+/* The same, scaled (the debug pages). */
+void gfx_text_scaled(const char* str, float x, float y, float z, uint32_t argb, float scale);
+
 /* Flat translucent rectangle, plain or with rounded corners of radius r. */
 void gfx_rrect(float x, float y, float w, float h, float r, float z, uint32_t argb);
 /* The app's standard panel: the row bars' corners (see gfx.c), colour argb (normally BSCENE_PANE_ARGB). */

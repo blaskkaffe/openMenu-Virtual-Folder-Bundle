@@ -1257,6 +1257,29 @@ gfx_text(const char* str, float x, float y, float z, uint32_t argb, int shadow) 
     send_vertex(x + w, y + h, z, u1, v1, argb, 1);
 }
 
+void
+gfx_text_scaled(const char* str, float x, float y, float z, uint32_t argb, float scale) {
+    if (!str || !str[0]) {
+        return;
+    }
+    char clipped[MAX_TEXT_CHARS + 1];
+    strncpy(clipped, str, MAX_TEXT_CHARS);
+    clipped[MAX_TEXT_CHARS] = '\0';
+    text_tex* t = get_text_texture(clipped);
+    if (!t) {
+        return;
+    }
+    ensure_header(NULL, t->ptr, t->w);
+    int used = btext_width(clipped) + 3;
+    if (used > t->w) used = t->w;
+    float w = (float)used * scale, h = 26.0f * scale;
+    float u1 = (float)used / (float)t->w, v1 = 26.0f / (float)GFX_LINE_H;
+    send_vertex(x, y, z, 0.0f, 0.0f, argb, 0);
+    send_vertex(x + w, y, z, u1, 0.0f, argb, 0);
+    send_vertex(x, y + h, z, 0.0f, v1, argb, 0);
+    send_vertex(x + w, y + h, z, u1, v1, argb, 1);
+}
+
 /* A string shown through a window of `window` pixels, moved `offset` pixels to the left. */
 static void
 text_windowed(const char* str, float x, float y, float z, uint32_t argb, int window, int offset) {

@@ -15,8 +15,10 @@ set(OPENMENU_SOURCES
         src/clock_math.c
         src/gfx.c
         src/history.c
+        src/dbglog.c
         src/input.c
         src/launch.c
+        src/qr.c
         src/serial_region.c
         src/sound.c
         src/ui_bios.c

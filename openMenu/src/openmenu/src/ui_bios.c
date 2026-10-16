@@ -10,6 +10,8 @@
 #include <dc/video.h>
 
 #include <bios_audio.h>
+#include "dbglog.h"
+#include "qr.h"
 #include <bios_case.h>
 #include <bios_menu.h>
 #include <bios_datetime.h>
@@ -141,6 +143,9 @@ static uint64_t phase_us[3]; /* begin frame, background, everything else drawn (
 static uint64_t sync_us_sum;
 static char perf_text[3][64]; /* the debug overlay's second and third line */
 static const char* notice_text;
+static int report_built;
+static int report_page; /* 0 off, 1 the table of the debug log, 2 the QR code with the same numbers */
+static dbglog_sample last_sample;
 
 static char status_line[64];
 
@@ -800,6 +805,80 @@ null_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
 
 static const bscene_sink null_sink = {NULL, null_tri, null_text, NULL};
 
+static const char*
+log_label(void) {
+    static char label[20];
+    switch (screen) {
+        case SCREEN_MAIN: snprintf(label, sizeof(label), "main/%s", iso_names[debug_iso]); return label;
+        case SCREEN_GAMES: return viewer_open ? "games/viewer" : (recent_open ? "games/recent" : "games");
+        case SCREEN_SETTINGS: return "settings";
+        case SCREEN_DATETIME: return "date/time";
+        case SCREEN_FILES: return "files";
+        case SCREEN_MUSIC: return "cd player";
+        case SCREEN_INTERNET: return "internet";
+    }
+    return "?";
+}
+
+/* The debug log page: B opens it on the main screen while the overlay is on. */
+static void
+draw_report(void) {
+    const float Z = 0.9f, ZT = 0.95f;
+    gfx_rect(0.0f, 0.0f, 640.0f, 480.0f, Z, 0xFF101828u);
+    if (report_page == 1) {
+        char l[48], r[48];
+        gfx_text_scaled("Debug log   fps/min  tris   ms: sync build wait gpu ta", 16.0f, 6.0f, ZT, 0xFFF0E060u, 0.62f);
+        gfx_text_scaled("v = vertices  h = headers  a/p = PVR/CPU sorted", 16.0f, 22.0f, ZT, 0xFFA0A0A0u, 0.62f);
+        int n = dbglog_count();
+        for (int i = 0; i < n && i < 19; i++) {
+            dbglog_row(i, l, r, sizeof(l));
+            float y = 44.0f + (float)i * 21.0f;
+            gfx_text_scaled(l, 16.0f, y, ZT, 0xFFFFFFFFu, 0.8f);
+            gfx_text_scaled(r, 262.0f, y, ZT, 0xFFD0E0FFu, 0.8f);
+        }
+        if (n > 19) {
+            snprintf(l, sizeof(l), "+%d more (in the QR code)", n - 19);
+            gfx_text_scaled(l, 16.0f, 44.0f + 19.0f * 21.0f, ZT, 0xFFA0A0A0u, 0.8f);
+        }
+        gfx_text_scaled("B: QR code   A: clear the log", 16.0f, 452.0f, ZT, 0xFFA0A0A0u, 0.8f);
+    } else {
+        static uint8_t modules[QR_MAX_SIZE * QR_MAX_SIZE];
+        static char text[2800];
+        static int size;
+        if (!report_built) {
+            char info[40];
+            snprintf(info, sizeof(info), "%s %s", console_is_pal() ? "PAL" : "NTSC", sf_aspect[0] == ASPECT_WIDE ? "16:9" : "4:3");
+            int len = dbglog_text(text, sizeof(text), info);
+            size = qr_encode((const uint8_t*)text, len, modules);
+            report_built = 1;
+        }
+        if (size) {
+            int px = 440 / (size + 8);
+            if (px < 2) px = 2;
+            float side = (float)((size + 8) * px);
+            float x0 = (640.0f - side) / 2.0f, y0 = (480.0f - side) / 2.0f;
+            gfx_rect(x0, y0, side, side, ZT, 0xFFFFFFFFu);
+            for (int y = 0; y < size; y++) {
+                int x = 0;
+                while (x < size) { /* a run of dark modules is one rectangle */
+                    if (!modules[y * size + x]) {
+                        x++;
+                        continue;
+                    }
+                    int x1 = x;
+                    while (x1 < size && modules[y * size + x1]) x1++;
+                    gfx_rect(x0 + (float)((x + 4) * px), y0 + (float)((y + 4) * px), (float)((x1 - x) * px), (float)px, 0.97f,
+                             0xFF000000u);
+                    x = x1;
+                }
+            }
+        } else {
+            gfx_text_scaled("Too much to show as a QR code", 16.0f, 200.0f, ZT, 0xFFFFFFFFu, 0.8f);
+        }
+        gfx_text_scaled("B: close   (scan it, paste the text)", 16.0f, 456.0f, ZT, 0xFFA0A0A0u, 0.8f);
+    }
+}
+
 static void
 draw_frame(void) {
     uint32_t top, bottom;
@@ -878,10 +957,24 @@ draw_frame(void) {
     if (notice_frames > 0 && notice_text) {
         gfx_text(notice_text, TEXT_X, screen == SCREEN_MAIN ? NOTICE_Y_MAIN : NOTICE_Y_PANEL, 0.5f, 0xFFFFFFFFu, 1);
     }
+    if (report_page) {
+        draw_report();
+    }
     draw_pointer();
     phase_us[2] += timer_us_gettime64() - t0;
     build_us_sum += timer_us_gettime64() - t0;
     gfx_end_frame();
+}
+
+static void
+handle_report(button_t b) {
+    if (b == BTN_B || b == BTN_START) {
+        report_page = report_page == 1 ? 2 : 0;
+        sound_sfx(BAUDIO_SFX_CANCEL);
+    } else if (b == BTN_A && report_page == 1) {
+        dbglog_clear();
+        sound_sfx(BAUDIO_SFX_ENTER);
+    }
 }
 
 static void
@@ -892,6 +985,12 @@ handle_main(button_t b) {
             if (!show_debug) {
                 debug_iso = 0;
                 bscene_cache_enable(1);
+            }
+            break;
+        case BTN_B:
+            if (show_debug) {
+                report_page = 1;
+                report_built = 0;
             }
             break;
         case BTN_Y:
@@ -1459,6 +1558,10 @@ ui_bios_run(const bios_rom* rom) {
         if (typed && screen == SCREEN_GAMES && !recent_open && uil_jump_to_letter(typed)) {
             sound_sfx(BAUDIO_SFX_CURSOR);
         }
+        if (report_page) {
+            handle_report(b);
+            b = BTN_NONE;
+        }
         if (screen == SCREEN_MAIN) {
             handle_main(b);
         } else if (screen == SCREEN_GAMES) {
@@ -1548,7 +1651,16 @@ ui_bios_run(const bios_rom* rom) {
                          all = (unsigned)(phase_us[2] / n / 100u);
                 snprintf(perf_text[2], sizeof(perf_text[2]), "begin %u.%u bg %u.%u drawn %u.%u ms", beg / 10, beg % 10, bg / 10,
                          bg % 10, all / 10, all % 10);
+                last_sample.beg = beg;
+                last_sample.bg = bg;
+                last_sample.drawn = all;
                 phase_us[0] = phase_us[1] = phase_us[2] = 0;
+            }
+            if (show_debug && !report_page) {
+                dbglog_sample ds = {(unsigned)frames_this_second, gfx_triangles(), sync_t, build_t, wait_t,
+                                    gs.render_us / n / 100u, gs.ta_us / n / 100u, gs.vertices / n, gs.headers / n,
+                                    (unsigned)gfx_autosort(), last_sample.beg, last_sample.bg, last_sample.drawn};
+                dbglog_add(log_label(), &ds);
             }
             sync_us_sum = 0;
             build_us_sum = 0;
