@@ -17,6 +17,11 @@ void dbglog_add(const char* label, const dbglog_sample* s);
 void dbglog_clear(void);
 int dbglog_count(void);
 
+/* Start-up marks: `ms` is the time (since the console started) at which step `name` was done. */
+void dbglog_boot(const char* name, unsigned ms);
+/* The marks as up to two lines of text for the table page: "name delta" for each step. */
+void dbglog_boot_lines(char* a, char* b, size_t cap);
+
 /* The two strings of a table row (up to 42 characters each). */
 void dbglog_row(int i, char* left, char* right, size_t cap);
 

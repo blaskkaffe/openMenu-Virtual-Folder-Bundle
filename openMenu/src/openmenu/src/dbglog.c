@@ -16,6 +16,34 @@ static int n_entries;
 static char last_label[20];
 static int settled; /* seconds seen under last_label */
 
+#define MAX_MARKS 14
+static struct {
+    char name[10];
+    unsigned ms;
+} marks[MAX_MARKS];
+static int n_marks;
+
+void
+dbglog_boot(const char* name, unsigned ms) {
+    if (n_marks < MAX_MARKS) {
+        snprintf(marks[n_marks].name, sizeof(marks[n_marks].name), "%s", name);
+        marks[n_marks++].ms = ms;
+    }
+}
+
+void
+dbglog_boot_lines(char* a, char* b, size_t cap) {
+    char* out[2] = {a, b};
+    a[0] = b[0] = 0;
+    size_t used[2] = {0, 0};
+    for (int i = 1; i < n_marks; i++) {
+        int line = used[0] < 30 ? 0 : 1;
+        int n = snprintf(out[line] + used[line], cap - used[line], "%s%s %u", used[line] ? "  " : "", marks[i].name,
+                         marks[i].ms - marks[i - 1].ms);
+        if (n > 0 && used[line] + (size_t)n < cap) used[line] += (size_t)n;
+    }
+}
+
 void
 dbglog_clear(void) {
     n_entries = 0;
@@ -87,6 +115,11 @@ dbglog_row(int i, char* left, char* right, size_t cap) {
 int
 dbglog_text(char* out, size_t cap, const char* info) {
     int n = snprintf(out, cap, "DBG1 %s\nlabel|fps|min|tris|sync|build|wait|gpu|ta|vtx|hdr|auto|begin|bg|drawn|secs (ms x10)\n", info);
+    n += snprintf(out + n, cap - (size_t)n, "boot(ms, since console start):");
+    for (int i = 0; i < n_marks && n > 0 && (size_t)n < cap; i++) {
+        n += snprintf(out + n, cap - (size_t)n, " %s=%u", marks[i].name, marks[i].ms);
+    }
+    n += snprintf(out + n, cap - (size_t)n, "\n");
     for (int i = 0; i < n_entries && n > 0 && (size_t)n < cap; i++) {
         const entry* e = &entries[i];
         n += snprintf(out + n, cap - (size_t)n, "%s|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u\n", e->label, e->s.fps, e->fps_min,

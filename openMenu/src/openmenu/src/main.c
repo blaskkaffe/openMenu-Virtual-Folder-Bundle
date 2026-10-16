@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <arch/timer.h>
 #include <dc/biosfont.h>
 #include <dc/maple.h>
 #include <dc/video.h>
@@ -21,6 +22,7 @@
 #include <openmenu_savefile.h>
 #include <openmenu_settings.h>
 
+#include "dbglog.h"
 #include "online.h"
 #include "ui_bios.h"
 #include "video.h"
@@ -31,9 +33,12 @@ main(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
 
+    dbglog_boot("main", (unsigned)timer_ms_gettime64());
     maple_wait_scan();
+    dbglog_boot("maple", (unsigned)timer_ms_gettime64());
 
     video_init();
+    dbglog_boot("video", (unsigned)timer_ms_gettime64());
     bfont_set_encoding(BFONT_CODE_ISO8859_1);
 
     /* The boot ROM is memory mapped (uncached) at 0xA0000000. */
@@ -46,13 +51,16 @@ main(int argc, char* argv[]) {
         snprintf(status, sizeof(status), "BIOS ROM not usable (error %d)", rom_err);
     }
 
+    dbglog_boot("rom", (unsigned)timer_ms_gettime64());
     savefile_init();
+    dbglog_boot("save", (unsigned)timer_ms_gettime64());
     online_boot(); /* Auto-Connect dials on its own thread while the game list loads */
 
     if (list_read_default() == 0) {
         list_folder_init();
         list_set_folder_root(); /* folders first; sorted as the Sort setting says */
     }
+    dbglog_boot("list", (unsigned)timer_ms_gettime64());
 
     if (rom_err == BIOS_ROM_OK) {
         ui_bios_run(&rom); /* only returns if the PVR cannot be set up */

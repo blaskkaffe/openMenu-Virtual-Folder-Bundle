@@ -830,16 +830,19 @@ draw_report(void) {
         gfx_text_scaled("Debug log   fps/min  tris   ms: sync build wait gpu ta", 16.0f, 6.0f, ZT, 0xFFF0E060u, 0.62f);
         gfx_text_scaled("v = vertices  h = headers  a/p = PVR/CPU sorted", 16.0f, 22.0f, ZT, 0xFFA0A0A0u, 0.62f);
         int n = dbglog_count();
-        for (int i = 0; i < n && i < 19; i++) {
+        for (int i = 0; i < n && i < 16; i++) {
             dbglog_row(i, l, r, sizeof(l));
             float y = 44.0f + (float)i * 21.0f;
             gfx_text_scaled(l, 16.0f, y, ZT, 0xFFFFFFFFu, 0.8f);
             gfx_text_scaled(r, 262.0f, y, ZT, 0xFFD0E0FFu, 0.8f);
         }
-        if (n > 19) {
-            snprintf(l, sizeof(l), "+%d more (in the QR code)", n - 19);
-            gfx_text_scaled(l, 16.0f, 44.0f + 19.0f * 21.0f, ZT, 0xFFA0A0A0u, 0.8f);
+        if (n > 16) {
+            snprintf(l, sizeof(l), "+%d more (in the QR code)", n - 16);
+            gfx_text_scaled(l, 16.0f, 44.0f + 16.0f * 21.0f, ZT, 0xFFA0A0A0u, 0.8f);
         }
+        dbglog_boot_lines(l, r, sizeof(l));
+        gfx_text_scaled(l, 16.0f, 408.0f, ZT, 0xFFD0E0FFu, 0.62f);
+        gfx_text_scaled(r, 16.0f, 424.0f, ZT, 0xFFD0E0FFu, 0.62f);
         gfx_text_scaled("B: QR code   A: clear the log", 16.0f, 452.0f, ZT, 0xFFA0A0A0u, 0.8f);
     } else {
         static uint8_t modules[QR_MAX_SIZE * QR_MAX_SIZE];
@@ -1512,8 +1515,10 @@ ui_bios_run(const bios_rom* rom) {
     if (gfx_init(rom) != 0) {
         return -1;
     }
+    dbglog_boot("gfx", (unsigned)timer_ms_gettime64());
 
     gfx_load_logo("/cd/LOGO.PVR"); /* optional replacement of the Dreamcast logo */
+    dbglog_boot("logo", (unsigned)timer_ms_gettime64());
     /* game info (players, VMU blocks) comes from META.DAT on the menu disc; db_load_DAT needs it */
     file_t meta_fd = fs_open("/cd/META.DAT", O_RDONLY);
     if (meta_fd != FILEHND_INVALID) {
@@ -1521,8 +1526,10 @@ ui_bios_run(const bios_rom* rom) {
         db_load_DAT();
         have_meta = 1;
     }
+    dbglog_boot("meta", (unsigned)timer_ms_gettime64());
 
     sound_init(rom);
+    dbglog_boot("sound", (unsigned)timer_ms_gettime64());
     snprintf(status_line, sizeof(status_line), "BIOS %s  %s  boot %08X", rom->revision, sound_status(),
              (unsigned)*(volatile uint32_t*)BOOT_COLOR_ADDR);
 
@@ -1532,12 +1539,14 @@ ui_bios_run(const bios_rom* rom) {
     set_icon_labels();
     update_clock();
     online_set_hangup_hook(show_hangup);
+    dbglog_boot("menu", (unsigned)timer_ms_gettime64());
 
     /* Cover the first frames (texture uploads) with the start colour so nothing pops in. */
     for (int i = 0; i < 3; i++) {
         gfx_begin_frame(START_COLOR, START_COLOR);
         gfx_end_frame();
     }
+    dbglog_boot("frames", (unsigned)timer_ms_gettime64());
 
     uint64_t last_ms = timer_ms_gettime64();
     uint64_t fps_since = last_ms;
