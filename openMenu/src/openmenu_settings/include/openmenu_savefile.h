@@ -58,6 +58,9 @@ void vmu_time_sync_warning_dismiss(void);
 /* Sets the console clock to a local time and the flash ROM SYSCFG date with it. */
 int8_t set_rtc_and_syscfg(time_t local_time);
 
+/* Writes the BIOS settings (language, sound, auto start from the BIOS RAM copy) to the flash, keeping the date. */
+int8_t save_syscfg_settings(void);
+
 /* COMPACTION_TEST_START */
 /* Compaction test functions - DEBUG ONLY, remove before release */
 int8_t compaction_test_init(void);

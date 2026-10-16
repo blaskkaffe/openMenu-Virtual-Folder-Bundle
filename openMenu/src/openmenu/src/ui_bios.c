@@ -1292,6 +1292,9 @@ handle_settings(button_t b) {
             } else if (uis_action(row) == UIS_ACTION_ABOUT) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 about_open = 1;
+            } else if (uis_action(row) == UIS_ACTION_VMUCLOCK) {
+                sound_sfx(BAUDIO_SFX_ENTER);
+                uis_run(row);
             } else if (uis_opens_popup(row)) {
                 settings_popup = 1;
                 settings_popup_sel = uis_get(row);

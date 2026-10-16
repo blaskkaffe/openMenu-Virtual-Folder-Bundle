@@ -4,7 +4,12 @@
 #include <openmenu_savefile.h>
 #include <openmenu_settings.h>
 
+#include <time.h>
+#include <dc/maple.h>
+#include <dc/maple/vmu.h>
+
 #include "clock.h"
+#include "sound.h"
 #include "ui_settings.h"
 
 typedef struct {
@@ -16,6 +21,7 @@ typedef struct {
     uint8_t** var;     /* points at the saved setting (a pointer into the save file buffer) */
     int count;
     const char* const* names;
+    int sysoff;        /* nonzero: the choice is a byte of the BIOS system settings at 0x8C000078 + sysoff */
 } row_def;
 
 static const char* const sort_modes[] = {"A-Z", "SD card order"};
@@ -37,8 +43,20 @@ static const char* const time_sync_modes[] = {
     "On (UTC+8)",  "On (UTC+8:45)",  "On (UTC+9)",  "On (UTC+9:30)",  "On (UTC+10)",    "On (UTC+10:30)", "On (UTC+11)",
     "On (UTC+12)", "On (UTC+12:45)", "On (UTC+13)", "On (UTC+14)"};
 
+/* the BIOS settings */
+static const char* const languages[] = {"Japanese", "English", "German", "French", "Spanish", "Italian"};
+static const char* const sound_modes[] = {"Stereo", "Mono"};
+static const char* const autostart_modes[] = {"On", "Off"};
+
 /* To add a setting, add a row here (and the choice names above). */
 static const row_def rows[] = {
+    /* the BIOS settings come first, as in the BIOS menu; the bytes live in the BIOS's RAM copy of the system settings and
+     * are written to the flash with the clock */
+    {0, 0, "BIOS", "Language", "Language of the BIOS messages", NULL, 6, languages, 5},
+    {UIS_ACTION_DATETIME, 1, "BIOS", "Date and time", "Set the clock of the console", NULL, 0, NULL, 0},
+    {0, 2, "BIOS", "Sound", "Stereo or mono output", NULL, 2, sound_modes, 6},
+    {0, 3, "BIOS", "Auto start", "Start the disc in the drive at power on", NULL, 2, autostart_modes, 7},
+    {UIS_ACTION_VMUCLOCK, 1, "BIOS", "Memory card clock", "Set the clock of the memory cards", NULL, 0, NULL, 0},
     {0, -1, "Game list", "Game order", "Order of the games", &sf_sort, 2, sort_modes},
     {0, -1, "Game list", "Multi-disc games", "List every disc or one entry per set", &sf_multidisc, MULTIDISC_END + 1,
      multidisc_modes},
@@ -58,7 +76,6 @@ static const row_def rows[] = {
     {0, -1, "Online", "Online time sync", "Set the clock from the internet", &sf_online_time_sync, ONLINE_TIME_SYNC_END + 1,
      time_sync_modes},
     {0, -1, "System", "VMU time sync", "Set the clock from a VMU at start", &sf_vmu_time_sync, VMU_TIME_SYNC_END + 1, on_off},
-    {UIS_ACTION_DATETIME, 1, "System", "Date and time", "Set the clock of the console", NULL, 0, NULL},
     {0, -1, "Starting games", "Boot animation", "What the BIOS shows before a game", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
     {0, -1, "Starting games", "Exit to BIOS", "How other discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
     {UIS_ACTION_ABOUT, 3, "Other", "About", "Version and credits", NULL, 0, NULL},
@@ -98,13 +115,30 @@ uis_choice_name(int row, int choice) {
     return VALID(row) && choice >= 0 && choice < rows[row].count ? rows[row].names[choice] : "?";
 }
 
+#define SYS(r) (((volatile uint8_t*)0x8C000078)[rows[r].sysoff])
+
+static int sys_dirty;
+static char vmu_result[24] = "";
+
 int
 uis_get(int row) {
+    if (VALID(row) && rows[row].sysoff) {
+        int v = SYS(row);
+        return v < rows[row].count ? v : 0;
+    }
     return VALID(row) && rows[row].var ? (*rows[row].var)[0] : 0;
 }
 
 void
 uis_set(int row, int choice) {
+    if (VALID(row) && rows[row].sysoff && choice >= 0 && choice < rows[row].count) {
+        SYS(row) = (uint8_t)choice;
+        sys_dirty = 1;
+        if (rows[row].sysoff == 6) {
+            sound_stereo(choice);
+        }
+        return;
+    }
     if (VALID(row) && rows[row].var && choice >= 0 && choice < rows[row].count) {
         (*rows[row].var)[0] = (uint8_t)choice;
     }
@@ -118,6 +152,9 @@ uis_value(int row) {
         clock_get(&y, &mo, &d, &h, &mi);
         snprintf(date, sizeof(date), "%02d-%02d %02d:%02d", mo, d, h, mi); /* the year is in the editor */
         return date;
+    }
+    if (VALID(row) && rows[row].action == UIS_ACTION_VMUCLOCK) {
+        return vmu_result;
     }
     if (VALID(row) && rows[row].action) {
         return "";
@@ -142,7 +179,7 @@ uis_opens_popup(int row) {
 
 void
 uis_change(int row, int delta) {
-    if (!VALID(row) || !rows[row].var) {
+    if (!VALID(row) || !(rows[row].var || rows[row].sysoff)) {
         return;
     }
     int v = (uis_get(row) + delta) % rows[row].count;
@@ -152,7 +189,33 @@ uis_change(int row, int delta) {
     uis_set(row, v);
 }
 
+void
+uis_run(int row) {
+    if (!VALID(row) || rows[row].action != UIS_ACTION_VMUCLOCK) {
+        return;
+    }
+    /* as the BIOS's "Adjust the memory card(s) clock": every memory card gets the console's time */
+    int found = 0, set = 0;
+    time_t now = time(NULL);
+    for (int i = 0; i < MAPLE_PORT_COUNT * MAPLE_UNIT_COUNT; i++) {
+        maple_device_t* dev = maple_enum_type(i, MAPLE_FUNC_CLOCK);
+        if (dev) {
+            found++;
+            set += vmu_set_datetime(dev, now) == MAPLE_EOK;
+        }
+    }
+    if (!found) {
+        snprintf(vmu_result, sizeof(vmu_result), "No memory card");
+    } else {
+        snprintf(vmu_result, sizeof(vmu_result), set == found ? "Done (%d)" : "Failed (%d/%d)", set, found);
+    }
+}
+
 int
 uis_commit(void) {
+    if (sys_dirty) {
+        sys_dirty = 0;
+        save_syscfg_settings();
+    }
     return savefile_save() >= 0 ? 0 : -1;
 }

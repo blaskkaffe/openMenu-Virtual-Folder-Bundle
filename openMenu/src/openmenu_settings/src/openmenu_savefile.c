@@ -797,6 +797,17 @@ set_rtc_and_syscfg(time_t local_time) {
     return 0;
 }
 
+int8_t
+save_syscfg_settings(void) {
+    time_t now = (time_t)rtc_read_count() - (time_t)DC_EPOCH_DELTA;
+    for (int attempt = 0; attempt < 10; attempt++) {
+        if (update_flashrom_syscfg_date(now) == 0) {
+            return 0;
+        }
+    }
+    return -1;
+}
+
 static bool
 vmu_decode_datetime(const uint8_t* reply, time_t* result) {
     uint32_t function;
