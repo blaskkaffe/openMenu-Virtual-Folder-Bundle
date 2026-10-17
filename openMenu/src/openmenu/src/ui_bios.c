@@ -11,6 +11,7 @@
 
 #include <bios_audio.h>
 #include "dbglog.h"
+#include "serial_log.h"
 #include "qr.h"
 #include <bios_case.h>
 #include <bios_menu.h>
@@ -843,7 +844,13 @@ draw_report(void) {
         dbglog_boot_lines(l, r, sizeof(l));
         gfx_text_scaled(l, 16.0f, 408.0f, ZT, 0xFFD0E0FFu, 0.62f);
         gfx_text_scaled(r, 16.0f, 424.0f, ZT, 0xFFD0E0FFu, 0.62f);
-        gfx_text_scaled("B: QR code   A: clear the log", 16.0f, 452.0f, ZT, 0xFFA0A0A0u, 0.8f);
+        int fp = serial_log_flash_progress();
+        if (fp >= 0 && fp <= 100) {
+            snprintf(l, sizeof(l), "Sending the flash ROM to serial: %d%%", fp);
+        } else {
+            snprintf(l, sizeof(l), "B: QR code  A: clear  X: flash to serial%s", fp > 100 ? " (sent)" : "");
+        }
+        gfx_text_scaled(l, 16.0f, 452.0f, ZT, 0xFFA0A0A0u, 0.8f);
     } else {
         static uint8_t modules[QR_MAX_SIZE * QR_MAX_SIZE];
         static char text[2800];
@@ -977,6 +984,9 @@ handle_report(button_t b) {
     } else if (b == BTN_A && report_page == 1) {
         dbglog_clear();
         sound_sfx(BAUDIO_SFX_ENTER);
+    } else if (b == BTN_X && report_page == 1) {
+        /* the whole flash ROM as hex over the coder's cable, for decoding what the browsers save */
+        sound_sfx(serial_log_flash_start() == 0 ? BAUDIO_SFX_ENTER : BAUDIO_SFX_ERROR);
     }
 }
 
@@ -994,6 +1004,15 @@ handle_main(button_t b) {
             if (show_debug) {
                 report_page = 1;
                 report_built = 0;
+                {
+                    /* the page's numbers as text on the serial port, so they need no photo */
+                    static char text[2800];
+                    char info[40];
+                    snprintf(info, sizeof(info), "%s %s", console_is_pal() ? "PAL" : "NTSC",
+                             sf_aspect[0] == ASPECT_WIDE ? "16:9" : "4:3");
+                    dbglog_text(text, sizeof(text), info);
+                    serial_log_block("log", text);
+                }
             }
             break;
         case BTN_Y:
@@ -1547,6 +1566,12 @@ ui_bios_run(const bios_rom* rom) {
         gfx_end_frame();
     }
     dbglog_boot("frames", (unsigned)timer_ms_gettime64());
+    {
+        char a[64], b2[64];
+        dbglog_boot_lines(a, b2, sizeof(a));
+        serial_log_block("boot", a);
+        serial_log_block("boot", b2);
+    }
 
     uint64_t last_ms = timer_ms_gettime64();
     uint64_t fps_since = last_ms;

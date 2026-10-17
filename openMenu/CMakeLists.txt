@@ -17,6 +17,10 @@ if (BUILD_PC)
     add_compile_options("-DSTANDALONE_BINARY=1")
 endif ()
 
+# Debug info in the ELF only (1ST_READ.BIN is objcopy'd without it, the code is the same): lets a crash
+# address from the serial port be turned into a file and line with addr2line
+add_compile_options(-g)
+
 # --- Shared Dependencies ---
 # UtHash (Header Only)
 add_library(uthash INTERFACE)

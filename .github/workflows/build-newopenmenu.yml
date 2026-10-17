@@ -51,7 +51,7 @@ jobs:
 
       - name: Build openMenu
         run: |
-          docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+          docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" -e GITHUB_SHA \
             -v "$PWD/openMenu:/workspaces/openmenu" -w /workspaces/openmenu \
             openmenu-build:ci bash -c '
               source /opt/toolchains/dc/kos/environ.sh &&
@@ -63,3 +63,10 @@ jobs:
           name: 1ST_READ.BIN
           path: openMenu/cmake-build-dc-release/bin/1ST_READ.BIN
           if-no-files-found: error
+
+      # The ELF of the same build: symbols for crash dumps from the serial port, and runnable with dc-tool-ser -x
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openmenu.elf
+          path: openMenu/cmake-build-dc-release/bin/*.elf
+          if-no-files-found: warn

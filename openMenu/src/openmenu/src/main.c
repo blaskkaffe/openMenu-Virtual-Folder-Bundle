@@ -23,6 +23,7 @@
 #include <openmenu_settings.h>
 
 #include "dbglog.h"
+#include "serial_log.h"
 #include "online.h"
 #include "ui_bios.h"
 #include "video.h"
@@ -34,6 +35,7 @@ main(int argc, char* argv[]) {
     (void)argv;
 
     dbglog_boot("main", (unsigned)timer_ms_gettime64());
+    serial_log_banner();
     maple_wait_scan();
     dbglog_boot("maple", (unsigned)timer_ms_gettime64());
 

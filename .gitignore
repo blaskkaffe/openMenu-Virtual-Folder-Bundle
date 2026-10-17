@@ -1,0 +1,4 @@
+
+# serial captures from a coder's cable (private: console ID, ISP logins)
+openmenu-serial-*.log
+flash_*.bin

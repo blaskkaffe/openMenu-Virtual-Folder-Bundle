@@ -16,6 +16,7 @@ set(OPENMENU_SOURCES
         src/gfx.c
         src/history.c
         src/dbglog.c
+        src/serial_log.c
         src/input.c
         src/launch.c
         src/qr.c
@@ -61,6 +62,18 @@ endif ()
 
 # Pass version string as compile definition
 target_compile_definitions(openmenu PRIVATE OPENMENU_BUILD_VERSION="${OPENMENU_VERSION}")
+
+# The commit goes into the serial boot line, so a crash dump can be matched to its openmenu.elf
+if (DEFINED ENV{GITHUB_SHA})
+    string(SUBSTRING "$ENV{GITHUB_SHA}" 0 7 OPENMENU_GIT_COMMIT)
+else ()
+    execute_process(COMMAND git rev-parse --short HEAD WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            OUTPUT_VARIABLE OPENMENU_GIT_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+endif ()
+if (NOT OPENMENU_GIT_COMMIT)
+    set(OPENMENU_GIT_COMMIT "unknown")
+endif ()
+target_compile_definitions(openmenu PRIVATE OPENMENU_GIT_COMMIT="${OPENMENU_GIT_COMMIT}")
 
 target_include_directories(openmenu
         PRIVATE
