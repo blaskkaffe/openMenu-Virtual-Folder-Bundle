@@ -4,7 +4,8 @@
  *   OM boot ...          version, commit and start-up times
  *   OM log ...           the debug log page (the same text as its QR code), sent when the page opens
  *   OM flash ...         the whole flash ROM as hex with a CRC-32, on request from the debug log page
- * Nothing is sent while the online features use the port for DreamPi. */
+ * Nothing is sent while the online features use the port for DreamPi. With the cable in a DreamPi 2.0+ instead
+ * of a computer, DreamPi logs every line as "serial: b'...'"; tools/serial_capture.py <log> pulls them back out. */
 #pragma once
 
 /* "OM boot" line with the version and commit. */

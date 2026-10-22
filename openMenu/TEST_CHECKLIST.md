@@ -165,6 +165,7 @@ Drops to 30fps
 I
 
 ### Serial debugging (coder's cable, `python3 openMenu/tools/serial_capture.py`)
+- [ ] Cable in the DreamPi instead: `journalctl -u dreampi` shows the OM lines as `serial: b'...'`; `serial_capture.py dreampi.log` rebuilds them (and a flash dump, CRC OK)
 - [ ] Boot prints "OM boot openMenu <version> commit <hash>" and then the "OM boot" start-up times
 - [ ] Overlay on (X), B opens the debug log page and the same numbers arrive as "OM log" lines
 - [ ] On that page X sends the flash ROM (about 30 s, percentage shown); the script saves flash_<date>.bin with CRC OK
