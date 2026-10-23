@@ -87,8 +87,10 @@ typedef struct bscene {
     int stretch_on;
     float stretch_a, stretch_b, stretch_f;
     /* Make a model taller without squeezing its corners: model y in [-yc, yc] is scaled up so that
-     * the model grows by 2*yd; what lies beyond moves along by yd (the corner radii stay the same). */
-    float stretch_yc, stretch_yd;
+     * the model grows by 2*yd; what lies beyond moves along by yd (the corner radii stay the same).
+     * Points in the band that lie within 0.2 of the leftmost x yx are put on x = yx: a straight edge
+     * (the row bar's rounded end has its apex a hair further out than the points next to it). */
+    float stretch_yc, stretch_yd, stretch_yx;
     int no_decals; /* skip the polygons of texture 0: the pictures on the CD buttons */
     /* window panel mode (see bscene_draw_panel): the four corners of model 39 are moved apart */
     int panel_on;

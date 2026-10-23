@@ -134,7 +134,7 @@ typedef struct {
     float mframe;
     int stretch_on;
     float stretch_a, stretch_b, stretch_f;
-    float stretch_yc, stretch_yd;
+    float stretch_yc, stretch_yd, stretch_yx;
     int no_decals, panel_on, fullbright;
     float panel_fx, panel_fy;
     uint32_t panel_accent;
@@ -255,6 +255,7 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* off
     }
     k->stretch_yc = s->stretch_yc;
     k->stretch_yd = s->stretch_yd;
+    k->stretch_yx = s->stretch_yx;
     k->no_decals = s->no_decals;
     k->fullbright = s->fullbright;
     if (s->panel_on) {
@@ -686,6 +687,9 @@ draw_model:
                         }
                         if (s->stretch_yd != 0.0f) { /* grow the model along y: the middle band is scaled, the ends move along */
                             float c = s->stretch_yc, d = s->stretch_yd;
+                            if (src.y <= c && src.y >= -c && src.x < s->stretch_yx + 0.2f) { /* the end point and its neighbours on one straight edge */
+                                src.x = s->stretch_yx;
+                            }
                             src.y = src.y > c ? src.y + d : (src.y < -c ? src.y - d : src.y * (c + d) / c);
                         }
                         nj_vec3 w = nj_mat_apply(&m, src);
