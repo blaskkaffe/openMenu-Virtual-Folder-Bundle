@@ -79,7 +79,7 @@ transparent picture that the menu tints when it draws them ("Now!" in the swirl'
 nothing of the BIOS logo: "Now!" is simply drawn after the logo, and for DCNET the menu crops the ROM's logo to its swirl while it runs
 and draws DCNET.PVR over the wordmark's place. Without the two files the logo is left alone in the online modes. They are made by
 `openMenu/tools/gen_logo_text.py` (hand-drawn outlines in the style of the Dreamcast logo typeface: flared humanist capitals, thin arms,
-thicker stems, a thick diagonal in the N; each letter is drawn at twice the size and shrunk by taking every other pixel (no filtering when shrinking), so the edges are
+stems about 2 px; each letter is drawn at twice the size and shrunk by taking every other pixel (no filtering when shrinking), so the edges are
 hard like a drawing made for this size; sized to the wordmark, capitals from y 7.6 to 24.6 of the 128x32 texture; no font outlines are
 used, the typeface is personal-use only) and are kept in the Card Manager's `tools/openMenu/menu_data`, so a card built with it has them.
 Without a `LOGO.PVR` a European (PAL) console gets the BIOS logo with the swirl recoloured blue (red and blue exchanged in the ROM's
