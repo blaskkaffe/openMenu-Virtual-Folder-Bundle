@@ -43,8 +43,8 @@
 #define ID_BUTTON(i) ((uint16_t)(0x1301 + (i)))
 /* The box: one bar for all rows, fixed in size so that any number of rows fits the space five rows
  * had (above the BACK marker and the buttons). */
-#define BOX_TOP_PX 46.0f
-#define BOX_BOTTOM_PX 352.0f
+#define BOX_TOP_PX 73.5f
+#define BOX_BOTTOM_PX 350.5f
 #define BOX_PAD_PX 8.0f
 #define BAR_H_PX 53.0f /* height of the row bar model at ROW_SY */
 
@@ -228,7 +228,7 @@ blist_row_right_px(void) {
 }
 
 /* Distance between rows in pixels: the box has a fixed height, the rows share what is left after
- * the padding. 5 rows: 58 px, 7: 41 px, 9: 32 px, 11: 26 px. */
+ * the padding. 5 rows: 52 px, 7: 37 px, 9: 29 px, 11: 23 px. */
 static float
 pitch_px(int slots) {
     return (BOX_BOTTOM_PX - BOX_TOP_PX - 2.0f * BOX_PAD_PX) / (float)(slots < 1 ? 1 : slots);
