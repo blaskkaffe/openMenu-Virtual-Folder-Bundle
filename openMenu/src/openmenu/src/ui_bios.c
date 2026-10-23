@@ -1,6 +1,7 @@
 /*
  * BIOS-style menu on the PVR, see ui_bios.h.
  */
+#include <math.h>
 #include <stdio.h>
 #include <time.h>
 #include <string.h>
@@ -136,6 +137,8 @@ static int settings_popup_sel;
 static int games_opened;  /* the game browser has been opened once (last game restored) */
 static int recent_open;   /* recently played popup */
 static int recent_row;
+static int options_open;  /* the game options popup (X) */
+static int options_row;
 static int notice_frames;
 static char fps_text[40];
 static int show_debug; /* fps, triangles and the BIOS/sound line: X on the main menu switches them on and off */
@@ -458,10 +461,12 @@ draw_games(void) {
     }
 }
 
-/* ---- Case viewer (Y, or a click on the case): the case large on the right two thirds, turned with the stick, the
- * d-pad or by dragging with the mouse, zoomed with the triggers; a panel where the rows start, for the game's
- * information; the BACK marker selected (A, B, Y or a click on it leave). Turning and zooming ease towards where they
- * are heading as the cases of the list do. */
+/* ---- Case viewer (Y, or a click on the case): the game information screen. The case large on the right two thirds,
+ * turned with the stick, Left/Right or by dragging with the mouse, zoomed with the triggers (L out, R in); a panel where
+ * the rows start with the game's information (Up/Down scroll it); the BACK marker selected. A starts the game, B (or a
+ * click on BACK) goes back to the list, X opens the game options, Y turns the case to face the viewer, and once it does,
+ * over to its back (and back again). Turning and zooming ease towards where they are heading as the cases of the list
+ * do. */
 #define VIEW_PANE_X 40.0f /* where the rows start */
 #define VIEW_PANE_W 190.0f
 #define VIEW_CX 440.0f
@@ -472,6 +477,8 @@ draw_games(void) {
 #define VIEW_DPAD_STEP 45.0f
 
 static float viewer_rot[2], viewer_target[2]; /* degrees about x (up/down) and y (left/right) */
+static int viewer_scroll;                     /* first information line shown */
+static int viewer_lines_max;                  /* how far it can scroll (set while drawing) */
 static float viewer_zoom = 1.0f, viewer_zoom_target = 1.0f;
 static int drag_x, drag_y, dragging;
 
@@ -480,6 +487,31 @@ viewer_reset(void) {
     viewer_rot[0] = viewer_rot[1] = viewer_target[0] = viewer_target[1] = 0.0f;
     viewer_zoom = viewer_zoom_target = 1.0f;
     dragging = 0;
+    viewer_scroll = 0;
+}
+
+/* nearest whole turn (front) / half turn (back) to an angle */
+static float
+nearest_turn(float deg, float offset) {
+    return floorf((deg - offset) / 360.0f + 0.5f) * 360.0f + offset;
+}
+
+/* Y: turned away from the front -> to the front; at the front -> on round to the back; at the back -> on round to the
+ * front. "At" means where the case is heading, so a second press during the turn continues it. */
+static void
+viewer_flip(void) {
+    float fx = nearest_turn(viewer_target[0], 0.0f);
+    float front = nearest_turn(viewer_target[1], 0.0f);
+    float back = nearest_turn(viewer_target[1], 180.0f);
+    int upright = fabsf(viewer_target[0] - fx) < 1.0f;
+    if (upright && fabsf(viewer_target[1] - front) < 1.0f) {
+        viewer_target[1] = front + 180.0f;
+    } else if (upright && fabsf(viewer_target[1] - back) < 1.0f) {
+        viewer_target[1] = back + 180.0f;
+    } else {
+        viewer_target[0] = fx;
+        viewer_target[1] = front;
+    }
 }
 
 /* once per logic frame */
@@ -514,6 +546,96 @@ viewer_drag(const mouse_t* p) {
     drag_y = p->y;
 }
 
+/* The scrolling part of the information panel: genre, online, accessories and the description from META.DAT, cut into
+ * lines that fit the panel at the small text size. Built once per game. */
+#define INFO_SCALE 0.75f
+#define INFO_LINE_H 21.0f
+#define INFO_MAX_LINES 40
+#define INFO_LINE_CHARS 40
+static char info_lines[INFO_MAX_LINES][INFO_LINE_CHARS + 1];
+static int info_count;
+static const gd_item* info_item;
+
+static void
+info_add_text(const char* text, int width_px) {
+    const char* p = text;
+    while (*p && info_count < INFO_MAX_LINES) {
+        while (*p == ' ') p++;
+        if (*p == '\n' || *p == '\r') {
+            p++;
+            continue;
+        }
+        char line[INFO_LINE_CHARS + 1];
+        int len = 0, last_space = -1;
+        while (p[len] && p[len] != '\n' && p[len] != '\r' && len < INFO_LINE_CHARS) {
+            line[len] = p[len];
+            line[len + 1] = '\0';
+            if ((float)gfx_text_width(line) * INFO_SCALE > (float)width_px) {
+                break;
+            }
+            if (p[len] == ' ') last_space = len;
+            len++;
+        }
+        if (p[len] && p[len] != '\n' && p[len] != '\r' && p[len] != ' ' && last_space > 0) {
+            len = last_space; /* cut at the last space */
+        }
+        if (len == 0) len = 1;
+        memcpy(info_lines[info_count], p, (size_t)len);
+        info_lines[info_count][len] = '\0';
+        info_count++;
+        p += len;
+    }
+}
+
+static void
+info_add_flags(const char* label, unsigned bits, const char* const* names, int n, int width_px) {
+    char text[200];
+    size_t at = (size_t)snprintf(text, sizeof(text), "%s", label);
+    int any = 0;
+    for (int i = 0; i < n && at < sizeof(text); i++) {
+        if (bits & (1u << i) && names[i][0]) {
+            at += (size_t)snprintf(text + at, sizeof(text) - at, "%s%s", any ? ", " : "", names[i]);
+            any = 1;
+        }
+    }
+    if (any) {
+        info_add_text(text, width_px);
+    }
+}
+
+static void
+info_build(const gd_item* cur, int width_px) {
+    static const char* const genres[16] = {"Action",    "Racing",  "Simulation", "Sports",   "Light gun", "Fighting",
+                                           "Shooter",   "Survival", "Adventure", "Platformer", "RPG",     "Shoot 'em up",
+                                           "Strategy",  "Puzzle",  "Arcade",     "Music"};
+    static const char* const extras[14] = {"Jump Pack", "Keyboard", "VGA",          "Mouse",  "Maracas",  "Wheel",
+                                           "Microphone", "Arcade stick", "Light gun", "BBA",   "Fishing rod", "ASCII pad",
+                                           "Dreameye",  "Modem"};
+    static const char* const nets[4] = {"", "modem", "broadband adapter", "modem or broadband adapter"};
+    info_item = cur;
+    info_count = 0;
+    struct db_item* meta = NULL;
+    if (!cur || !have_meta || db_get_meta(cur->product, &meta) || !meta) {
+        info_add_text("No information for this game (META.DAT).", width_px);
+        return;
+    }
+    info_add_flags("Genre: ", meta->genre, genres, 16, width_px);
+    if (meta->network & 3) {
+        char t[64];
+        snprintf(t, sizeof(t), "Online: %s", nets[meta->network & 3]);
+        info_add_text(t, width_px);
+    }
+    /* accessories is one byte in db_item: only the first eight flags fit */
+    info_add_flags("Uses: ", meta->accessories, extras, 8, width_px);
+    if (meta->description[0] && info_count < INFO_MAX_LINES) {
+        char desc[sizeof(meta->description) + 1];
+        memcpy(desc, meta->description, sizeof(meta->description));
+        desc[sizeof(meta->description)] = '\0';
+        info_lines[info_count++][0] = '\0'; /* a blank line before the description */
+        info_add_text(desc, width_px);
+    }
+}
+
 static void
 draw_viewer(void) {
     char lines[3][20];
@@ -530,10 +652,31 @@ draw_viewer(void) {
         }
         char info[2][24];
         int k = game_info_lines(cur, info);
-        y += 8.0f;
+        y += 4.0f;
         for (int i = 0; i < k; i++) {
             gfx_text(info[i], VIEW_PANE_X + 10.0f, y, 0.5f, 0xFFC0C0C0u, 1);
             y += GFX_LINE_H - 4.0f;
+        }
+        /* the scrolling information (Up/Down) */
+        if (cur != info_item) {
+            info_build(cur, (int)VIEW_PANE_W - 24);
+            viewer_scroll = 0;
+        }
+        y += 6.0f;
+        int visible = (int)((bottom - 10.0f - y) / INFO_LINE_H);
+        visible = visible < 1 ? 1 : visible;
+        viewer_lines_max = info_count > visible ? info_count - visible : 0;
+        if (viewer_scroll > viewer_lines_max) viewer_scroll = viewer_lines_max;
+        for (int i = 0; i < visible && viewer_scroll + i < info_count; i++) {
+            gfx_text_scaled(info_lines[viewer_scroll + i], VIEW_PANE_X + 10.0f, y + (float)i * INFO_LINE_H, 0.5f, 0xFFE0E0E0u,
+                            INFO_SCALE);
+        }
+        if (viewer_scroll > 0) {
+            gfx_text_scaled("^", VIEW_PANE_X + VIEW_PANE_W - 18.0f, y, 0.5f, 0xFFFFFFFFu, INFO_SCALE);
+        }
+        if (viewer_scroll < viewer_lines_max) {
+            gfx_text_scaled("v", VIEW_PANE_X + VIEW_PANE_W - 18.0f, y + (float)(visible - 1) * INFO_LINE_H, 0.5f, 0xFFFFFFFFu,
+                            INFO_SCALE);
         }
     }
     float rot[3] = {viewer_rot[0], viewer_rot[1], 0.0f};
@@ -549,6 +692,17 @@ draw_viewer(void) {
     }
 }
 
+static void launch_selected(void);
+static void open_options(void);
+
+static void
+open_viewer(void) {
+    glist.back_selected = 0;
+    viewer_open = 1;
+    viewer_reset();
+    sound_sfx(BAUDIO_SFX_ENTER);
+}
+
 static void
 close_viewer(void) {
     viewer_open = 0;
@@ -559,20 +713,40 @@ close_viewer(void) {
 static void
 handle_viewer(button_t b) {
     switch (b) {
-        case BTN_Y:
         case BTN_B: close_viewer(); break;
         case BTN_A:
         case BTN_START:
-            /* BACK is the selected item; a click only leaves when it is on BACK (elsewhere it starts a drag) */
-            if (!pointer.clicked || blist_back_at_px(pointer_screen_x(), (float)pointer.y)) {
-                close_viewer();
+            if (pointer.clicked) { /* a click only leaves when it is on BACK (elsewhere it starts a drag) */
+                if (blist_back_at_px(pointer_screen_x(), (float)pointer.y)) {
+                    close_viewer();
+                }
+            } else {
+                launch_selected(); /* only returns if the game could not be started */
             }
             break;
+        case BTN_Y:
+            viewer_flip();
+            sound_sfx(BAUDIO_SFX_CURSOR);
+            break;
+        case BTN_X: open_options(); break;
         case BTN_LEFT: viewer_target[1] -= VIEW_DPAD_STEP; break; /* eased there, as a held stick would */
         case BTN_RIGHT: viewer_target[1] += VIEW_DPAD_STEP; break;
-        case BTN_UP: viewer_target[0] -= VIEW_DPAD_STEP; break;
-        case BTN_DOWN: viewer_target[0] += VIEW_DPAD_STEP; break;
-        case BTN_X: viewer_reset(); break; /* back to the front */
+        case BTN_UP:
+        case BTN_PAGE_UP:
+            if (viewer_scroll > 0) {
+                viewer_scroll -= b == BTN_UP ? 1 : 4;
+                viewer_scroll = viewer_scroll < 0 ? 0 : viewer_scroll;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_DOWN:
+        case BTN_PAGE_DOWN:
+            if (viewer_scroll < viewer_lines_max) {
+                viewer_scroll += b == BTN_DOWN ? 1 : 4;
+                viewer_scroll = viewer_scroll > viewer_lines_max ? viewer_lines_max : viewer_scroll;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
         default: break;
     }
 }
@@ -597,6 +771,7 @@ screen_accent(void) {
 }
 
 typedef const char* (*popup_name_fn)(int index);
+typedef int (*popup_dim_fn)(int index); /* nonzero: the row is shown greyed (not available yet) */
 
 /* y of the first row of a popup with `rows` rows: the popup panel is centred on the screen. */
 static float
@@ -607,7 +782,7 @@ popup_rows_y(int rows) {
 
 /* A BIOS-style popup list: title, a few rows with the selected one highlighted, a hint line. */
 static void
-draw_popup(const char* title, const char* hint, int count, int sel, popup_name_fn name) {
+draw_popup(const char* title, const char* hint, int count, int sel, popup_name_fn name, popup_dim_fn dim) {
     char line[64];
     int first = sel >= POPUP_ROWS ? sel - POPUP_ROWS + 1 : 0;
     int rows = count < POPUP_ROWS ? count : POPUP_ROWS;
@@ -622,7 +797,8 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
             gfx_rect(POPUP_X + 8.0f, y, POPUP_W - 16.0f, (float)GFX_LINE_H, 0.65f, 0x60FFFFFFu);
         }
         snprintf(line, sizeof(line), "%.38s", name(first + i));
-        gfx_text(line, POPUP_X + 16.0f, y, 0.7f, is_sel ? 0xFFFFFFFFu : 0xFFC0C0C0u, is_sel);
+        uint32_t col = dim && dim(first + i) ? 0xFF707070u : (is_sel ? 0xFFFFFFFFu : 0xFFC0C0C0u);
+        gfx_text(line, POPUP_X + 16.0f, y, 0.7f, col, is_sel);
     }
     gfx_text(hint, POPUP_X + 16.0f, rows_y + (float)rows * GFX_LINE_H + 2.0f, 0.7f, 0xFFA0A0A0u, 0);
 }
@@ -699,7 +875,7 @@ draw_settings(void) {
     }
     if (settings_popup) {
         draw_popup(uis_label(page.cursor), "A: choose   B: cancel", uis_choice_count(page.cursor), settings_popup_sel,
-                   settings_choice_name);
+                   settings_choice_name, NULL);
     }
 }
 
@@ -811,7 +987,8 @@ log_label(void) {
     static char label[20];
     switch (screen) {
         case SCREEN_MAIN: snprintf(label, sizeof(label), "main/%s", iso_names[debug_iso]); return label;
-        case SCREEN_GAMES: return viewer_open ? "games/viewer" : (recent_open ? "games/recent" : "games");
+        case SCREEN_GAMES:
+            return options_open ? "games/options" : viewer_open ? "games/viewer" : (recent_open ? "games/recent" : "games");
         case SCREEN_SETTINGS: return "settings";
         case SCREEN_DATETIME: return "date/time";
         case SCREEN_FILES: return "files";
@@ -946,7 +1123,10 @@ draw_frame(void) {
         if (screen == SCREEN_GAMES) {
             draw_games();
             if (recent_open) {
-                draw_popup("Recently played", "A: start   B: close", history_recent_count(), recent_row, recent_name);
+                draw_popup("Recently played", "A: start   B: close", history_recent_count(), recent_row, recent_name, NULL);
+            }
+            if (options_open) {
+                draw_options();
             }
         }
     }
@@ -1046,6 +1226,7 @@ handle_main(button_t b) {
                 }
                 blist_open(&glist, &menu, UIL_VISIBLE, uil_count());
                 viewer_open = 0;
+                options_open = 0;
                 blist_set_cursor(&glist, uil_cursor());
                 screen = SCREEN_GAMES;
             } else if (menu.selected == ICON_FILES) {
@@ -1127,6 +1308,141 @@ open_recent(void) {
     }
 }
 
+/* ---- Game options popup (X on a game, also from the case viewer): BIOS window with what can be chosen before a game
+ * starts. Rows that are planned but not there yet are shown greyed and say so, as the brief asks. */
+enum { OPT_START, OPT_DISC, OPT_INFO, OPT_NETWORK, OPT_CHEATS };
+#define OPT_MAX 5
+static int opt_ids[OPT_MAX];
+static int opt_count;
+
+static void
+options_build(void) {
+    const gd_item* cur = uil_item(uil_cursor());
+    opt_count = 0;
+    opt_ids[opt_count++] = OPT_START;
+    if (cur && uil_disc_total(cur) > 1) {
+        opt_ids[opt_count++] = OPT_DISC; /* a multi-disc set in Compact mode */
+    }
+    opt_ids[opt_count++] = OPT_INFO;
+    opt_ids[opt_count++] = OPT_NETWORK;
+    opt_ids[opt_count++] = OPT_CHEATS;
+    if (options_row >= opt_count) {
+        options_row = opt_count - 1;
+    }
+}
+
+static const char*
+options_name(int index) {
+    static char disc[32];
+    switch (index >= 0 && index < opt_count ? opt_ids[index] : -1) {
+        case OPT_START: return "Start game";
+        case OPT_DISC:
+            snprintf(disc, sizeof(disc), "Disc  < %d of %d >", uil_disc_index() + 1, uil_disc_total(uil_item(uil_cursor())));
+            return disc;
+        case OPT_INFO: return "Game information";
+        case OPT_NETWORK: return "Network (coming soon)";
+        case OPT_CHEATS: return "Cheats (coming soon)";
+        default: return "?";
+    }
+}
+
+static int
+options_dim(int index) {
+    int id = index >= 0 && index < opt_count ? opt_ids[index] : -1;
+    return id == OPT_NETWORK || id == OPT_CHEATS;
+}
+
+static void
+draw_options(void) {
+    char title[24];
+    const gd_item* cur = uil_item(uil_cursor());
+    snprintf(title, sizeof(title), "%.22s", cur ? cur->name : "");
+    draw_popup(title, "A: select   B: back", opt_count, options_row, options_name, options_dim);
+}
+
+static void
+open_options(void) {
+    const gd_item* cur = uil_item(uil_cursor());
+    if (!cur || uil_is_folder(cur)) {
+        sound_sfx(BAUDIO_SFX_ERROR);
+        return;
+    }
+    options_open = 1;
+    options_row = 0;
+    options_build();
+    sound_sfx(BAUDIO_SFX_ENTER);
+}
+
+static void open_viewer(void);
+
+/* Starts the game under the cursor (the picked disc of a set); only returns if it could not be started. */
+static void
+launch_selected(void) {
+    const gd_item* game = NULL;
+    const gd_item* cur = uil_item(uil_cursor());
+    if (cur && !uil_is_folder(cur) && uil_button(BTN_A, &game) == UIL_LAUNCH && game) {
+        sound_sfx(BAUDIO_SFX_ENTER);
+        launch_disc(game);
+    }
+    sound_sfx(BAUDIO_SFX_ERROR);
+    show_notice("Could not start the game");
+}
+
+static void
+handle_options(button_t b) {
+    options_build();
+    int id = opt_ids[options_row];
+    const gd_item* dummy = NULL;
+    switch (b) {
+        case BTN_UP:
+            if (options_row > 0) {
+                options_row--;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_DOWN:
+            if (options_row < opt_count - 1) {
+                options_row++;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_LEFT:
+        case BTN_RIGHT:
+            if (id == OPT_DISC) { /* the list's own disc picking (only reached on a set, where Left/Right do not page) */
+                sound_sfx(uil_button(b, &dummy) == UIL_REDRAW ? BAUDIO_SFX_CURSOR : BAUDIO_SFX_ERROR);
+            }
+            break;
+        case BTN_A:
+        case BTN_START:
+            switch (id) {
+                case OPT_START:
+                    options_open = 0;
+                    launch_selected();
+                    break;
+                case OPT_DISC: sound_sfx(BAUDIO_SFX_ERROR); break; /* Left/Right pick it */
+                case OPT_INFO:
+                    options_open = 0;
+                    if (!viewer_open) {
+                        open_viewer();
+                    } else {
+                        sound_sfx(BAUDIO_SFX_CONFIRM);
+                    }
+                    break;
+                default:
+                    sound_sfx(BAUDIO_SFX_ERROR);
+                    show_notice("Not available yet");
+                    break;
+            }
+            break;
+        case BTN_B:
+        case BTN_X:
+            sound_sfx(BAUDIO_SFX_CANCEL);
+            options_open = 0;
+            break;
+        default: break;
+    }
+}
+
 /* The case of the right panel is under a point (pixels). */
 static int
 case_at_px(float x, float y) {
@@ -1141,6 +1457,10 @@ handle_games(button_t b) {
     const gd_item* game = NULL;
     if (recent_open) {
         handle_recent(b);
+        return;
+    }
+    if (options_open) {
+        handle_options(b);
         return;
     }
     if (viewer_open) {
@@ -1166,10 +1486,14 @@ handle_games(button_t b) {
                 }
                 break;
             case BTN_UP:
-            case BTN_X:
-            case BTN_B:
                 glist.button = -1;
                 sound_sfx(BAUDIO_SFX_CURSOR);
+                break;
+            case BTN_B: /* the bottom row is the last level before the main menu */
+                glist.button = -1;
+                sound_sfx(BAUDIO_SFX_CANCEL);
+                bmenu_show_main(&menu, ICON_GAME);
+                screen = SCREEN_MAIN;
                 break;
             case BTN_A:
             case BTN_START:
@@ -1184,20 +1508,19 @@ handle_games(button_t b) {
         }
         return;
     }
-    if (b == BTN_X) { /* to the buttons */
-        glist.back_selected = 0;
-        glist.button = 0;
-        sound_sfx(BAUDIO_SFX_CURSOR);
+    if (b == BTN_X) { /* the game options popup */
+        if (glist.back_selected) {
+            sound_sfx(BAUDIO_SFX_ERROR);
+        } else {
+            open_options();
+        }
         return;
     }
     int on_case = b == BTN_A && pointer.clicked && case_at_px(pointer_screen_x(), (float)pointer.y);
     if (b == BTN_Y || on_case) { /* Y, or a click on the case: the case viewer */
         const gd_item* cur = uil_item(uil_cursor());
         if (cur && !uil_is_folder(cur) && (on_case || !glist.back_selected)) {
-            glist.back_selected = 0;
-            viewer_open = 1;
-            viewer_reset();
-            sound_sfx(BAUDIO_SFX_ENTER);
+            open_viewer();
         } else {
             sound_sfx(BAUDIO_SFX_ERROR);
         }
@@ -1216,16 +1539,13 @@ handle_games(button_t b) {
             sound_sfx(BAUDIO_SFX_CURSOR);
             return;
         }
-        if (b == BTN_A || b == BTN_START) {
+        if (b == BTN_A || b == BTN_START || b == BTN_B) { /* BACK is on the bottom row: B goes on to the main menu */
             sound_sfx(BAUDIO_SFX_CANCEL);
             glist.back_selected = 0;
             bmenu_show_main(&menu, ICON_GAME);
             screen = SCREEN_MAIN;
-            return;
         }
-        if (b != BTN_B) {
-            return;
-        }
+        return;
     } else if (b == BTN_DOWN && uil_count() > 0 && uil_cursor() == uil_count() - 1) {
         glist.back_selected = 1;
         sound_sfx(BAUDIO_SFX_CURSOR);
@@ -1237,9 +1557,9 @@ handle_games(button_t b) {
         sound_sfx(BAUDIO_SFX_ERROR);
         show_notice("Could not start the game");
     } else if (r == UIL_EXIT) {
+        /* B at the top folder: first to the bottom row (BACK), a second B leaves; levels are never skipped */
+        glist.back_selected = 1;
         sound_sfx(BAUDIO_SFX_CANCEL);
-        bmenu_show_main(&menu, ICON_GAME);
-        screen = SCREEN_MAIN;
     } else if (r == UIL_RECENT) {
         open_recent();
     } else if (r == UIL_REDRAW) {
@@ -1439,23 +1759,26 @@ apply_hover(void) {
         ux = 320.0f + (ux - 320.0f) / 0.75f;
     }
     int popup_rows = 0, popup_sel = -1;
+    int* popup_cur = NULL;
     if (recent_open) {
         popup_rows = history_recent_count();
+        popup_cur = &recent_row;
+    } else if (options_open && screen == SCREEN_GAMES) {
+        options_build();
+        popup_rows = opt_count;
+        popup_cur = &options_row;
     } else if (settings_popup) {
         popup_rows = uis_choice_count(page.cursor);
+        popup_cur = &settings_popup_sel;
     }
-    if (recent_open || settings_popup) {
-        int sel = recent_open ? recent_row : settings_popup_sel;
+    if (popup_cur) {
+        int sel = *popup_cur;
         int first = sel >= POPUP_ROWS ? sel - POPUP_ROWS + 1 : 0;
         int rows = popup_rows < POPUP_ROWS ? popup_rows : POPUP_ROWS;
         const float rows_y = popup_rows_y(rows);
         if (ux >= POPUP_X && ux <= POPUP_X + POPUP_W && uy >= rows_y && uy < rows_y + (float)rows * GFX_LINE_H) {
             popup_sel = first + (int)((uy - rows_y) / GFX_LINE_H);
-            if (recent_open) {
-                recent_row = popup_sel;
-            } else {
-                settings_popup_sel = popup_sel;
-            }
+            *popup_cur = popup_sel;
         }
         return;
     }
@@ -1582,14 +1905,14 @@ ui_bios_run(const bios_rom* rom) {
         uint64_t logic_t0 = timer_us_gettime64();
         button_t b = input_poll();
         input_mouse(&pointer);
-        if (screen == SCREEN_GAMES && viewer_open) {
+        if (screen == SCREEN_GAMES && viewer_open && !options_open) {
             viewer_drag(&pointer);
         }
         if (pointer.moved || pointer.clicked) {
             apply_hover(); /* a click acts on what is under the pointer, even if it has not moved */
         }
         int typed = input_typed_char();
-        if (typed && screen == SCREEN_GAMES && !recent_open && uil_jump_to_letter(typed)) {
+        if (typed && screen == SCREEN_GAMES && !recent_open && !options_open && !viewer_open && uil_jump_to_letter(typed)) {
             sound_sfx(BAUDIO_SFX_CURSOR);
         }
         if (report_page) {
@@ -1661,7 +1984,7 @@ ui_bios_run(const bios_rom* rom) {
 
         /* the online engine: a game the DreamPi's phone page asked for starts only on the plain main menu or game list */
         online_tick((screen == SCREEN_MAIN || screen == SCREEN_GAMES) && !recent_open && !settings_popup && !about_open &&
-                    !viewer_open);
+                    !viewer_open && !options_open);
 
         sync_us_sum += timer_us_gettime64() - logic_t0;
         frames_this_second++;
