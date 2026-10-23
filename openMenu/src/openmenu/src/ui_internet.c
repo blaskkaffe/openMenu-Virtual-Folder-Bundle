@@ -475,7 +475,7 @@ draw_heading(void) {
             if (pstat.list_valid) {
                 snprintf(line, sizeof(line), "Players online: %d  (DCNow! %d, DCNET %d)", pstat.online_total, nplayers - net, net);
             } else {
-                snprintf(line, sizeof(line), "Players online%s", pstat.state == DCNOW_FETCH_RUNNING ? ": loading" : "");
+                snprintf(line, sizeof(line), "Players online%s", pstat.state == DCNOW_FETCH_RUNNING ? ": loading" : pstat.state == DCNOW_FETCH_FAILED ? ": failed" : "");
             }
             break;
         }
@@ -485,21 +485,36 @@ draw_heading(void) {
     gfx_text(line, PANE_X + PAD, PANE_Y + 40.0f, TEXT_Z, WHITE, 1);
 }
 
+/* What the player fetch is doing or why it failed (its last status line), for the empty lists: "Loading..." alone hides where
+ * it stops (the DreamPi add-on, DNS, the connection to the server, the answer). */
+static const char*
+fetch_note(char* out, size_t size) {
+    if (pstat.state == DCNOW_FETCH_FAILED && pstat.count > 0) {
+        snprintf(out, size, "%s  A: retry", pstat.lines[pstat.count - 1]);
+        return out;
+    }
+    if (pstat.state == DCNOW_FETCH_RUNNING && pstat.count > 0) {
+        return pstat.lines[pstat.count - 1];
+    }
+    return "Loading...";
+}
+
 static void
 draw_rows(void) {
     char line[96];
+    char note[DCNOW_STATUS_WIDTH + 16];
     int n = page_rows(page);
     const char* empty = NULL;
     if (n == 0) {
         int online = conn.state == DCNOW_CONN_ONLINE;
         switch (page) {
             case PAGE_EVENTS: empty = !online ? "Connect to see the events" : estat.state == EVENTS_FAILED ? estat.line : "No events coming"; break;
-            case PAGE_PLAYERS: empty = !online ? "Connect to see who is online" : pstat.list_valid ? "Nobody is online" : "Loading..."; break;
-            case PAGE_GAMES: empty = !online ? "Connect to see the games" : pstat.list_valid ? "Nobody is in a game" : "Loading..."; break;
+            case PAGE_PLAYERS: empty = !online ? "Connect to see who is online" : pstat.list_valid ? "Nobody is online" : fetch_note(note, sizeof(note)); break;
+            case PAGE_GAMES: empty = !online ? "Connect to see the games" : pstat.list_valid ? "Nobody is in a game" : fetch_note(note, sizeof(note)); break;
             default: break;
         }
         if (empty) {
-            gfx_text(empty, PANE_X + PAD, LIST_Y, TEXT_Z, GREY, 1);
+            text_cut(empty, 44, PANE_X + PAD, LIST_Y, GREY);
         }
         return;
     }
