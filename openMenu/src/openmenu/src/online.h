@@ -23,5 +23,6 @@ typedef struct online_header {
     int players; /* online players in the newest list, -1 when there is none yet */
     int dcnow;   /* of them on DCNow! */
     int dcnet;   /* and on DCNET */
+    int network; /* the network the DreamPi has selected while online: 0 not known (plain Dreamcast Now!), 1 DCNow!, 2 DCNET */
 } online_header;
 void online_header_get(online_header* out);

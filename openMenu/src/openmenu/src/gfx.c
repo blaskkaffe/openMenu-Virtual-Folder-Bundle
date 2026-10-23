@@ -19,6 +19,7 @@
 #include <bios_text.h>
 #include <bios_surface.h>
 #include <bios_models.h>
+#include <tex_decode.h>
 #include <bios_page.h>
 #include <backend/dat_format.h>
 #include <texture/serial_sanitize.h>
@@ -61,6 +62,10 @@ static const bios_rom* g_rom;
 static rom_tex rom_texes[MAX_TEXTURES];
 static int num_rom_texes;
 static rom_tex logo_tex;
+static rom_tex logo_dcnet_tex;  /* the swirl of the BIOS logo with "DCNET" instead of the wordmark */
+static rom_tex logo_badge_tex;  /* "Now!" */
+static int logo_mode;           /* see gfx_set_logo_mode */
+static int logo_variants_tried;
 static text_tex text_texes[MAX_TEXT_ENTRIES];
 static uint32_t frame_no;
 static unsigned tri_count;
@@ -621,6 +626,79 @@ static rom_tex* memo_tex;
 
 static rom_tex* get_rom_texture_uncached(bscene_texref ref);
 
+/* ---- The header logo and the online mode ---- */
+#include "logo_text.inc"
+
+#define LOGO_W 128
+#define LOGO_H 32
+#define LOGO_SWIRL_W 29 /* columns of the logo texture that are the swirl; the wordmark starts at 30 */
+#define LOGO_DCNET_X 30
+
+static void
+upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
+    size_t size = ((size_t)w * (size_t)h * 2u + 31u) & ~(size_t)31u;
+    void* staging = memalign(32, size);
+    pvr_ptr_t ptr = staging ? pvr_mem_malloc(size) : NULL;
+    if (!ptr) {
+        free(staging);
+        return;
+    }
+    memset(staging, 0, size);
+    memcpy(staging, px, (size_t)w * (size_t)h * 2u);
+    pvr_txr_load(staging, ptr, size);
+    free(staging);
+    g->ptr = ptr;
+    g->w = w;
+    g->h = h;
+    g->fmt = PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED;
+    g->valid = 1;
+}
+
+/* The two pictures of the online logos, made once from the ROM's logo (so a PAL console keeps its blue swirl) and the masks of
+ * logo_text.inc. Nothing is made when a LOGO.PVR of the user's own is in use. */
+static void
+build_logo_variants(void) {
+    if (logo_variants_tried || logo_tex.valid || !g_rom) {
+        return;
+    }
+    logo_variants_tried = 1;
+    bios_texture t;
+    uint32_t* argb = malloc(sizeof(uint32_t) * LOGO_W * LOGO_H);
+    unsigned short* out = calloc((size_t)LOGO_W * LOGO_H, sizeof(unsigned short));
+    unsigned short* badge = calloc((size_t)LOGO_NOW_MASK_W * LOGO_H, sizeof(unsigned short));
+    if (argb && out && badge && bios_header_logo(g_rom, *(volatile uint8_t*)0x8C000072 & 0xF, &t) == 0 && t.width == LOGO_W
+        && t.height == LOGO_H && bios_texture_decode(&t, argb) == 0) {
+        for (int y = 0; y < LOGO_H; y++) {
+            for (int x = 0; x < LOGO_SWIRL_W; x++) { /* the swirl as it is */
+                uint32_t c = argb[y * LOGO_W + x];
+                out[y * LOGO_W + x] = (unsigned short)((((c >> 24) & 0xFF) >> 4) << 12 | (((c >> 16) & 0xFF) >> 4) << 8 | (((c >> 8) & 0xFF) >> 4) << 4 | ((c & 0xFF) >> 4));
+            }
+            for (int x = 0; x < LOGO_DCNET_MASK_W && LOGO_DCNET_X + x < LOGO_W; x++) { /* "DCNET" in the wordmark's grey (68, 68, 68) */
+                unsigned a = logo_dcnet_mask[y * LOGO_DCNET_MASK_W + x] >> 4;
+                out[y * LOGO_W + LOGO_DCNET_X + x] = (unsigned short)((a << 12) | 0x444);
+            }
+            for (int x = 0; x < LOGO_NOW_MASK_W; x++) { /* "Now!" in the cyan of the Dreamcast Now! site (56, 182, 220) */
+                unsigned a = logo_now_mask[y * LOGO_NOW_MASK_W + x] >> 4;
+                badge[y * LOGO_NOW_MASK_W + x] = (unsigned short)((a << 12) | 0x3BD);
+            }
+        }
+        upload_argb4444(out, LOGO_W, LOGO_H, &logo_dcnet_tex);
+        upload_argb4444(badge, LOGO_NOW_MASK_W, LOGO_H, &logo_badge_tex);
+    }
+    free(argb);
+    free(out);
+    free(badge);
+}
+
+void
+gfx_set_logo_mode(int mode) {
+    if (mode != logo_mode) {
+        logo_mode = mode;
+        memo_ok = 0; /* the header's texture may have been remembered */
+    }
+}
+
+
 static rom_tex*
 get_rom_texture(bscene_texref ref) {
     if (memo_ok && memo_ref.kind == ref.kind && memo_ref.a == ref.a && memo_ref.b == ref.b) {
@@ -662,6 +740,12 @@ get_rom_texture_uncached(bscene_texref ref) {
     }
     if (logo_tex.valid && ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
         return &logo_tex;
+    }
+    if (logo_mode == 2 && ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
+        build_logo_variants();
+        if (logo_dcnet_tex.valid) {
+            return &logo_dcnet_tex;
+        }
     }
     for (int i = 0; i < num_rom_texes; i++) {
         if (rom_texes[i].kind == ref.kind && rom_texes[i].a == ref.a && rom_texes[i].b == ref.b) {
@@ -1377,6 +1461,25 @@ gfx_image(int id, float x, float y, float w, float h, float z) {
     send_vertex(x + w, y, z, 1.0f, 0.0f, 0xFFFFFFFFu, 0);
     send_vertex(x, y + h, z, 0.0f, 1.0f, 0xFFFFFFFFu, 0);
     send_vertex(x + w, y + h, z, 1.0f, 1.0f, 0xFFFFFFFFu, 1);
+}
+
+/* Where the header logo is on the screen (measured on the preview: the 128x32 texture covers x 27..165, y 28..61). */
+void
+gfx_logo_badge(void) {
+    if (logo_mode != 1) {
+        return;
+    }
+    build_logo_variants();
+    if (!logo_badge_tex.valid) {
+        return;
+    }
+    const float sx = 139.0f / 128.0f, sy = 34.0f / 32.0f;
+    float x = 27.0f + 127.0f * sx - 2.0f, y = 28.0f;
+    ensure_header(&logo_badge_tex, NULL, 0);
+    send_vertex(x, y, 0.5f, 0.0f, 0.0f, 0xFFFFFFFFu, 0);
+    send_vertex(x + (float)LOGO_NOW_MASK_W * sx, y, 0.5f, 1.0f, 0.0f, 0xFFFFFFFFu, 0);
+    send_vertex(x, y + (float)LOGO_H * sy, 0.5f, 0.0f, 1.0f, 0xFFFFFFFFu, 0);
+    send_vertex(x + (float)LOGO_NOW_MASK_W * sx, y + (float)LOGO_H * sy, 0.5f, 1.0f, 1.0f, 0xFFFFFFFFu, 1);
 }
 
 void

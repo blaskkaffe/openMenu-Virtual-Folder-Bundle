@@ -179,6 +179,8 @@ update_clock(void) {
     online_header oh;
     online_header_get(&oh);
     int lamp = oh.shown ? oh.state + 1 : 0; /* 0 none, 1 grey, 2 yellow, 3 green, 4 red */
+    /* The logo at the left of the bar follows the network: the plain logo, "Now!" behind it on Dreamcast Now!, "DCNET" on DCNET */
+    gfx_set_logo_mode(!oh.shown || oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1);
     if (oh.shown && oh.state == 2 && oh.players >= 0) {
         snprintf(counts, sizeof(counts), "DCNow! %d DCNet %d", oh.dcnow, oh.dcnet);
     }
@@ -1267,6 +1269,9 @@ draw_frame(void) {
                 draw_options();
             }
         }
+    }
+    if (screen == SCREEN_MAIN) {
+        gfx_logo_badge();
     }
     if (svmu_active()) {
         draw_svmu();

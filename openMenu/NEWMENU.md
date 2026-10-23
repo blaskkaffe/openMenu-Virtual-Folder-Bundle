@@ -71,6 +71,10 @@ logo is used. `tools/bios-logo/biologo.py` makes the file: `convert logo.png LOG
 (any PNG, scaled to 128x32, transparency kept) and `extract dc_boot.bin logo.png` saves the
 BIOS logo as a starting point. `BIOS_PREVIEW_LOGO=LOGO.PVR bios_preview ...` shows it on a PC.
 A fully transparent picture hides the logo.
+Online modes (not with a `LOGO.PVR` of your own): connected to Dreamcast Now! the BIOS logo gets "Now!" in the site's cyan behind it
+(`gfx_logo_badge`); connected through a DreamPi that has DCNET selected the wordmark is replaced by "DCNET" next to the swirl
+(`gfx_set_logo_mode`, a 128x32 picture built from the ROM's logo, so a PAL console keeps its blue swirl). The letters are drawn by
+`tools/gen_logo_text.py` in the style of the wordmark (the ROM only has the letters of "Dreamcast"), masks in `logo_text.inc`.
 Without a `LOGO.PVR` a European (PAL) console gets the BIOS logo with the swirl recoloured blue (red and blue exchanged in the ROM's
 orange swirl; the BIOS itself shows the plain text logo there); other regions get the orange swirl.
 

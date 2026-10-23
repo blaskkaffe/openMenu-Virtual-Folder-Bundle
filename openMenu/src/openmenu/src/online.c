@@ -99,6 +99,7 @@ online_header_get(online_header* out) {
     out->state = 0;
     out->players = -1;
     out->dcnow = out->dcnet = 0;
+    out->network = 0;
     if (!out->shown) {
         return;
     }
@@ -110,6 +111,7 @@ online_header_get(online_header* out) {
         default: break;
     }
     if (out->state == 2) {
+        out->network = dreampi_link_network();
         dcnow_fetch_poll(&fetch);
         if (fetch.list_valid) {
             out->players = fetch.online_total;
