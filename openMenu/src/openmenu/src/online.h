@@ -21,5 +21,7 @@ typedef struct online_header {
     int shown;   /* Online features is on: the bar has something to say */
     int state;   /* 0 not connected, 1 connecting, 2 online, 3 the last connection failed */
     int players; /* online players in the newest list, -1 when there is none yet */
+    int dcnow;   /* of them on DCNow! */
+    int dcnet;   /* and on DCNET */
 } online_header;
 void online_header_get(online_header* out);

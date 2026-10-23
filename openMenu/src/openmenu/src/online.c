@@ -98,6 +98,7 @@ online_header_get(online_header* out) {
     out->shown = sf_dcnow[0] != DCNOW_OFF;
     out->state = 0;
     out->players = -1;
+    out->dcnow = out->dcnet = 0;
     if (!out->shown) {
         return;
     }
@@ -112,6 +113,8 @@ online_header_get(online_header* out) {
         dcnow_fetch_poll(&fetch);
         if (fetch.list_valid) {
             out->players = fetch.online_total;
+            out->dcnow = fetch.online_dcnow;
+            out->dcnet = fetch.online_dcnet;
         }
     }
 }

@@ -27,6 +27,7 @@
 #include <kos/fs.h>
 
 #include "clock.h"
+#include "clock_math.h"
 #include <bios_surface.h>
 #include "gfx.h"
 #include "favorites.h"
@@ -162,60 +163,51 @@ static dbglog_sample last_sample;
 
 static char status_line[64];
 
-/* The top bar of the main menu, in the row above the clock: a lamp for the connection (green online, yellow connecting, red
- * failed, grey not connected) and the player count when there is a list. Only while Online features is on. */
-#define HEADER_STATUS_RIGHT 612.0f /* the clock's right edge */
-#define HEADER_STATUS_Y 12.0f
-#define HEADER_STATUS_SCALE 0.62f
-
-static void
-draw_header_status(void) {
-    online_header h;
-    char text[40];
-    online_header_get(&h);
-    if (!h.shown) {
-        return;
-    }
-    static const uint32_t lamp[4] = {0xFF909090u, 0xFFF0D040u, 0xFF40D060u, 0xFFE04040u};
-    switch (h.state) {
-        case 2:
-            if (h.players >= 0) {
-                snprintf(text, sizeof(text), "Online  %d player%s", h.players, h.players == 1 ? "" : "s");
-            } else {
-                snprintf(text, sizeof(text), "Online");
-            }
-            break;
-        case 1: snprintf(text, sizeof(text), "Connecting..."); break;
-        case 3: snprintf(text, sizeof(text), "No connection"); break;
-        default: snprintf(text, sizeof(text), "Offline"); break;
-    }
-    float w = (float)gfx_text_width(text) * HEADER_STATUS_SCALE;
-    float x = HEADER_STATUS_RIGHT - w;
-    uint32_t colour = h.state == 2 ? 0xFF202020u : 0xFF505050u; /* dark text on the grey bar, as the clock */
-    gfx_rect(x - 16.0f, HEADER_STATUS_Y + 7.0f, 10.0f, 10.0f, 0.5f, lamp[h.state]);
-    gfx_text_scaled(text, x, HEADER_STATUS_Y, 0.5f, colour, HEADER_STATUS_SCALE);
-}
-
 /* The BIOS shows the date and time in the header bar, in its own small antialiased font (fx_debug_hex_text
  * 0x8C021FC0): the header's 256x32 text surface, from (40, 16). Format of format_datetime_string 0x8C01BAE0 for the
  * console's date order; the console's clock holds local time. */
 static void
 update_clock(void) {
     char text[24];
+    char counts[24] = "";
     int y, mo, d, h, mi;
     clock_get(&y, &mo, &d, &h, &mi);
-    switch (clock_date_order()) {
-        case 0: snprintf(text, sizeof(text), "%04d/%02d/%02d %02d:%02d", y, mo, d, h, mi); break;
-        case 2: snprintf(text, sizeof(text), "%02d/%02d/%04d %02d:%02d", d, mo, y, h, mi); break;
-        default: snprintf(text, sizeof(text), "%02d/%02d/%04d %02d:%02d", mo, d, y, h, mi); break;
+    /* Clock format setting; the time zone for .beat comes from Online time sync (Off: not known, no beats) */
+    clock_header_text(text, sizeof(text), clock_date_order(), sf_clock[0], y, mo, d, h, mi,
+                      online_time_sync_minutes(sf_online_time_sync[0]), sf_online_time_sync[0] != ONLINE_TIME_SYNC_OFF);
+    /* The row above the clock (same font): a lamp for the connection and the players per network while online */
+    online_header oh;
+    online_header_get(&oh);
+    int lamp = oh.shown ? oh.state + 1 : 0; /* 0 none, 1 grey, 2 yellow, 3 green, 4 red */
+    if (oh.shown && oh.state == 2 && oh.players >= 0) {
+        snprintf(counts, sizeof(counts), "DCNow! %d DCNet %d", oh.dcnow, oh.dcnet);
     }
-    static char shown[24];
+    char key[64];
+    snprintf(key, sizeof(key), "%s|%s|%d", text, counts, lamp);
+    static char shown[64];
     static uint32_t shown_serial;
     bsurf* s = bsurf_get(BMENU_ID_HEADER, 256, 32);
-    if (s && (strcmp(shown, text) != 0 || s->serial != shown_serial)) {
+    if (s && (strcmp(shown, key) != 0 || s->serial != shown_serial)) {
         bsurf_clear(s);
         bsurf_clock_text(s, 40, 16, text);
-        strcpy(shown, text);
+        if (lamp > 0) {
+            static const uint16_t lamp_colour[5] = {0, 0xF999, 0xFFD3, 0xF3D6, 0xFE33}; /* ARGB4444 */
+            int text_w = (int)strlen(counts) * 11;
+            int right = 40 + (int)strlen(text) * 11; /* the clock's right edge */
+            int x = right - text_w;
+            int lamp_x = (counts[0] ? x : right) - 14;
+            if (lamp_x < 2) {
+                lamp_x = 2;
+            }
+            if (!counts[0]) {
+                lamp_x = right - 10; /* alone: at the clock's right edge */
+            }
+            bsurf_fill(s, lamp_x, 4, 9, 9, lamp_colour[lamp]);
+            if (counts[0]) {
+                bsurf_clock_text(s, x, 0, counts);
+            }
+        }
+        strcpy(shown, key);
         shown_serial = s->serial;
     } else if (!s) {
         gfx_set_label(BMENU_ID_HEADER, text);
@@ -1275,9 +1267,6 @@ draw_frame(void) {
                 draw_options();
             }
         }
-    }
-    if (screen == SCREEN_MAIN) {
-        draw_header_status();
     }
     if (svmu_active()) {
         draw_svmu();

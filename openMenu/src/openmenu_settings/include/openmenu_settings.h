@@ -432,7 +432,11 @@ typedef enum CFG_CLOCK {
     CLOCK_12HOUR = CLOCK_START,
     CLOCK_24HOUR,
     CLOCK_OFF,
-    CLOCK_END = CLOCK_OFF
+    /* this branch: the main menu's clock with Swatch Internet Time (.beat) added. 1.7.1 does not know these two and puts the
+     * setting back to 12 hour when it reads them. */
+    CLOCK_12HOUR_BEAT,
+    CLOCK_24HOUR_BEAT,
+    CLOCK_END = CLOCK_24HOUR_BEAT
 } CFG_CLOCK;
 
 typedef enum CFG_CLOCK_EXTENDER {

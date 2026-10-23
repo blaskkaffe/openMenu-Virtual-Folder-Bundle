@@ -47,9 +47,9 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 | BIOS look, icons, animations, sound | Done | ROM-driven; colours/font weight still tuned on hardware (checklist) |
 | Music -> Internet | Done | only while Online features is On; Off keeps Music + CD player |
 | Blue swirl logo for PAL, custom LOGO.PVR | Done | header logo; the checklist notes the logo setting only affects game launch |
-| Online player count in the taskbar | Partial | `draw_header_status` (ui_bios.c) draws a connection lamp and "Online  N players" in the row above the clock while Online features is on; `online.c` reads the list once a link is up (and refreshes it when the DreamPi add-on makes the games code skip it). Untested; position and font size are guesses |
+| Online player count in the taskbar | Partial | drawn into the header's text surface in the row above the clock, in the clock's font: a connection lamp and "DCNow! n DCNet n" while online (`update_clock` in ui_bios.c; the letters were drawn to match the ROM digits: `tools/gen_clock_letters.py`). `online.c` reads the list once a link is up. Rendered with the real engine code on the preview, untested on a console |
 | Notifications (starred player/game/event) | Missing | `dreampi_link_event_banner()` exists but nothing draws it |
-| Connectivity status, keyboard/mouse indicator, extra clock settings in the header | Partial | connectivity: the lamp and text above the clock (Offline / Connecting... / Online / No connection); keyboard/mouse indicator and extra clock settings still missing |
+| Connectivity status, keyboard/mouse indicator, extra clock settings in the header | Partial | connectivity: the lamp (grey off, yellow connecting, green online, red failed). Clock: Settings > Display > Clock format (12 hour with AM/PM, 24 hour, date only, each also with Swatch .beat; .beat needs Online time sync for the time zone and uses sf_clock values 3 and 4, which 1.7.1 resets to 12 hour). Keyboard/mouse indicator goes on the File screen's icons (next) |
 | 60 fps | Partial | OPEN item 2: still below 60 on hardware; DMA vertex path is in |
 
 ## 4. Play menu

@@ -191,6 +191,8 @@ bsurf_tiny_number(bsurf* s, int x, int y, int value, int width) {
     bsurf_touch(s, y, y + 11);
 }
 
+#include "bios_clock_letters.inc"
+
 void
 bsurf_clock_text(bsurf* s, int x, int y, const char* str) {
     if (!s || !str || !clock_glyphs) {
@@ -198,13 +200,22 @@ bsurf_clock_text(bsurf* s, int x, int y, const char* str) {
     }
     for (const char* p = str; *p; p++, x += 11) {
         int g;
+        const uint8_t* src = NULL;
         switch (*p) {
             case '.': g = 13; break;
             case '/': g = 11; break;
             case ':': g = 12; break;
             default: g = (*p >= '0' && *p <= '9') ? *p - '0' + 1 : 0; break;
         }
-        const uint8_t* src = clock_glyphs + g * 256;
+        if (g == 0 && *p != ' ') { /* the letters made for the player counts and AM/PM (the ROM has only digits) */
+            const char* at = memchr(clock_letter_chars, *p, sizeof(clock_letter_chars) - 1);
+            if (at) {
+                src = clock_letter_glyphs[at - clock_letter_chars];
+            }
+        }
+        if (!src) {
+            src = clock_glyphs + g * 256;
+        }
         for (int r = 0; r < 16; r++) {
             int py = y + r;
             if (py < 0 || py >= s->h) {

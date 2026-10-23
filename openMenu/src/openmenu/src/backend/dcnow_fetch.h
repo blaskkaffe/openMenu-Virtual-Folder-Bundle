@@ -42,6 +42,8 @@ typedef struct dcnow_fetch_status {
     time_t updated;   /* console clock when the newest list arrived */
     int list_valid;   /* a list is in the store, kept until the store is cleared */
     int from_pi;      /* the newest list came from the DreamPi add-on, so it can hold more than one network */
+    int online_dcnow; /* online players on DCNow! (everything that is not DCNET), counted over the whole feed */
+    int online_dcnet; /* online players on DCNET */
 } dcnow_fetch_status_t;
 
 /* Starts a fetch on the worker. Does nothing while one is running. */

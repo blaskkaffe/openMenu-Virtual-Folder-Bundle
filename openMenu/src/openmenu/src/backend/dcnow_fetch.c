@@ -293,12 +293,17 @@ json_user(const char* p, dcnow_player_t* out, int* online, int default_online) {
  * every online user in *total. Returns the stored count, or -1 when the text
  * is not the feed we expect. A body cut at the cap ends inside a record, so
  * with truncated set the players already read still count. */
+/* online players per network over the whole feed of the newest parse, for the top bar (the list itself keeps at most
+ * DCNOW_PLAYER_MAX) */
+static int parsed_dcnow, parsed_dcnet;
+
 static int
 parse_list(const char* text, const char* key, int default_online, int truncated, int* total) {
     const char* p = strstr(text, key);
     int count = 0;
 
     *total = 0;
+    parsed_dcnow = parsed_dcnet = 0;
 
     if (p == NULL) {
         return -1;
@@ -325,6 +330,11 @@ parse_list(const char* text, const char* key, int default_online, int truncated,
                 snprintf(entry.network, sizeof(entry.network), "DCNow!");
             }
             (*total)++;
+            if (strcmp(entry.network, "DCNET") == 0) {
+                parsed_dcnet++;
+            } else {
+                parsed_dcnow++;
+            }
             if (count < DCNOW_PLAYER_MAX) {
                 parsed[count++] = entry;
             }
@@ -371,6 +381,8 @@ publish(int count, int total) {
     fetch.updated = rtc_unix_secs();
     fetch.list_valid = 1;
     fetch.from_pi = from_pi_list;
+    fetch.online_dcnow = parsed_dcnow;
+    fetch.online_dcnet = parsed_dcnet;
     fetch.generation++;
     fetch.state = DCNOW_FETCH_DONE;
     fetch.counter_line = -1;
