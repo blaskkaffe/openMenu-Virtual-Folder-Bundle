@@ -63,7 +63,8 @@ Targets (suggestion): 60 fps in every screen, no frame drop when a picture loads
 |----------------------------------------|-----|------|-------|
 | Boot: time from BIOS logo to main menu | s   |      |       |
 | Main menu, idle                        | 60  | 1877 | wrong lighting |
-| Game list, 5 rows, case at rest        | 29  | 2200 |       |
+| Game list, 5 rows, case at rest        | 29  | 2200 | old layout: a row bar and a disc per row |
+| Game list, 7 rows (one box), case at rest |  |      | new layout: one box, one disc |
 | Game list, scrolling fast (hold down)  | 19  | 2100 | smooth but framerate drops, maybe too many 3d objects? |
 | Case flying in/out (single press)      | 27  | 2021 | smooth but drops a bit in frame rate|
 | Settings, popup open                   | | | |
@@ -76,7 +77,7 @@ Optimization work list **(me)**, in this order, each measured before/after on ha
 - [ ] Picture loading: DAT reads stall the frame (2 per frame budget today); read ahead / load one per frame,
       keep a small cache for the case + 5 discs, show the plain disc until loaded
 - [ ] Case rendering: skip the cases while flying off-screen, drop the translucent edges when far, check sort order
-- [ ] Row discs: 32-segment round faces x 5 rows each frame; cache projected geometry when nothing moves
+- [ ] Row discs: now one disc (the selected row's) instead of 5; re-measure, caching is probably no longer needed
 - [ ] Text labels: only re-render a label texture when its text changes; check the title scroll cost
 - [ ] Video RAM budget: ROM textures + art cache (20) + disc faces + dynamic icons; free on screen change
 - [ ] Per-frame allocations (none wanted); stack use; `malloc` fragmentation after browsing 500 games
@@ -92,6 +93,7 @@ Mark OK / FAIL / n.a. and write what you saw.
 - [-] Logo setting (BIOS logo vs custom), language rows present? - language rows are not present, logo setting present but only affects when launching games, not openmenu itself
 
 ### Game list
+- [ ] New layout (one box, 7 rows, disc only on the selected row, disc number as 3D digits on the CD): titles readable at the 37 px pitch (try 9 rows too: `UIL_VISIBLE`), box corners/left edge clean, right panel lines up with the box, digits readable on a CRT, fps, `BVM_MAX_OBJECTS` 128 memory
 Drops to 30fps
 - [x] 5 rows, titles readable, long titles scroll, multi-disc pill, GD discs, BACK + 5 buttons with info  - Back button in normal dreamcast Bios has yellow blinking frame when selected, othwerwise no blinking or yellow frame. This build it is not selectable at all.
 - [ ] Disc labels are the games' own 0GDTEX.PVR (DISC.DAT, written by the card manager when it saves the card); no label -> ICON.DAT art; no art -> blue (PAL) / red (NTSC) disc matching the game

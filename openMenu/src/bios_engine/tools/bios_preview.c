@@ -570,7 +570,7 @@ main(int argc, char** argv) {
         for (int i = 0; i < selected; i++) {
             bpage_move(&page, 1);
         }
-    } else if (script == -3 || script == -4) { /* game list demo: 7 rows (BLIST_SLOTS=5 as the console) */
+    } else if (script == -3 || script == -4) { /* game list demo: 7 rows as the console (BLIST_SLOTS=n) */
         blist_open(&list, &menu, getenv("BLIST_SLOTS") ? atoi(getenv("BLIST_SLOTS")) : 7, 30);
         blist_goto(&list, selected);
         list.back_selected = getenv("BLIST_BACK") != NULL;

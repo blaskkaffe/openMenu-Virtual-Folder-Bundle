@@ -115,23 +115,30 @@ Preview without hardware: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.
 
 ## Game browser (sketch)
 
-Seven rows in the dense BIOS-settings look (`bios_engine/bios_list`), about 60% of the screen
-width. Each row has the BIOS GD-ROM disc model with the game's icon on its label; the selected
-disc spins like the CD player's. Box art and info (name, product, region, discs, players) are
-shown to the right. Art comes from `ICON.DAT` / `BOX.DAT` (+ `_EX`) and info from `META.DAT` on
-the menu disc, by product code. The disc labels are the games' own `0GDTEX.PVR`: the console only
-sees the menu image, so GD MENU Card Manager reads each game's label from its image when it builds
+One tall box (the row bar of the BIOS-settings look, `bios_engine/bios_list`) about 60% of the screen
+width holds 7 text lines (`UIL_VISIBLE` in `ui_list.h`; the engine takes 1 to `BLIST_MAX_SLOTS` = 13).
+The box is a fixed 73.5-350.5 px high (the height of the middle five rows of the old seven-row list), clear
+of the BACK marker and the buttons; the line pitch is the box height minus padding divided by the line
+count (7 lines: 37 px, 9: 29 px, 11: 23 px). The box is grown along y, not scaled
+(`stretch_yc/yd/yx` in `bios_scene`), so its corners keep the radius of a single row and the left edge is
+straight. Only the selected line has a lit pill and a 3D BIOS GD-ROM disc with the game's icon on its
+label; the disc spins like the CD player's. Box art and info (name, product, region, discs, players) are
+shown to the right, lined up with the box. Art comes from `ICON.DAT` / `BOX.DAT` (+ `_EX`) and info from
+`META.DAT` on the menu disc, by product code. The disc labels are the games' own `0GDTEX.PVR`: the console
+only sees the menu image, so GD MENU Card Manager reads each game's label from its image when it builds
 the menu and stores them in `DISC.DAT` (same format as ICON.DAT, 128x128, keyed by serial). A game
 without one (compressed images not yet saved to the card, discs without the file) keeps the
 ICON.DAT picture, then the BIOS disc of its region.
 
 Starting a game: A starts it straight away (there is no launch animation).
-Preview: `bios_preview dc_boot.bin out.ppm 60 <row> -3` (list; BLIST_SLOTS=5 as the console).
-Tune on hardware: row layout constants at the top of `bios_list.c`, panel layout in `ui_bios.c`.
+Preview: `bios_preview dc_boot.bin out.ppm 60 <row> -3` (list; `BLIST_SLOTS=n` for n lines, default 7 as the console;
+`BLIST_DISC=n` sets the disc number shown). Text is drawn as 32 px outline boxes there, so they overlap at 9+ lines.
+Tune on hardware: box constants (`BOX_*`) and row layout at the top of `bios_list.c`, panel layout in `ui_bios.c`.
 
-Game list details: multi-disc sets (Compact mode) show a small pill with the gold side of a CD and
-"disc:total"; Left/Right on such a row pick the disc, A starts it (Left/Right page the list on other
-rows). The selected row is lit across the title; the BACK marker sits under the info box.
+Game list details: a multi-disc game (Compact mode) shows its disc number as 3D BIOS digit models (model 21 + digit,
+tinted light gold) at the bottom right of the spinning CD, up to 99 (`BLIST.disc_number`, set by `ui_bios.c` for the
+selected row only; the total is not shown). Left/Right on such a row pick the disc, A starts it (Left/Right page the
+list on other rows). Multi-disc titles use the full title width. The BACK marker sits under the info box.
 
 Game list bottom row: the BACK marker and the CD player's five buttons (without their pictures)
 sit where they do in the CD player. For now the buttons show product code, region, players, VMU

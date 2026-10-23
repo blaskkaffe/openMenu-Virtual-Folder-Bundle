@@ -56,12 +56,12 @@ background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's
 
 | Item | Status | Notes |
 |---|---|---|
-| 7 rows | Conflict | `UIL_VISIBLE` is 5 (ui_list.h); brief says 7 |
+| 7 rows | Done | one box, `UIL_VISIBLE` 7 (ui_list.h), engine up to 13; text size at 9+ rows untested on hardware |
 | Spinning GD-ROM disc with the game's label | Done | DISC.DAT from the Card Manager, fallbacks to ICON.DAT / region disc |
 | 3D jewel case with front art | Done | back art slot exists (`BMODEL_TEX_BACK`) but nothing fills it |
 | Info beside the art | Partial | product, region, players, VMU blocks, disc count on the bottom buttons; no genre, no description |
 | Favourite / star | Missing | needs a save-file list and a key |
-| Disc number pill on multi-disc | Done | Compact mode, Left/Right pick the disc |
+| Disc number on multi-disc | Done | 3D digits at the bottom right of the spinning CD (selected row only, no total); Compact mode, Left/Right pick the disc |
 | Sort A-Z / SD order | Done | Settings > Game order |
 | Sort by release year | Missing | see decision 4 |
 | Group control (Folder, Favourites, Genre, ...) | Partial | only Folder and Recently played. Genre filter code exists in gd_list.c (`list_set_genre`) but is off: genre data is unreliable (NEWMENU todo). Modem/BBA from META.DAT `network`; Serial and W5500 need version tags (decision 5); Homebrew/Tools/Browsers need a tag too (browsers are found by name today) |
