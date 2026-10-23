@@ -668,6 +668,21 @@ build_logo_variants(void) {
     unsigned short* badge = calloc((size_t)LOGO_NOW_MASK_W * LOGO_H, sizeof(unsigned short));
     if (argb && out && badge && bios_header_logo(g_rom, *(volatile uint8_t*)0x8C000072 & 0xF, &t) == 0 && t.width == LOGO_W
         && t.height == LOGO_H && bios_texture_decode(&t, argb) == 0) {
+        /* "Now!" takes the swirl's colour: the most saturated opaque pixel of the swirl (orange on NTSC and PAL-J, blue on PAL) */
+        unsigned swirl_rgb = 0x3BD;
+        int best = -1;
+        for (int i = 0; i < LOGO_W * LOGO_H; i++) {
+            uint32_t c = argb[i];
+            if (i % LOGO_W >= LOGO_SWIRL_W || (c >> 24) < 0xF0) {
+                continue;
+            }
+            int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+            int hi = r > g ? (r > b ? r : b) : (g > b ? g : b), lo = r < g ? (r < b ? r : b) : (g < b ? g : b);
+            if (hi - lo > best) {
+                best = hi - lo;
+                swirl_rgb = (unsigned)(((r + 8) / 17) << 8 | ((g + 8) / 17) << 4 | ((b + 8) / 17));
+            }
+        }
         for (int y = 0; y < LOGO_H; y++) {
             for (int x = 0; x < LOGO_SWIRL_W; x++) { /* the swirl as it is */
                 uint32_t c = argb[y * LOGO_W + x];
@@ -677,9 +692,9 @@ build_logo_variants(void) {
                 unsigned a = logo_dcnet_mask[y * LOGO_DCNET_MASK_W + x] >> 4;
                 out[y * LOGO_W + LOGO_DCNET_X + x] = (unsigned short)((a << 12) | 0x444);
             }
-            for (int x = 0; x < LOGO_NOW_MASK_W; x++) { /* "Now!" in the cyan of the Dreamcast Now! site (56, 182, 220) */
+            for (int x = 0; x < LOGO_NOW_MASK_W; x++) { /* "Now!" in the swirl's colour */
                 unsigned a = logo_now_mask[y * LOGO_NOW_MASK_W + x] >> 4;
-                badge[y * LOGO_NOW_MASK_W + x] = (unsigned short)((a << 12) | 0x3BD);
+                badge[y * LOGO_NOW_MASK_W + x] = (unsigned short)((a << 12) | swirl_rgb);
             }
         }
         upload_argb4444(out, LOGO_W, LOGO_H, &logo_dcnet_tex);
