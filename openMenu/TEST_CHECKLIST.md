@@ -110,8 +110,13 @@ Drops to 30fps
 - [ ] Case in front of the right pane; row discs spin without cutting into their bar; pane colour = row bar colour
 - [ ] Every row has the pill on its right like Settings (lit orange on the selected row); row text height vs Settings
 - [ ] Folders open with A; "[..]" goes up; "<Recently Played>" opens the recent list
-- [ ] X: cursor to the bottom buttons (lit, jump on A); "Recent" opens recently played; Left of it is BACK
-- [ ] Y or a click on the case: big case on the right; stick, d-pad (eased) and mouse drag turn it, triggers zoom, X resets; A/B/Y or a click on BACK close; pane starts where the rows start
+- [ ] Down from the last row: BACK; Right from BACK: the bottom buttons; "Recent" opens recently played
+- [ ] B: up one folder; at the top folder B moves to BACK, B again goes to the main menu (no level skipped)
+- [ ] X on a game: options popup (Start game, Disc < n of m > on a Compact set, Emulator < Bleem! / Bloom > on a PSX disc
+      with BLOOM.BIN, Game information, Network and Cheats greyed "coming soon"); B or X closes it; mouse hover works
+- [ ] Y or a click on the case: information screen. Stick / Left-Right / mouse drag turn the case, L zooms out, R zooms in,
+      Up/Down scroll the text (genre, online, accessories, META.DAT description), Y snaps to the front, Y again flips to the
+      back and on round to the front, A starts the game, X opens the options, B or a click on BACK goes back
 - [ ] Lit pill ends 6 px before the bar end (as Settings); pane corners like the row bar ends
 - [ ] A on a game starts it at once (no launch animation, no Launch animation row in Settings)
 
@@ -163,6 +168,20 @@ Drops to 30fps
 
 
 I
+
+### Stock Card Manager 1.7.1 (STOCK_CARD_MANAGER.md)
+- [ ] Card built by Derek's unmodified 1.7.1 Card Manager with this 1ST_READ.BIN in menu_data: boots, lists, launches
+- [ ] Switching between Derek's 1.7.1 menu and this one on the same VMU keeps the settings both have (no reset)
+- [ ] PSX disc (BLEEM.BIN on the menu disc) starts in Bleem!; with BLOOM.BIN the X popup offers Bloom
+- [ ] VM2 / VMU Pro switches to the game's card at launch (Settings > System > VM2 game ID)
+- [ ] Clock extender On: one flash write per start (date survives a flat battery); Off: none
+- [ ] DEFAULTS.INI `[BIOSMENU]` keys applied at start with Card defaults On, ignored with it Off; a bad key shows as `OM cfg`
+
+### Performance test (Settings > Other > Performance test)
+- [ ] Capture running (`serial_capture.py`, or the cable in the DreamPi), not online over the serial cable
+- [ ] The test runs by itself through all screens twice (about 2 minutes), START stops it; the step name shows while it settles
+- [ ] `serial_capture.py --bench <log>` writes bench-report-<date>.md: paste that file into the chat
+- [ ] A crash or hang during the test: the report names the step it happened in and keeps the crash dump lines
 
 ### Serial debugging (coder's cable, `python3 openMenu/tools/serial_capture.py`)
 - [ ] Cable in the DreamPi instead: `journalctl -u dreampi` shows the OM lines as `serial: b'...'`; `serial_capture.py dreampi.log` rebuilds them (and a flash dump, CRC OK)

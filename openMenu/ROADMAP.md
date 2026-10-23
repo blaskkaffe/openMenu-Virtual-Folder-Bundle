@@ -1,19 +1,31 @@
-# Roadmap: the project brief against the code (dev, 65878e8)
+# Roadmap: the project brief against the code (dev, 65878e8; updated after the controls and 1.7.1 work)
 
 Status of every part of the project brief, checked against the source on `dev`. Keys: **Done**, **Partial**,
 **Missing**, **Blocked** (needs firmware, a DreamPi-side change or data we do not have yet), **Conflict** (the code does
 something the brief asks to do differently). Hardware-test results are in `TEST_CHECKLIST.md`; this file only says what
 exists in code.
 
+Since this was written: the game list and case viewer controls follow the brief (decisions 1-3 as proposed), the
+viewer shows genre, online, accessories and the META.DAT description, the save file matches Derek's 1.7.1, PSX discs and
+VM2 game IDs work as in 1.7.1, settings can come from a stock Card Manager (`STOCK_CARD_MANAGER.md`), and there is a
+repeatable performance test (NEWMENU.md "Performance test").
+
+Storage rule from the 1.7.1 work: `OPENMENU.SYS` is shared with Derek's menu, so this branch must not add variables to
+it (a version step there would make 1.7.1 treat it as unknown). Our own saved data (per-game network, favourites,
+background colour, dark mode) needs a separate file on the VMU / SD, or keys in DEFAULTS.INI `[BIOSMENU]`.
+
+Not in this branch yet from 1.7.1: the Serial VMU restore before a game (the setting is kept but not acted on),
+background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's).
+
 ## Decisions needed before coding
 
-1. **X and Y in the game list (Conflict).** Today X moves the cursor to the bottom buttons (Recent is the first) and Y
+1. **X and Y in the game list (Done, as proposed).** Today X moves the cursor to the bottom buttons (Recent is the first) and Y
    opens the case viewer. The brief wants X = game options popup. Proposal: X opens the options popup; the bottom row is
    reached with Down from the last row / B (see 2), as the brief's B hierarchy already implies.
-2. **B hierarchy (Conflict).** Today B in the list leaves the folder, then goes straight to the main menu. The brief
+2. **B hierarchy (Done, as proposed).** Today B in the list leaves the folder, then goes straight to the main menu. The brief
    wants list -> bottom row -> main menu. Inside a folder: folder up first, or bottom row first? Proposal: folder up
    first (keeps "[..]" and B consistent), bottom row once at the root.
-3. **Case viewer keys (Conflict).** Today: A, B and Y close, X snaps to the front, triggers zoom, d-pad/stick turn.
+3. **Case viewer keys (Done: d-pad Left/Right still turn).** Today: A, B and Y close, X snaps to the front, triggers zoom, d-pad/stick turn.
    Brief: A launches, B closes, Y snaps to the front then flips to the back, Up/Down scroll the info text, L/R zoom, stick
    turns. That leaves the d-pad for text only. Agree before changing.
 4. **Where the extra metadata comes from.** META.DAT has players, VMU blocks, accessories, network (modem/BBA), genre

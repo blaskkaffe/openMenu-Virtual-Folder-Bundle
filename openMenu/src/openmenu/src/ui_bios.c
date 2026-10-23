@@ -1,6 +1,7 @@
 /*
  * BIOS-style menu on the PVR, see ui_bios.h.
  */
+#include <malloc.h>
 #include <math.h>
 #include <stdio.h>
 #include <time.h>
@@ -8,9 +9,12 @@
 
 #include <arch/timer.h>
 #include <dc/maple/controller.h>
+#include <dc/pvr.h>
 #include <dc/video.h>
 
 #include <bios_audio.h>
+#include "bench.h"
+#include "backend/serial_port.h"
 #include "dbglog.h"
 #include "serial_log.h"
 #include "qr.h"
@@ -1151,6 +1155,9 @@ draw_frame(void) {
     if (report_page) {
         draw_report();
     }
+    if (bench_status()[0]) { /* only while settling between steps, never in a measured frame */
+        gfx_text(bench_status(), TEXT_X, STATUS_Y, 0.5f, 0xFFF0E060u, 1);
+    }
     draw_pointer();
     phase_us[2] += timer_us_gettime64() - t0;
     build_us_sum += timer_us_gettime64() - t0;
@@ -1680,6 +1687,81 @@ handle_datetime(button_t b) {
     }
 }
 
+/* ---- Performance test (bench.c): scripted keys, every frame measured, results on the serial port -------------------- */
+static void
+bench_out(const char* line) {
+    serial_log_block("bench", line + (strncmp(line, "OM bench ", 9) ? 0 : 9));
+}
+
+static void
+bench_begin(void) {
+    char info[96];
+    if (serial_port_is_open()) { /* the port carries PPP to the DreamPi: the results would go nowhere */
+        sound_sfx(BAUDIO_SFX_ERROR);
+        show_notice("Hang up first: the serial port is online");
+        return;
+    }
+    show_debug = 0; /* the overlay is not part of what is measured */
+    debug_iso = 0;
+    bscene_cache_enable(1);
+    snprintf(info, sizeof(info), "%s %s games=%d online=%d bios=%s", console_is_pal() ? "PAL" : "NTSC",
+             sf_aspect[0] == ASPECT_WIDE ? "16:9" : "4:3", list_all_count(), (int)sf_dcnow[0], g_rom ? g_rom->revision : "?");
+    bench_start(2, (unsigned)video_refresh_hz(), info, bench_out);
+}
+
+static void
+bench_memory(bench_mem* m) {
+    struct mallinfo mi = mallinfo();
+    m->heap_used = (unsigned)mi.uordblks;
+    m->heap_free = (unsigned)mi.fordblks;
+    m->arena = (unsigned)mi.arena;
+    m->vram_free = (unsigned)pvr_mem_available();
+}
+
+static button_t
+bench_button(int key) {
+    switch (key) {
+        case 'U': return BTN_UP;
+        case 'D': return BTN_DOWN;
+        case 'L': return BTN_LEFT;
+        case 'R': return BTN_RIGHT;
+        case 'A': return BTN_A;
+        case 'B': return BTN_B;
+        case 'X': return BTN_X;
+        case 'Y': return BTN_Y;
+        case 'S': return BTN_START;
+        case 'P': return BTN_PAGE_DOWN;
+        case 'Q': return BTN_PAGE_UP;
+        default: return BTN_NONE;
+    }
+}
+
+static const char* log_label(void);
+
+/* The start of a step: where the script wants to be. */
+static void
+bench_apply(const bench_cmd* c) {
+    if (c->force_main && screen != SCREEN_MAIN) {
+        char line[64];
+        snprintf(line, sizeof(line), "forced back to the main menu from %s", log_label());
+        serial_log_block("bench", line);
+        recent_open = options_open = viewer_open = settings_popup = about_open = report_page = 0;
+        if (screen == SCREEN_SETTINGS || screen == SCREEN_DATETIME) {
+            uis_commit();
+        }
+        bmenu_show_main(&menu, menu.selected);
+        screen = SCREEN_MAIN;
+    }
+    if (c->icon >= 0 && screen == SCREEN_MAIN) {
+        bmenu_select(&menu, c->icon);
+    }
+    if (c->reset_list) {
+        games_opened = 1; /* no "remember last game" jump: every run starts at the top */
+        list_set_folder_root();
+        uil_reset();
+    }
+}
+
 static void
 handle_settings(button_t b) {
     int row = page.cursor;
@@ -1745,6 +1827,9 @@ handle_settings(button_t b) {
             } else if (uis_action(row) == UIS_ACTION_VMUCLOCK) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 uis_run(row);
+            } else if (uis_action(row) == UIS_ACTION_BENCH) {
+                leave_settings();
+                bench_begin();
             } else if (uis_opens_popup(row)) {
                 settings_popup = 1;
                 settings_popup_sel = uis_get(row);
@@ -1910,10 +1995,34 @@ ui_bios_run(const bios_rom* rom) {
     uint32_t step_credit = 0;
     int frames_this_second = 0;
 
+    uint64_t frame_t0_prev = timer_us_gettime64();
+    gfx_stats sec_gs; /* this second's numbers, summed from every frame's */
+    memset(&sec_gs, 0, sizeof(sec_gs));
+
     for (;;) {
         uint64_t logic_t0 = timer_us_gettime64();
+        unsigned frame_period = (unsigned)(logic_t0 - frame_t0_prev);
+        frame_t0_prev = logic_t0;
         button_t b = input_poll();
+        if (bench_active()) {
+            bench_cmd bc;
+            if (b == BTN_START) {
+                bench_stop("stopped by START");
+                show_notice("Performance test stopped");
+            }
+            int key = bench_tick(&bc);
+            if (bc.valid) {
+                bench_apply(&bc);
+            }
+            b = bench_active() ? bench_button(key) : BTN_NONE;
+            if (!bench_active()) {
+                show_notice("Performance test done: results on the serial port");
+            }
+        }
         input_mouse(&pointer);
+        if (bench_active()) {
+            pointer.moved = pointer.clicked = 0; /* the script alone drives the menu */
+        }
         if (screen == SCREEN_GAMES && viewer_open && !options_open) {
             viewer_drag(&pointer);
         }
@@ -1996,12 +2105,13 @@ ui_bios_run(const bios_rom* rom) {
                     !viewer_open && !options_open);
         clock_extender_tick(); /* openMenu 1.7.1's Clock extender: one date write per run when it is on */
 
-        sync_us_sum += timer_us_gettime64() - logic_t0;
+        uint64_t logic_end = timer_us_gettime64();
+        sync_us_sum += logic_end - logic_t0;
         frames_this_second++;
         if (now - fps_since >= 1000) {
             update_clock();
-            gfx_stats gs;
-            gfx_stats_take(&gs);
+            gfx_stats gs = sec_gs;
+            memset(&sec_gs, 0, sizeof(sec_gs));
             unsigned n = frames_this_second ? (unsigned)frames_this_second : 1u;
             unsigned sync_t = (unsigned)(sync_us_sum / n / 100u);               /* tenths of a millisecond per frame */
             unsigned wait_t = gs.wait_us / n / 100u;
@@ -2034,7 +2144,33 @@ ui_bios_run(const bios_rom* rom) {
             frames_this_second = 0;
             fps_since = now;
         }
+        uint64_t draw_t0 = timer_us_gettime64();
         draw_frame(); /* pvr_wait_ready() inside paces this to the display */
+        uint64_t draw_t1 = timer_us_gettime64();
+        {
+            gfx_stats fs;
+            gfx_stats_take(&fs);
+            sec_gs.wait_us += fs.wait_us;
+            sec_gs.render_us += fs.render_us;
+            sec_gs.ta_us += fs.ta_us;
+            sec_gs.vertices += fs.vertices;
+            sec_gs.art_loads += fs.art_loads;
+            sec_gs.art_us += fs.art_us;
+            sec_gs.text_uploads += fs.text_uploads;
+            sec_gs.headers += fs.headers;
+            if (bench_active()) {
+                unsigned draw_us = (unsigned)(draw_t1 - draw_t0);
+                bench_frame bf = {frame_period, (unsigned)(logic_end - logic_t0), draw_us > fs.wait_us ? draw_us - fs.wait_us : 0,
+                                  fs.wait_us, fs.render_us, fs.ta_us, fs.vertices, fs.headers, gfx_triangles(), fs.art_loads,
+                                  fs.art_us, fs.text_uploads};
+                bench_mem bm;
+                int want = bench_wants_mem();
+                if (want) {
+                    bench_memory(&bm);
+                }
+                bench_frame_done(&bf, log_label(), want ? &bm : NULL);
+            }
+        }
     }
     return 0;
 }

@@ -26,7 +26,7 @@ void uis_set(int row, int choice);
 const char* uis_value(int row);
 
 /* Rows that are not a choice but open something: the date and time editor, the About box. */
-enum { UIS_ACTION_NONE, UIS_ACTION_DATETIME, UIS_ACTION_ABOUT, UIS_ACTION_VMUCLOCK };
+enum { UIS_ACTION_NONE, UIS_ACTION_DATETIME, UIS_ACTION_ABOUT, UIS_ACTION_VMUCLOCK, UIS_ACTION_BENCH };
 
 /* Run an action that does its work at once (the memory card clock); the result shows as the row value. */
 void uis_run(int row);

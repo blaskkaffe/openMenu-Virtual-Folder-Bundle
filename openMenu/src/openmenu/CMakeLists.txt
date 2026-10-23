@@ -39,6 +39,7 @@ set(OPENMENU_SOURCES
         src/backend/dreampi_link.c
         src/backend/online_games.c
         src/backend/online_time_sync.c
+        src/bench.c
         src/backend/serial_port.c
         src/vm2/vm2_api.c
 )

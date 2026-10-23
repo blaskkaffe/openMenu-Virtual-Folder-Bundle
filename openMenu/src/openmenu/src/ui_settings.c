@@ -91,6 +91,7 @@ static const row_def rows[] = {
     {0, -1, "Starting games", "Exit to BIOS", "How other discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
     {0, -1, "Other", "Card defaults", "Use DEFAULTS.INI [BIOSMENU] at start", &sf_honor_defaults, HONOR_DEFAULTS_END + 1,
      on_off},
+    {UIS_ACTION_BENCH, -1, "Other", "Performance test", "Scripted run, results on serial port", NULL, 0, NULL},
     {UIS_ACTION_ABOUT, 3, "Other", "About", "Version and credits", NULL, 0, NULL},
 };
 

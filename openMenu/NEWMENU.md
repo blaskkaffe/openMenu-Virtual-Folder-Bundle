@@ -307,6 +307,17 @@ button gets var0 = 1 (its script lights it and plays its motion), BACK var0 = 1 
 it jump (var1 = 1) with the confirm sound, as the BIOS buttons do; nothing is played. B or A on BACK leaves.
 Preview: `bios_preview dc_boot.bin out.ppm 120 <cursor> -13` (`BIOS_PREVIEW_NODISC=1`: empty drive).
 
+## Performance test
+
+Settings > Other > Performance test runs a fixed script (`bench.c`) through every screen twice: the same keys at the same
+frames each time, so runs on different builds compare. Each step settles for 45 frames (not measured; the serial lines of
+the previous step are written then) and then measures every frame: frame time (fps, dropped frames = longer than 1.5
+refreshes, worst, 50/95/99th percentile), CPU busy share (frame time minus the wait for the PVR and the display), logic,
+build, wait, GPU and TA time, vertices, triangles, headers, picture loads and text uploads, and heap / video RAM before
+and after. `OM bench begin` is written before each step so a crash dump or a hang can be placed. START stops it. The
+debug overlay is switched off for the test. `tools/serial_capture.py --bench <log>` makes a markdown report from a
+capture or a DreamPi log (leak check across the two runs, slow frames, crash location). Host test: `test/bench_test.c`.
+
 ## Debug log page
 
 X on the main menu switches the debug overlay on (it stays on in the other menus). While it is on, every second's numbers
