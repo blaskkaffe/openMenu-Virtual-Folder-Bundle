@@ -228,7 +228,6 @@ wrap_text(const char* text, int width, char out[][20], int max_lines) {
 #define MARQUEE_HOLD 60  /* frames at each end */
 #define MARQUEE_PX_PER_FRAME 1
 #define TITLE_WINDOW 300       /* pixels available for a title */
-#define TITLE_WINDOW_MULTI 232 /* ... on a multi-disc row, which has the disc pill */
 
 static const gd_item* marquee_item;
 static int marquee_frame;
@@ -305,6 +304,7 @@ games_sync(void) {
     blist_set_count(&glist, uil_count());
     blist_set_cursor(&glist, uil_cursor());
     glist.pal_console = console_is_pal();
+    glist.disc_number = 0;
     for (int s = 0; s < glist.slots; s++) {
         int row = blist_row_in_slot(&glist, s);
         const gd_item* item = row >= 0 ? uil_item(row) : NULL;
@@ -312,7 +312,7 @@ games_sync(void) {
         int multi = 0;
         if (item) {
             multi = !uil_is_folder(item) && uil_disc_total(item) > 1;
-            size_t keep = multi ? 19 : 24; /* a multi-disc row has the disc pill at its right end */
+            size_t keep = 24;
             if (row == uil_cursor()) {
                 snprintf(line, sizeof(line), "%.41s", item->name); /* the selected title scrolls if it is long */
             } else if (strlen(item->name) > keep) {
@@ -321,10 +321,9 @@ games_sync(void) {
                 snprintf(line, sizeof(line), "%s", item->name);
             }
         }
-        glist.multi[s] = multi;
         gfx_set_row_scroll(s, 0, 0);
         if (item && row == uil_cursor()) {
-            int window = multi ? TITLE_WINDOW_MULTI : TITLE_WINDOW;
+            int window = TITLE_WINDOW;
             int width = gfx_text_width(line);
             if (item != marquee_item) {
                 marquee_item = item;
@@ -339,11 +338,8 @@ games_sync(void) {
                 marquee_frame++;
             }
         }
-        if (multi) {
-            int picked = row == uil_cursor() ? uil_disc_index() : 0;
-            char num[12];
-            snprintf(num, sizeof(num), "%d:%d", picked + 1, uil_disc_total(item));
-            gfx_set_label((uint16_t)BLIST_NUM_ID(s), num);
+        if (multi && row == uil_cursor()) {
+            glist.disc_number = uil_disc_index() + 1; /* 3D digits on the spinning CD */
         }
         gfx_set_label((uint16_t)BLIST_TEXT_ID(s), line);
         const char* serial = item && !uil_is_folder(item) ? item->product : "";

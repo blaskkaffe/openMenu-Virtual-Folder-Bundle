@@ -690,7 +690,7 @@ main(int argc, char** argv) {
             bcd_sync(&cdp);
         }
         if (script == -3 || script == -4) {
-            list.multi[0] = list.multi[2] = list.multi[4] = 1; /* demo: some rows are multi-disc sets */
+            list.disc_number = getenv("BLIST_DISC") ? atoi(getenv("BLIST_DISC")) : 2; /* demo: the selected game is a multi-disc set */
             blist_sync(&list);
         }
     }

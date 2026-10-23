@@ -27,13 +27,14 @@
 #define PILL_CAP_R 19.0f
 #define PILL_F 0.9200f
 #define PILL_SCALE 0.859375f
-/* disc selector of multi-disc games: a small pill at the right end of the row, with the shiny
- * side of a CD and the disc number */
-#define SPILL_X 16.98f
-#define SPILL_F 0.183f
-#define MINI_X 3.3f
-#define MINI_SCALE 0.0625f
-#define NUM_TEXT_X 7.9f /* the text script offsets its text by -1.37 */
+/* disc number of a multi-disc game: the BIOS 3D digit models (model 21 + digit, about 5.2 x 6.9 units, no
+ * motion) at the bottom right of the spinning CD; sizes relative to the disc's scale */
+#define DIGIT_MODEL 21
+#define DIGIT_SCALE_REL 1.8f /* digit scale per unit of disc scale: a digit is a bit under half the disc high */
+#define DIGIT_DX_REL 9.6f    /* offset from the disc centre, per unit of disc scale: bottom right of the rim */
+#define DIGIT_DY_REL (-9.6f)
+#define DIGIT_ADV 4.9f       /* advance between digits in model units */
+#define DIGIT_Z_OVER 2.0f    /* in front of the disc, whose edge swings out +-1.75 when it spins */
 /* the BACK marker and the five buttons along the bottom are where the CD player has them */
 #define BACK_X (-19.53125f)
 #define BACK_Y (-14.84375f)
@@ -61,8 +62,7 @@ static const struct {
 #define ID_ANCHOR(s) ((uint16_t)(0x1700 + (s)))
 #define ID_PILL(s) ((uint16_t)(0x1720 + (s)))
 #define ID_ICON(s) ((uint16_t)(0x1740 + (s)))
-#define ID_SPILL(s) ((uint16_t)(0x1760 + (s)))
-#define ID_MINI(s) ((uint16_t)(0x1780 + (s)))
+#define ID_DIGIT(i) ((uint16_t)(0x1790 + (i))) /* tens, ones */
 
 void
 blist_open(blist* l, bmenu* m, int slots, int count) {
@@ -81,23 +81,17 @@ blist_open(blist* l, bmenu* m, int slots, int count) {
     for (int s = 0; s < l->slots; s++) {
         bvm_create(&m->vm, proto.icon_script, ID_ICON(s), PRIO);
     }
-    for (int s = 0; s < l->slots; s++) {
-        bvm_create(&m->vm, 0x1e, ID_SPILL(s), PRIO);
-    }
-    for (int s = 0; s < l->slots; s++) {
-        bvm_create(&m->vm, 0x4e, ID_MINI(s), PRIO);
+    for (int i = 0; i < 2; i++) {
+        bvm_create(&m->vm, proto.icon_script, ID_DIGIT(i), PRIO);
     }
     for (int s = 0; s < l->slots; s++) {
         bvm_create(&m->vm, proto.text_script, (uint16_t)BLIST_TEXT_ID(s), PRIO);
-        bvm_create(&m->vm, 0x24, (uint16_t)BLIST_NUM_ID(s), PRIO);
     }
     bvm_create(&m->vm, 6, 0x1110, PRIO); /* BACK marker */
     for (int i = 0; i < BLIST_BUTTONS; i++) {
         bvm_create(&m->vm, 0x17 + (i == 1 ? 2 : (i == 2 ? 1 : i)), ID_BUTTON(i), PRIO); /* scripts 0x17,0x19,0x18,0x1a,0x1b: left to right */
     }
-    for (int s = 0; s < BLIST_MAX_SLOTS; s++) {
-        l->multi[s] = 0;
-    }
+    l->disc_number = 0;
     blist_set_count(l, count);
 }
 
@@ -267,23 +261,57 @@ set_hidden(bvm_obj* o, int hide) {
     o->flags = hide ? (o->flags | BVM_F_HIDE) : (o->flags & ~(uint32_t)BVM_F_HIDE);
 }
 
+/* The disc number as 3D digits at the bottom right of the disc at (cx, cy) with scale `is`, ones digit at the corner. */
+static void
+sync_digits(blist* l, float cx, float cy, float is) {
+    int n = l->disc_number;
+    if (n < 1) {
+        return;
+    }
+    n = n > 99 ? 99 : n;
+    float ds = is * DIGIT_SCALE_REL;
+    float x = cx + DIGIT_DX_REL * is, y = cy + DIGIT_DY_REL * is;
+    int digits[2] = {n / 10, n % 10}; /* tens, ones */
+    for (int i = 0; i < 2; i++) {
+        bvm_obj* d = bvm_find(&l->m->vm, ID_DIGIT(i));
+        if (!d || (i == 0 && n < 10)) {
+            continue;
+        }
+        d->model = (uint16_t)(DIGIT_MODEL + digits[i]);
+        d->texlist = d->model;
+        d->flags &= ~(uint32_t)BVM_F_MOTION;
+        d->flags |= BVM_F_COLOUR; /* the digit models are a dull grey-blue: lift them to a light gold */
+        d->color[0] = 0.0f;
+        d->color[1] = 0.55f;
+        d->color[2] = 0.45f;
+        d->color[3] = 0.0f;
+        set_scale(d, ds, ds, ds);
+        d->rot_tw[0].cur = d->rot_tw[1].cur = d->rot_tw[2].cur = 0;
+        d->rot_tw[0].step = d->rot_tw[1].step = d->rot_tw[2].step = 0;
+        set_pos(d, x - (i == 0 ? DIGIT_ADV * ds : 0.0f), y, ICON_Z + DIGIT_Z_OVER - 2.15f * ds);
+        set_hidden(d, 0);
+    }
+}
+
 void
 blist_sync(blist* l) {
     bvm* vm = &l->m->vm;
     l->anim++;
+    for (int i = 0; i < 2; i++) { /* hidden unless the selected row's disc is drawn with a number */
+        bvm_obj* d = bvm_find(vm, ID_DIGIT(i));
+        if (d) {
+            set_hidden(d, 1);
+        }
+    }
 
     for (int s = 0; s < l->slots; s++) {
         int row = blist_row_in_slot(l, s);
         int on = row >= 0;
         int sel = on && row == l->cursor && !l->back_selected;
-        int multi = on && l->multi[s];
         bvm_obj* anchor = bvm_find(vm, ID_ANCHOR(s));
         bvm_obj* pill = bvm_find(vm, ID_PILL(s));
         bvm_obj* icon = bvm_find(vm, ID_ICON(s));
-        bvm_obj* spill = bvm_find(vm, ID_SPILL(s));
-        bvm_obj* mini = bvm_find(vm, ID_MINI(s));
         bvm_obj* text = bvm_find(vm, (uint16_t)BLIST_TEXT_ID(s));
-        bvm_obj* num = bvm_find(vm, (uint16_t)BLIST_NUM_ID(s));
         float y = row_y(l, s);
         float pitch = pitch_px(l->slots);
         float box_h = BOX_BOTTOM_PX - BOX_TOP_PX;
@@ -293,13 +321,11 @@ blist_sync(blist* l) {
             bvm_obj* o;
             float x, z;
             int show;
-        } parts[4] = {
+        } parts[2] = {
             {anchor, ANCHOR_X, ROW_Z, s == 0}, /* one bar for the whole box, from slot 0 */
             {pill, PILL_X, ROW_Z + 0.78f, sel}, /* only the selected row has a pill (lit) */
-            {spill, SPILL_X, ROW_Z + 1.6f, multi}, /* in front of the row pill */
-            {mini, MINI_X, ROW_Z + 2.2f, multi},
         };
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 2; i++) {
             if (!parts[i].o) {
                 continue;
             }
@@ -315,25 +341,6 @@ blist_sync(blist* l) {
             set_scale(pill, PILL_SCALE, ROW_SY * PILL_SCALE * (pitch > BAR_H_PX ? BAR_H_PX : pitch) / BAR_H_PX, PILL_SCALE);
             pill->var[1] = sel; /* the selected row is lit */
         }
-        if (spill) {
-            set_scale(spill, PILL_SCALE, ROW_SY * PILL_SCALE * 0.85f * (pitch > BAR_H_PX ? BAR_H_PX : pitch) / BAR_H_PX, PILL_SCALE);
-            spill->var[1] = sel;
-        }
-        if (mini) {
-            /* the shiny (reverse) side of a CD: the disc model turned half way round */
-            mini->model = BLIST_DISC_MODEL;
-            mini->texlist = BLIST_DISC_MODEL;
-            mini->flags &= ~(uint32_t)BVM_F_MOTION;
-            {
-                float ms = 0.7f * pitch / 320.0f;
-                ms = ms < MINI_SCALE ? ms : MINI_SCALE;
-                set_scale(mini, ms, ms, ms);
-            }
-            mini->rot_tw[0].cur = 0;
-            mini->rot_tw[1].cur = 0x8000;
-            mini->rot_tw[0].step = mini->rot_tw[1].step = mini->rot_tw[2].step = 0;
-        }
-
         if (icon) {
             icon->model = BLIST_DISC_MODEL;
             icon->texlist = (uint16_t)(BLIST_TEXLIST_BASE + s);
@@ -344,6 +351,9 @@ blist_sync(blist* l) {
                 float is = 0.9f * pitch / 320.0f; /* the disc is 320 px per unit of scale; shrink it to the row */
                 is = is < ICON_SCALE ? is : ICON_SCALE;
                 set_scale(icon, is, is, is);
+                if (sel) {
+                    sync_digits(l, ICON_X, y, is);
+                }
             }
             /* the selected disc spins as in the CD player; the others rest */
             if (sel) {
@@ -361,13 +371,6 @@ blist_sync(blist* l) {
             set_pos(text, TEXT_X, y, ROW_Z + 1.5f);
             int show = on;
             text->flags = show ? (text->flags | BVM_F_TEXT) : (text->flags & ~(uint32_t)BVM_F_TEXT);
-        }
-        if (num) {
-            num->text_w = BLIST_NUM_W;
-            num->text_h = BLIST_TEXT_H;
-            set_pos(num, NUM_TEXT_X, y, ROW_Z + 2.6f);
-            int show = multi;
-            num->flags = show ? (num->flags | BVM_F_TEXT) : (num->flags & ~(uint32_t)BVM_F_TEXT);
         }
     }
 
@@ -418,7 +421,6 @@ blist_draw(blist* l, const bscene_sink* sink) {
         m->scene.parts = passes[pass];
         for (int i = 0; i < m->vm.count; i++) {
             const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
-            m->scene.fullbright = o->id >= ID_MINI(0) && o->id < ID_MINI(BLIST_MAX_SLOTS);
             m->scene.no_decals = o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(BLIST_BUTTONS);
             /* shorten bars and pills along x without squeezing their ends */
             m->scene.stretch_on = 1;
@@ -434,10 +436,6 @@ blist_draw(blist* l, const bscene_sink* sink) {
                 m->scene.stretch_a = PILL_CAP_L;
                 m->scene.stretch_b = PILL_CAP_R;
                 m->scene.stretch_f = PILL_F;
-            } else if (o->id >= ID_SPILL(0) && o->id < ID_SPILL(BLIST_MAX_SLOTS)) {
-                m->scene.stretch_a = PILL_CAP_L;
-                m->scene.stretch_b = PILL_CAP_R;
-                m->scene.stretch_f = SPILL_F;
             } else {
                 m->scene.stretch_on = 0;
             }
