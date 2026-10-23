@@ -68,6 +68,10 @@ jobs:
             case "$line" in *error:*) kind=error ;; *) kind=warning ;; esac
             echo "::$kind file=$file,line=$ln::$line"
           done
+          if [ "$status" != 0 ]; then
+            # the end of the log too (configure errors, link errors), one annotation per line
+            grep -vE "(error|warning):" build.log | tail -25 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
           exit $status
 
       - uses: actions/upload-artifact@v4

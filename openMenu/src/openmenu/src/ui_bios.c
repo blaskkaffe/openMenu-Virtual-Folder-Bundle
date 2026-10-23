@@ -144,6 +144,7 @@ static int recent_open;   /* recently played popup */
 static int recent_row;
 static int options_open;  /* the game options popup (X) */
 static int options_row;
+static void draw_options(void);
 static int notice_frames;
 static char fps_text[40];
 static int show_debug; /* fps, triangles and the BIOS/sound line: X on the main menu switches them on and off */
