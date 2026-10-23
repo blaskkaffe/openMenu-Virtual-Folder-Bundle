@@ -13,14 +13,10 @@ TOP, BOT = 7.6, 24.6
 CAP = BOT - TOP
 XT = 12.4                  # x-height top
 MID = (TOP + BOT) / 2
-TS = 2.5                   # thick stroke (stems, thick diagonals)
-TN = 1.75                  # thin stroke (arms, tops and bottoms of bowls)
+TS = 2.6                   # thick stroke (stems, thick diagonals)
+TN = 2.0                   # thin stroke (arms, tops and bottoms of bowls)
 SX = 0.9                   # glyphs are drawn a little wide and squeezed horizontally by this
 FL = 0.6                   # flare added at stroke ends
-
-SHARP = 2.6     # edge contrast: the coverage is pushed away from the middle, so edges are one crisp step instead of a two-pixel smear
-def sharpen_curve(v):
-    return max(0, min(255, int(((v / 255.0 - 0.5) * SHARP + 0.5) * 255 + 0.5)))
 
 class Glyph:
     def __init__(self, ox):
@@ -111,8 +107,10 @@ def render(glyphs, width, gaps, x0=0.8):
         g, adv = fn(x)
         out = ImageChops.lighter(out, g.img)
         x += adv * SX + gap
-    small = out.crop((0, 0, width * SS, 32 * SS)).resize((width, 32), Image.BOX)
-    return small.point(sharpen_curve)
+    # drawn at twice the size (with its own smoothing), then shrunk by taking every other pixel: no filtering when shrinking, so the
+    # result has the hard edges of a drawing made for this size instead of a blurred reduction
+    double = out.crop((0, 0, width * SS, 32 * SS)).resize((width * 2, 64), Image.BOX)
+    return double.resize((width, 32), Image.NEAREST)
 
 def write_pvr(img, path):
     """ARGB4444 rectangle texture with a GBIX header: the format of LOGO.PVR (tools/bios-logo/biologo.py). Sizes are powers of two, which
