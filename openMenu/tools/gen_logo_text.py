@@ -1,31 +1,92 @@
-"""Renders "Now!" and "DCNET" for the header logo from the Dreamcast logo typeface (NiseSegaDreamcast.ttf, which the BIOS wordmark's
-letters match) and writes src/openmenu/src/logo_text.inc: 8-bit coverage masks (255 = ink), 32 rows each, in the 128x32 texture grid
-(cap top about row 7, baseline at row 24).
-Run: python3 tools/gen_logo_text.py path/to/NiseSegaDreamcast.ttf  (needs Pillow).
-The font file is not part of the repo (see its licence); only the masks it produced are."""
-import os, sys
-from PIL import Image, ImageDraw, ImageFont
+"""Draws "Now!" and "DCNET" for the header logo, by hand (geometric strokes), to match the BIOS "Dreamcast" wordmark in the 128x32 logo
+texture: capitals from y 7.6 to 24.6, stems about 2.5 px, horizontals 2.2 px, solid cores and crisp edges like the original's D. The
+Dreamcast typeface was only looked at as a guide; none of its outlines are used. Writes src/openmenu/src/logo_text.inc: 8-bit coverage
+masks (255 = ink), 32 rows each.
+Run: python3 tools/gen_logo_text.py  (needs Pillow). Set GEN_PREVIEW_DIR to also get a preview picture."""
+import math, os
+from PIL import Image, ImageDraw
 
-SS = 8
-SIZE = 23.0          # px in the 128x32 logo texture: gives the wordmark's cap height (about 17 rows with the soft edges)
-BASELINE = 25.0      # bottom edge of the capitals, as the logo's "D"
+SS = 16              # supersampling; the result is box-filtered so edges are as crisp as the pixel grid allows
+TOP, BOT = 7.6, 24.6 # cap top and baseline (outer edges)
+XT = 12.3            # x-height top
+W = 2.4              # stems
+H = 2.05             # horizontals
+TC, BC = TOP + H / 2, BOT - H / 2      # centre lines of the top and bottom horizontals
+MID = (TC + BC) / 2
 
-def render(font_path, text, width, x_pad=1.0):
-    f = ImageFont.truetype(font_path, int(SIZE * SS))
-    canvas = Image.new('L', (width * SS, 32 * SS), 0)
-    d = ImageDraw.Draw(canvas)
-    asc, _ = f.getmetrics()
-    # put the left ink edge at x_pad and the baseline at BASELINE
-    bbox = f.getbbox(text, anchor='ls')
-    d.text((x_pad * SS - bbox[0], BASELINE * SS), text, font=f, fill=255, anchor='ls')
-    return canvas.resize((width, 32), Image.LANCZOS)
+def pts(points, ox):
+    return [((x + ox) * SS, y * SS) for x, y in points]
+
+def line(d, points, ox, w):
+    p = pts(points, ox)
+    d.line(p, fill=255, width=max(1, int(round(w * SS))), joint=None)
+
+def poly_stroke(d, points, ox, w):
+    """A stroke of constant width along a polyline with square (butt) ends, drawn as quads so the joins stay sharp."""
+    p = pts(points, ox)
+    r = w * SS / 2
+    for (x0, y0), (x1, y1) in zip(p, p[1:]):
+        dx, dy = x1 - x0, y1 - y0
+        n = math.hypot(dx, dy) or 1
+        nx, ny = -dy / n * r, dx / n * r
+        d.polygon([(x0 + nx, y0 + ny), (x1 + nx, y1 + ny), (x1 - nx, y1 - ny), (x0 - nx, y0 - ny)], fill=255)
+    for (x, y) in p[1:-1]:   # fill the joins
+        d.ellipse([x - r, y - r, x + r, y + r], fill=255)
+
+def arc(cx, cy, rx, ry, a0, a1, n=80):
+    return [(cx + rx * math.cos(math.radians(a0 + (a1 - a0) * i / n)), cy - ry * math.sin(math.radians(a0 + (a1 - a0) * i / n))) for i in range(n + 1)]
+
+def D(d, ox):
+    stem_x = 1.6
+    poly_stroke(d, [(stem_x, TOP), (stem_x, BOT)], ox, W)
+    bx = 6.2
+    poly_stroke(d, [(stem_x, TC), (bx, TC)], ox, H)
+    poly_stroke(d, [(stem_x, BC), (bx, BC)], ox, H)
+    poly_stroke(d, arc(bx, MID, 8.05, (BC - TC) / 2, 90, -90), ox, W - 0.2)
+    return 15.9
+def C(d, ox):
+    poly_stroke(d, arc(7.9, MID, 6.55, (BC - TC) / 2, 46, 314), ox, W - 0.1)
+    return 15.2
+def N(d, ox):
+    poly_stroke(d, [(1.6, TOP), (1.6, BOT)], ox, W)
+    poly_stroke(d, [(12.3, TOP), (12.3, BOT)], ox, W)
+    poly_stroke(d, [(1.6, TC + 0.2), (12.3, BC - 0.2)], ox, H + 0.2)
+    return 13.6
+def E(d, ox):
+    poly_stroke(d, [(1.6, TOP), (1.6, BOT)], ox, W)
+    poly_stroke(d, [(1.6, TC), (10.4, TC)], ox, H)
+    poly_stroke(d, [(1.6, MID), (9.2, MID)], ox, H)
+    poly_stroke(d, [(1.6, BC), (10.6, BC)], ox, H)
+    return 11.6
+def T(d, ox):
+    poly_stroke(d, [(0.2, TC), (12.8, TC)], ox, H)
+    poly_stroke(d, [(6.5, TOP), (6.5, BOT)], ox, W)
+    return 13.0
+def o(d, ox):
+    poly_stroke(d, arc(6.5, (XT + BOT) / 2, 5.15, (BOT - XT - W + 0.2) / 2, 0, 360, 96), ox, W - 0.15)
+    return 13.0
+def w(d, ox):
+    poly_stroke(d, [(0.9, XT + 0.2), (4.8, BC + 0.1), (8.7, XT + 1.0), (12.6, BC + 0.1), (16.5, XT + 0.2)], ox, H + 0.2)
+    return 17.4
+def bang(d, ox):
+    poly_stroke(d, [(1.45, TOP), (1.45, 19.4)], ox, W - 0.1)
+    d.ellipse([(1.45 + ox - 1.3) * SS, (BOT - 1.35 - 1.3) * SS, (1.45 + ox + 1.3) * SS, (BOT - 1.35 + 1.3) * SS], fill=255)
+    return 3.0
+
+def render(glyphs, width, gaps, x0=0.7):
+    c = Image.new('L', (width * SS, 32 * SS), 0)
+    d = ImageDraw.Draw(c)
+    x = x0
+    for g, gap in zip(glyphs, gaps):
+        x += g(d, x) + gap
+    return c.resize((width, 32), Image.BOX)
 
 if __name__ == '__main__':
-    font = sys.argv[1]
-    masks = {'logo_dcnet_mask': (render(font, 'DCNET', 88), 88), 'logo_now_mask': (render(font, 'Now!', 56), 56)}
+    masks = {'logo_dcnet_mask': (render([D, C, N, E, T], 88, [2.4, 2.6, 3.4, 2.4, 0]), 88),
+             'logo_now_mask': (render([N, o, w, bang], 56, [2.6, 1.8, 2.2, 0]), 56)}
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, '..', 'src', 'openmenu', 'src', 'logo_text.inc'), 'w') as f:
-        f.write('/* generated by tools/gen_logo_text.py from the Dreamcast logo typeface: coverage masks (255 = ink, 32 rows) of "DCNET" and "Now!" */\n')
+        f.write('/* generated by tools/gen_logo_text.py (hand-drawn strokes): coverage masks (255 = ink, 32 rows) of "DCNET" and "Now!" */\n')
         for name, (im, wd) in masks.items():
             f.write('#define %s_W %d\nstatic const uint8_t %s[%d * 32] = {' % (name.upper(), wd, name, wd))
             for i, v in enumerate(im.tobytes()):
