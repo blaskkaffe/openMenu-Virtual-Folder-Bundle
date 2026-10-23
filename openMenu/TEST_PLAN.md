@@ -15,7 +15,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 
 ## 1. Disc / card contents and settings to prepare
 
-- [ ] Menu disc has `NOW.PVR` and `DCNET.PVR` next to `LOGO.PVR` (the Card Manager's `tools/openMenu/menu_data` folder has them), `EMPTY.VMU`,
+- [ ] Menu disc has `NOWO.PVR`, `NOWB.PVR` and `CNET.PVR` next to `LOGO.PVR` (the Card Manager's `tools/openMenu/menu_data` folder has them), `EMPTY.VMU`,
       `META.DAT`, `ICON.DAT`, `BOX.DAT`, `DISC.DAT`.
 - [ ] A card with: a folder tree, 10+ games, at least one multi-disc game (Compact mode), one PSX disc, a game without art, a browser disc,
       homebrew (type "other").
@@ -80,7 +80,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 - [ ] Online on Dreamcast Now!: "Now!" in the swirl's colour right after "Dreamcast" (not overlapping the clock, not cut off).
 - [ ] Online through a DreamPi with DCNET selected: the swirl with "DCNET" over the wordmark's place, same size and baseline as "Dreamcast".
       Over modem/serial the swirl keeps turning up to 6 s until the DreamPi says which network; a Pi without the add-on ends on "Now!".
-- [ ] Without NOW.PVR / DCNET.PVR on the disc the logo stays as it is online (no crash).
+- [ ] Without NOWO/NOWB/CNET.PVR on the disc the logo stays as it is online (no crash).
 - [ ] Compare the letters with the real wordmark at 1:1 on a CRT: weight, height, baseline (known: baseline about 1 px high, strokes lighter than
       the wordmark's own).
 

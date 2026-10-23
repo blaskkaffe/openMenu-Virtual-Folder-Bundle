@@ -2270,7 +2270,7 @@ ui_bios_run(const bios_rom* rom) {
     dbglog_boot("gfx", (unsigned)timer_ms_gettime64());
 
     gfx_load_logo("/cd/LOGO.PVR"); /* optional replacement of the Dreamcast logo */
-    gfx_load_logo_texts(); /* NOW.PVR and DCNET.PVR: the letters of the online logos */
+    gfx_load_logo_texts(); /* NOWO/NOWB/CNET.PVR: the letters of the online logos */
     dbglog_boot("logo", (unsigned)timer_ms_gettime64());
     /* game info (players, VMU blocks) comes from META.DAT on the menu disc; db_load_DAT needs it */
     file_t meta_fd = fs_open("/cd/META.DAT", O_RDONLY);

@@ -33,11 +33,11 @@ const bscene_sink* gfx_sink(void);
  * otherwise the BIOS logo stays. */
 int gfx_load_logo(const char* path);
 
-/* The header logo follows the online mode (the BIOS logo only: a LOGO.PVR of your own is left as it is): 0 the normal logo, 1 "Now!" (NOW.PVR) added
- * behind it (connected to Dreamcast Now!), 2 the logo cropped to its swirl with "DCNET" (DCNET.PVR) over the wordmark's place, 3 connecting: the swirl turns. The extra
+/* The header logo follows the online mode (the BIOS logo only: a LOGO.PVR of your own is left as it is): 0 the normal logo, 1 "Now!" (NOWO/NOWB.PVR) added
+ * behind it (connected to Dreamcast Now!), 2 the logo cropped to swirl + D with "CNET" (CNET.PVR) after the D, 3 connecting: the swirl turns. The extra
  * pictures of modes 1 and 3 are drawn by gfx_logo_badge(), once per frame on the main menu. */
 void gfx_set_logo_mode(int mode);
-/* NOW.PVR and DCNET.PVR of the menu disc: the white letters of modes 1 and 2 (without them those modes leave the logo alone). */
+/* NOWO.PVR, NOWB.PVR and CNET.PVR of the menu disc: the letters of modes 1 and 2 (without them those modes leave the logo alone). */
 void gfx_load_logo_texts(void);
 void gfx_logo_badge(void);
 

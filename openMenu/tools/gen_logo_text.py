@@ -1,22 +1,24 @@
-"""Draws "Now!" and "DCNET" for the header logo by hand, in the style of the Dreamcast typeface (flared humanist capitals: thin
-horizontals and bowls tops, thicker stems, wedge-shaped arm and foot ends, a thick diagonal in the N, round O-shapes with thin
-tops) at the size of the BIOS wordmark in the 128x32 logo texture (capitals from y 7.6 to 24.6). Every outline here is drawn
-from scratch; the typeface was only looked at as a guide. Writes DCNET.PVR (128x32) and NOW.PVR (64x32): white letters on a
-transparent picture, which the menu tints when it draws them. They go next to LOGO.PVR on the disc (the Card Manager's
-tools/openMenu/menu_data folder, the default output, or LOGO_OUT). No part of the BIOS logo is in them.
-Run: python3 tools/gen_logo_text.py  (needs Pillow). GEN_PREVIEW_DIR gets a preview picture."""
+"""Draws "CNET" and "Now!" for the header logo by hand, to sit with the BIOS "Dreamcast" wordmark in the 128x32 logo texture. The
+online DCNET logo is the ROM's own swirl and capital D (cropped at run time, nothing of it is stored) with CNET.PVR drawn after the D, so
+only the letters C N E T are made here, plus "Now!". Measured on the wordmark: capitals from y 7.6 to 24.8, x-height top 12.3, stems 2.9 px,
+horizontals 2.45 px, round parts 3 px at the sides and 2.4 px at top and bottom, plain square ends, letters about 1.5 px apart. Every
+outline is drawn from scratch (the Dreamcast typeface, personal-use only, was only a visual guide). Each letter is drawn 16 times larger and reduced
+by the average of the covered area, which is how the wordmark's edges look (see render()).
+Writes CNET.PVR (grey) and NOWO.PVR / NOWB.PVR (orange and blue, for the NTSC and PAL swirl), 64x32, to the Card Manager's
+tools/openMenu/menu_data folder next to LOGO.PVR (default, or LOGO_OUT). Run: python3 tools/gen_logo_text.py  (needs Pillow).
+GEN_PREVIEW_DIR gets a preview picture."""
 import math, os
 from PIL import Image, ImageDraw
 
 SS = 16
-TOP, BOT = 7.6, 24.6
+TOP, BOT = 7.6, 24.8
 CAP = BOT - TOP
 XT = 12.4                  # x-height top
 MID = (TOP + BOT) / 2
-TS = 1.95                  # thick stroke (stems, thick diagonals)
-TN = 1.3                   # thin stroke (arms, tops and bottoms of bowls)
-SX = 0.9                   # glyphs are drawn a little wide and squeezed horizontally by this
-FL = 0.5                   # flare added at stroke ends
+TS = 2.87                  # stems
+TN = 2.45                  # horizontals (arms, tops and bottoms of bowls)
+SX = 1.0
+FL = 0.0                   # no flares: the wordmark's ends are plain
 
 class Glyph:
     def __init__(self, ox):
@@ -48,56 +50,46 @@ def ring(g, cx, cy, rxo, ryo, tx, ty, a0=0, a1=360, n=96):
     inner = arcpts(cx, cy, rxo - tx, ryo - ty, a1, a0, n)
     g.poly(outer + inner)
 
-def D(ox):
-    g = Glyph(ox)
-    stem(g, 1.5, TOP, BOT, TS, 0.5, 0.5)
-    bx, rxo = 6.2, 9.6
-    g.poly([(1.5, TOP), (bx, TOP), (bx, TOP + TN), (1.5, TOP + TN)])
-    g.poly([(1.5, BOT - TN), (bx, BOT - TN), (bx, BOT), (1.5, BOT)])
-    ring(g, bx, MID, rxo - 0.4, CAP / 2, TS, TN, 90, -90)
-    return g, 16.4
+SIDE = 3.05                # the round parts: thickness at the sides
+RTB = 2.4                  # and at the top and bottom
 def C(ox):
     g = Glyph(ox)
-    cx = 8.6
-    ring(g, cx, MID, 8.2, CAP / 2, TS, TN, 38, 322)
-    return g, 16.3
+    ring(g, 7.7, MID, 7.7, CAP / 2, SIDE, RTB, 42, 318)
+    return g, 15.4
 def N(ox):
     g = Glyph(ox)
-    stem(g, 1.1, TOP, BOT, 1.35, 0.5, 0.5)
-    stem(g, 15.3, TOP, BOT, 1.35, 0.5, 0.5)
-    g.poly([(0.5, TOP), (3.0, TOP), (15.8, BOT), (13.3, BOT)])   # the thick diagonal
-    return g, 16.2
+    stem(g, 1.45, TOP, BOT, TS)
+    stem(g, 14.3, TOP, BOT, TS)
+    g.poly([(0.0, TOP), (3.5, TOP), (15.75, BOT), (12.25, BOT)])   # the diagonal
+    return g, 15.75
 def E(ox):
     g = Glyph(ox)
-    stem(g, 1.5, TOP, BOT, TS, 0.5, 0.5)
-    arm(g, 1.5, 11.4, TOP + TN / 2, up=False)
-    arm(g, 1.5, 9.6, MID, up=True)
-    arm(g, 1.5, 11.6, BOT - TN / 2, up=True)
-    return g, 12.2
+    stem(g, 1.45, TOP, BOT, TS)
+    g.poly([(1.45, TOP), (10.6, TOP), (10.6, TOP + TN), (1.45, TOP + TN)])
+    g.poly([(1.45, MID - TN / 2), (9.6, MID - TN / 2), (9.6, MID + TN / 2), (1.45, MID + TN / 2)])
+    g.poly([(1.45, BOT - TN), (11.0, BOT - TN), (11.0, BOT), (1.45, BOT)])
+    return g, 11.0
 def T(ox):
     g = Glyph(ox)
-    g.poly([(0.2, TOP), (13.6, TOP), (13.6, TOP + TN), (0.2, TOP + TN)])
-    g.poly([(0.2, TOP + TN), (0.2, TOP + TN + FL + 0.7), (1.6, TOP + TN)])
-    g.poly([(13.6, TOP + TN), (13.6, TOP + TN + FL + 0.7), (12.2, TOP + TN)])
-    stem(g, 6.9, TOP, BOT, TS, 0, 0.8)
-    return g, 14.0
+    g.poly([(0.0, TOP), (13.8, TOP), (13.8, TOP + TN), (0.0, TOP + TN)])
+    stem(g, 6.9, TOP, BOT, TS)
+    return g, 13.8
 def o(ox):
     g = Glyph(ox)
-    ring(g, 6.4, (XT + BOT) / 2, 6.4, (BOT - XT) / 2, TS - 0.2, TN)
+    ring(g, 6.4, (XT + BOT) / 2, 6.4, (BOT - XT) / 2, SIDE - 0.2, RTB - 0.1)
     return g, 12.8
 def w(ox):
     g = Glyph(ox)
-    # thicker down strokes, thin up strokes
-    g.poly([(0.0, XT), (2.1, XT), (5.9, BOT), (3.9, BOT)])
-    g.poly([(3.9, BOT), (5.9, BOT), (9.0, XT + 1.0), (7.7, XT + 1.0)])
-    g.poly([(7.5, XT + 1.0), (9.6, XT + 1.0), (13.4, BOT), (11.4, BOT)])
-    g.poly([(11.4, BOT), (13.4, BOT), (16.9, XT), (15.6, XT)])
-    return g, 17.0
+    g.poly([(0.0, XT), (3.3, XT), (7.0, BOT), (3.9, BOT)])
+    g.poly([(3.9, BOT), (7.0, BOT), (9.9, XT + 1.2), (7.3, XT + 1.2)])
+    g.poly([(7.3, XT + 1.2), (9.9, XT + 1.2), (13.8, BOT), (10.7, BOT)])
+    g.poly([(10.7, BOT), (13.8, BOT), (17.4, XT), (14.1, XT)])
+    return g, 17.4
 def bang(ox):
     g = Glyph(ox)
-    g.poly([(0.0, TOP), (2.7, TOP), (2.1, 19.2), (0.6, 19.2)])
-    g.ellipse(1.35, BOT - 1.15, 1.2, 1.15)
-    return g, 2.7
+    g.poly([(0.0, TOP), (2.9, TOP), (2.9, 19.2), (0.0, 19.2)])
+    g.ellipse(1.45, BOT - 1.5, 1.5, 1.5)
+    return g, 2.9
 
 def render(glyphs, width, gaps, x0=0.8):
     from PIL import ImageChops
@@ -107,10 +99,9 @@ def render(glyphs, width, gaps, x0=0.8):
         g, adv = fn(x)
         out = ImageChops.lighter(out, g.img)
         x += adv * SX + gap
-    # drawn at twice the size (with its own smoothing), then shrunk by taking every other pixel: no filtering when shrinking, so the
-    # result has the hard edges of a drawing made for this size instead of a blurred reduction
-    double = out.crop((0, 0, width * SS, 32 * SS)).resize((width * 2, 64), Image.BOX)
-    return double.resize((width, 32), Image.NEAREST)
+    # drawn 16 times larger and reduced by the average of the covered area, as the wordmark's own edges were made (its stems measure
+    # 0.6, 1, 1, 0.27 across four pixels): the letters keep exactly the weight they were drawn with
+    return out.crop((0, 0, width * SS, 32 * SS)).resize((width, 32), Image.BOX)
 
 def write_pvr(img, path):
     """ARGB4444 rectangle texture with a GBIX header: the format of LOGO.PVR (tools/bios-logo/biologo.py). Sizes are powers of two, which
@@ -125,28 +116,44 @@ def write_pvr(img, path):
         f.write(gbix + pvrt + payload)
 
 
-def white_text(mask, width):
-    """White letters with the mask as alpha on a transparent picture `width` wide: the menu tints them (grey for DCNET, the swirl's
-    colour for Now!) when it draws them."""
+def baked_text(mask, width, colour):
+    """The letters in `colour` the way the wordmark's own pixels are made: the coverage c is the alpha, and the colour is the text colour
+    mixed with WHITE by (1 - c), c*colour + (1-c)*255, as if the letters were reduced on a white page (an edge pixel of the original D is
+    (204, 204, 204) at alpha 68, a half-covered one (153, 170, 170) at alpha 153). Drawn on the grey bar the edges therefore come out a
+    little lighter than the bar, which is why the wordmark looks as light as it does. Drawn untinted."""
     img = Image.new('RGBA', (width, 32), (255, 255, 255, 0))
-    img.paste(Image.new('RGBA', mask.size, (255, 255, 255, 255)), (0, 0), mask.point(lambda v: (v >> 4) * 17))
+    px = img.load()
+    m = mask.load()
+    for y in range(32):
+        for x in range(mask.size[0]):
+            c = m[x, y] / 255.0
+            a = int(round(c * 15))
+            if a == 0:
+                continue
+            c = a / 15.0
+            px[x, y] = tuple(int(round((c * t + (1 - c) * 255) / 17.0)) * 17 for t in colour) + (a * 17,)
     return img
 
+
+GREY = (68, 68, 68)       # the wordmark's colour
+ORANGE = (238, 68, 0)     # the NTSC swirl
+BLUE = (68, 119, 187)     # the PAL swirl (what the menu's blue swirl comes to)
 
 if __name__ == '__main__':
     here = os.path.dirname(os.path.abspath(__file__))
     outdir = os.environ.get('LOGO_OUT', os.path.join(here, '..', '..', 'GD MENU Card Manager', 'src', 'GDMENUCardManager.Core', 'tools', 'openMenu', 'menu_data'))
-    pics = {'DCNET.PVR': white_text(render([D, C, N, E, T], 88, [1.6, 1.8, 2.3, 1.5, 0]), 128),
-            'NOW.PVR': white_text(render([N, o, w, bang], 56, [1.5, 1.1, 1.2, 0]), 64)}
+    # CNET starts 1.5 px right of where the wordmark's D ends (the D's bowl reaches column 44.9; the menu draws CNET.PVR from column 46)
+    cnet = render([C, N, E, T], 64, [1.5, 1.5, 1.5, 0], x0=1.2)
+    now = render([N, o, w, bang], 64, [1.5, 1.2, 1.4, 0], x0=0.8)
+    pics = {'CNET.PVR': baked_text(cnet, 64, GREY), 'NOWO.PVR': baked_text(now, 64, ORANGE), 'NOWB.PVR': baked_text(now, 64, BLUE)}
     os.makedirs(outdir, exist_ok=True)
     for name, img in pics.items():
         write_pvr(img, os.path.join(outdir, name))
         print('wrote', os.path.join(outdir, name), img.size)
     prev = os.environ.get('GEN_PREVIEW_DIR')
     if prev:
-        sheet = Image.new('RGB', (128 + 4 + 64, 32), (170, 170, 170))
-        for img, off, col in ((pics['DCNET.PVR'], 0, (68, 68, 68)), (pics['NOW.PVR'], 132, (238, 68, 0))):
-            tint = Image.new('RGBA', img.size, col + (255,))
-            tint.putalpha(img.getchannel('A'))
-            sheet.paste(tint, (off, 0), tint)
+        sheet = Image.new('RGB', (64 * 3 + 8, 32), (170, 170, 170))
+        for k, name in enumerate(pics):
+            img = pics[name]
+            sheet.paste(img.convert('RGB'), (k * 68, 0), img.getchannel('A'))
         sheet.resize((sheet.width * 6, sheet.height * 6), Image.NEAREST).save(os.path.join(prev, 'logo_text_preview.png'))

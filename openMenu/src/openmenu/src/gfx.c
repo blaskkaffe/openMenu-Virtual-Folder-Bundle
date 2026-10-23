@@ -63,7 +63,7 @@ static const bios_rom* g_rom;
 static rom_tex rom_texes[MAX_TEXTURES];
 static int num_rom_texes;
 static rom_tex logo_tex;
-static rom_tex logo_dcnet_tex;  /* the BIOS logo cropped to its swirl (mode 2: DCNET.PVR is drawn over the wordmark's place) */
+static rom_tex logo_dcnet_tex;  /* the BIOS logo cropped to its swirl (mode 2: swirl + the D; CNET.PVR is drawn after it) */
 static rom_tex logo_word_tex;   /* the BIOS logo without its swirl (mode 3) */
 static rom_tex logo_swirl_tex;  /* the swirl alone, 32x32, turned while connecting (mode 3) */
 static int logo_mode;           /* see gfx_set_logo_mode */
@@ -633,7 +633,7 @@ static rom_tex* get_rom_texture_uncached(bscene_texref ref);
 #define LOGO_W 128
 #define LOGO_H 32
 #define LOGO_SWIRL_W 29 /* columns of the logo texture that are the swirl; the wordmark starts at 30 */
-#define LOGO_DCNET_X 30 /* where DCNET.PVR's letters start: right of the swirl */
+#define LOGO_D_END 46 /* the wordmark's D ends here; CNET.PVR's letters start (the D is kept from the BIOS logo) */
 #define LOGO_SWIRL_CX 14.0f /* the swirl's centre in the logo texture */
 #define LOGO_SWIRL_CY 16.0f
 
@@ -681,24 +681,28 @@ load_pvr_file(const char* path, rom_tex* g) {
     free(buf);
 }
 
-/* The letters of the online logos: white text pictures (NOW.PVR, DCNET.PVR next to LOGO.PVR) that are tinted when they are drawn.
- * They hold nothing of the BIOS logo. Without them the logo stays as it is in the online modes. */
-static rom_tex logo_now_tex;
+/* The letters of the online logos: CNET.PVR (grey, drawn after the BIOS logo's own D) and NOWO.PVR / NOWB.PVR (orange / blue "Now!"),
+ * next to LOGO.PVR. They are drawn as they are (the soft edges are baked in) and hold nothing of the BIOS logo.
+ * Without them the logo stays as it is in the online modes. */
+static rom_tex logo_now_tex[2]; /* [0] orange, [1] blue */
 static rom_tex logo_dcnet_text_tex;
-static unsigned logo_swirl_rgb = 0xFFFFFF; /* the swirl's colour, 0xRRGGBB, for tinting "Now!" */
+static unsigned logo_swirl_rgb = 0xFFFFFF; /* the swirl's colour, 0xRRGGBB: picks the orange or the blue "Now!" */
 
 void
 gfx_load_logo_texts(void) {
-    if (!logo_now_tex.valid) {
-        load_pvr_file("/cd/NOW.PVR", &logo_now_tex);
+    if (!logo_now_tex[0].valid) {
+        load_pvr_file("/cd/NOWO.PVR", &logo_now_tex[0]);
+    }
+    if (!logo_now_tex[1].valid) {
+        load_pvr_file("/cd/NOWB.PVR", &logo_now_tex[1]);
     }
     if (!logo_dcnet_text_tex.valid) {
-        load_pvr_file("/cd/DCNET.PVR", &logo_dcnet_text_tex);
+        load_pvr_file("/cd/CNET.PVR", &logo_dcnet_text_tex);
     }
 }
 
-/* Pictures made from the ROM's logo while the menu runs (nothing of it is kept anywhere): the swirl alone, the wordmark alone, and
- * the swirl on its own for turning. Nothing is made when a LOGO.PVR of the user's own is in use. */
+/* Pictures made from the ROM's logo while the menu runs (nothing of it is kept anywhere): the swirl with the wordmark's D, the
+ * wordmark alone, and the swirl on its own for turning. Nothing is made when a LOGO.PVR of the user's own is in use. */
 static void
 build_logo_variants(void) {
     if (logo_variants_tried || logo_tex.valid || !g_rom) {
@@ -717,8 +721,10 @@ build_logo_variants(void) {
             for (int x = 0; x < LOGO_W; x++) {
                 uint32_t c = argb[y * LOGO_W + x];
                 unsigned short v = (unsigned short)((((c >> 24) & 0xFF) >> 4) << 12 | (((c >> 16) & 0xFF) >> 4) << 8 | (((c >> 8) & 0xFF) >> 4) << 4 | ((c & 0xFF) >> 4));
-                if (x < LOGO_SWIRL_W) { /* the swirl */
+                if (x < LOGO_D_END) { /* the swirl and the D */
                     only_swirl[y * LOGO_W + x] = v;
+                }
+                if (x < LOGO_SWIRL_W) { /* the swirl */
                     swirl[y * 32 + x] = v;
                     /* its colour: the most saturated opaque pixel (orange on NTSC and PAL-J, blue on PAL) */
                     int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
@@ -1538,14 +1544,15 @@ gfx_logo_badge(void) {
         }
         return;
     }
-    /* "Now!" after the logo, or "DCNET" over the wordmark's place (the logo is cropped to its swirl then): the white letters tinted */
-    rom_tex* text = logo_mode == 1 ? &logo_now_tex : logo_mode == 2 ? &logo_dcnet_text_tex : NULL;
+    /* "Now!" after the logo, or "CNET" after the D of the logo (cropped to swirl + D then): pictures with the edges baked in */
+    build_logo_variants();
+    int blue = (logo_swirl_rgb & 0xFF) > ((logo_swirl_rgb >> 16) & 0xFF);
+    rom_tex* text = logo_mode == 1 ? &logo_now_tex[blue] : logo_mode == 2 ? &logo_dcnet_text_tex : NULL;
     if (!text || !text->valid) {
         return;
     }
-    build_logo_variants();
-    uint32_t tint = logo_mode == 1 ? (0xFF000000u | logo_swirl_rgb) : 0xFF444444u; /* the swirl's colour, the wordmark's grey */
-    float x = logo_mode == 1 ? 27.0f + 127.0f * sx - 2.0f : 27.0f + (float)LOGO_DCNET_X * sx, y = 28.0f;
+    const uint32_t tint = 0xFFFFFFFFu;
+    float x = logo_mode == 1 ? 27.0f + 127.0f * sx - 2.0f : 27.0f + (float)LOGO_D_END * sx, y = 28.0f;
     float w = (float)text->w * sx, h = (float)LOGO_H * sy;
     ensure_header(text, NULL, 0);
     send_vertex(x, y, 0.5f, 0.0f, 0.0f, tint, 0);
