@@ -27,8 +27,9 @@ typedef struct {
 static const char* const sort_modes[] = {"A-Z", "SD card order"};
 static const char* const multidisc_modes[] = {"Show all discs", "Compact"};
 static const char* const multidisc_groups[] = {"Anywhere", "Same folder only"};
-static const char* const recent_modes[] = {"Off", "Last 5", "Last 10", "Last 15", "Last 20", "Last 25", "Last 50"};
+static const char* const recent_modes[] = {"Off", "Last 10", "Last 20", "Last 30", "Last 40", "Last 50"}; /* as 1.7.1 */
 static const char* const on_off[] = {"Off", "On"};
+static const char* const vm2_modes[] = {"Send to all", "Send to first", "Off"};
 static const char* const aspect_modes[] = {"4:3", "16:9"};
 static const char* const boot_modes[] = {"Full", "License only", "Animation only", "Fast"};
 static const char* const disc_exit[] = {"Standard", "Alternate", "Alternate 3D"};
@@ -57,6 +58,8 @@ static const row_def rows[] = {
     {0, 2, "BIOS", "Sound", "Stereo or mono output", NULL, 2, sound_modes, 6},
     {0, 3, "BIOS", "Auto start", "Start the disc in the drive at power on", NULL, 2, autostart_modes, 7},
     {UIS_ACTION_VMUCLOCK, 1, "BIOS", "Memory card clock", "Set the clock of the memory cards", NULL, 0, NULL, 0},
+    {0, 1, "BIOS", "Clock extender", "Keep the date in flash at each start", &sf_clock_extender, CLOCK_EXTENDER_END + 1,
+     on_off},
     {0, -1, "Game list", "Game order", "Order of the games", &sf_sort, 2, sort_modes},
     {0, -1, "Game list", "Multi-disc games", "List every disc or one entry per set", &sf_multidisc, MULTIDISC_END + 1,
      multidisc_modes},
@@ -76,6 +79,7 @@ static const row_def rows[] = {
     {0, -1, "Online", "Online time sync", "Set the clock from the internet", &sf_online_time_sync, ONLINE_TIME_SYNC_END + 1,
      time_sync_modes},
     {0, -1, "System", "VMU time sync", "Set the clock from a VMU at start", &sf_vmu_time_sync, VMU_TIME_SYNC_END + 1, on_off},
+    {0, -1, "System", "VM2 game ID", "Tell VM2, VMU Pro and co. the game", &sf_vm2_send_all, VM2_SEND_END + 1, vm2_modes},
     {0, -1, "Starting games", "Boot animation", "What the BIOS shows before a game", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
     {0, -1, "Starting games", "Exit to BIOS", "How other discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
     {UIS_ACTION_ABOUT, 3, "Other", "About", "Version and credits", NULL, 0, NULL},

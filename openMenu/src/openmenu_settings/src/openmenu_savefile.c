@@ -142,6 +142,7 @@ savefile_defaults() {
     sf_marquee_speed[0] = MARQUEE_SPEED_MEDIUM;
     sf_mouse_cursor_speed[0] = MOUSE_SPEED_MEDIUM;
     sf_mouse_scroll_speed[0] = MOUSE_SPEED_MEDIUM;
+    sf_clock_extender[0] = CLOCK_EXTENDER_OFF;
     sf_disc_details[0] = DISC_DETAILS_SHOW;
     sf_folders_item_details[0] = FOLDERS_ITEM_DETAILS_ON;
     sf_clock[0] = CLOCK_12HOUR;
@@ -253,6 +254,9 @@ update_savefile(void** loaded_variables, crayon_savefile_version_t loaded_versio
         sf_mouse_cursor_speed[0] = MOUSE_SPEED_MEDIUM;
         sf_mouse_scroll_speed[0] = MOUSE_SPEED_MEDIUM;
     }
+    if (loaded_version < SFV_CLOCK_EXTENDER) {
+        sf_clock_extender[0] = CLOCK_EXTENDER_OFF;
+    }
     return 0;
 }
 
@@ -361,6 +365,8 @@ setup_savefile_internal(crayon_savefile_details_t* details, bool skip_vmu_lcd) {
                                  sf_mouse_cursor_speed_length, SFV_MOUSE_SPEEDS, VAR_STILL_PRESENT);
     crayon_savefile_add_variable(details, &sf_mouse_scroll_speed, sf_mouse_scroll_speed_type,
                                  sf_mouse_scroll_speed_length, SFV_MOUSE_SPEEDS, VAR_STILL_PRESENT);
+    crayon_savefile_add_variable(details, &sf_clock_extender, sf_clock_extender_type, sf_clock_extender_length,
+                                 SFV_CLOCK_EXTENDER, VAR_STILL_PRESENT);
 
     if (crayon_savefile_solidify(details)) {
         return 1;
@@ -793,6 +799,9 @@ rtc_read_count(void) {
     return a;
 }
 
+/* A date was written to the flash during this run (clock set, online or VMU time sync, clock extender). */
+static int clock_checkpoint_done;
+
 int8_t
 set_rtc_and_syscfg(time_t local_time) {
     if (local_time + (time_t)DC_EPOCH_DELTA < 0 || (uint64_t)(local_time + DC_EPOCH_DELTA) > 0xFFFFFFFFull) {
@@ -819,10 +828,38 @@ set_rtc_and_syscfg(time_t local_time) {
     /* If the flash write fails the clock is still set; the BIOS may then ask for the date on the next boot. */
     for (int attempt = 0; attempt < 9; attempt++) {
         if (update_flashrom_syscfg_date(local_time, 0) == 0) {
+            clock_checkpoint_done = 1;
             break;
         }
     }
     return 0;
+}
+
+/* Clock extender (openMenu 1.7.1's setting, same save file byte): with it on, the date of the console clock is written
+ * to the system config block once per run, when the setting is first seen on (at start, or when switched on), unless
+ * a date was written already in this run. The BIOS takes the date from that block when the clock battery has run flat,
+ * so the console comes back near today instead of asking from 1999 on. One flash block per start: when the partition
+ * is full nothing is written (no compaction yet). Same BIOS routine as the clock setting. */
+void
+clock_extender_tick(void) {
+    static int seen = -1;
+    int setting = sf_clock_extender[0];
+    int extend = setting == CLOCK_EXTENDER_ON && setting != seen && !clock_checkpoint_done;
+    seen = setting;
+    if (!extend) {
+        return;
+    }
+    uint32_t count = rtc_read_count();
+    if (count < (uint32_t)DC_EPOCH_DELTA) { /* before 1970: the clock was never set, nothing worth keeping */
+        return;
+    }
+    for (int attempt = 0; attempt < 9; attempt++) {
+        if (update_flashrom_syscfg_date((time_t)count - (time_t)DC_EPOCH_DELTA, 0) == 0) {
+            *(volatile uint32_t*)0x8C000078 = count; /* g_clock_secs, as after a clock setting */
+            clock_checkpoint_done = 1;
+            break;
+        }
+    }
 }
 
 int8_t
@@ -986,6 +1023,9 @@ set_rtc_and_syscfg(time_t local_time) {
     (void)local_time;
     return -1;
 }
+
+void
+clock_extender_tick(void) {}
 #endif
 
 int8_t

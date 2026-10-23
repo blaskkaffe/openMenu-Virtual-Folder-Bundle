@@ -61,6 +61,9 @@ int8_t set_rtc_and_syscfg(time_t local_time);
 /* Writes the BIOS settings (language, sound, auto start from the BIOS RAM copy) to the flash, keeping the date. */
 int8_t save_syscfg_settings(void);
 
+/* openMenu 1.7.1's Clock extender: call once per frame; writes the clock's date to the flash once per run when on. */
+void clock_extender_tick(void);
+
 /* COMPACTION_TEST_START */
 /* Compaction test functions - DEBUG ONLY, remove before release */
 int8_t compaction_test_init(void);

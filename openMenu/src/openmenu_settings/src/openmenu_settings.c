@@ -21,6 +21,7 @@ uint8_t* sf_folders_item_details;
 uint8_t* sf_marquee_speed;
 uint8_t* sf_mouse_cursor_speed;
 uint8_t* sf_mouse_scroll_speed;
+uint8_t* sf_clock_extender;
 uint8_t* sf_disc_details;
 uint8_t* sf_clock;
 uint8_t* sf_vm2_send_all;
@@ -123,6 +124,10 @@ settings_sanitize() {
 
     if ((sf_mouse_scroll_speed[0] < MOUSE_SPEED_START) || (sf_mouse_scroll_speed[0] > MOUSE_SPEED_END)) {
         sf_mouse_scroll_speed[0] = MOUSE_SPEED_MEDIUM;
+    }
+
+    if ((sf_clock_extender[0] < CLOCK_EXTENDER_START) || (sf_clock_extender[0] > CLOCK_EXTENDER_END)) {
+        sf_clock_extender[0] = CLOCK_EXTENDER_OFF;
     }
 
     if ((sf_disc_details[0] < DISC_DETAILS_START) || (sf_disc_details[0] > DISC_DETAILS_END)) {

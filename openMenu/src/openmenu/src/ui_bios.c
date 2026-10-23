@@ -30,6 +30,7 @@
 #include "launch.h"
 #include "serial_region.h"
 #include "sound.h"
+#include <openmenu_savefile.h>
 #include <openmenu_settings.h>
 
 #include "online.h"
@@ -1310,8 +1311,8 @@ open_recent(void) {
 
 /* ---- Game options popup (X on a game, also from the case viewer): BIOS window with what can be chosen before a game
  * starts. Rows that are planned but not there yet are shown greyed and say so, as the brief asks. */
-enum { OPT_START, OPT_DISC, OPT_INFO, OPT_NETWORK, OPT_CHEATS };
-#define OPT_MAX 5
+enum { OPT_START, OPT_DISC, OPT_EMU, OPT_INFO, OPT_NETWORK, OPT_CHEATS };
+#define OPT_MAX 6
 static int opt_ids[OPT_MAX];
 static int opt_count;
 
@@ -1322,6 +1323,9 @@ options_build(void) {
     opt_ids[opt_count++] = OPT_START;
     if (cur && uil_disc_total(cur) > 1) {
         opt_ids[opt_count++] = OPT_DISC; /* a multi-disc set in Compact mode */
+    }
+    if (cur && !strcmp(cur->type, "psx") && launch_bloom_available()) {
+        opt_ids[opt_count++] = OPT_EMU; /* PlayStation disc: Bleem! or Bloom */
     }
     opt_ids[opt_count++] = OPT_INFO;
     opt_ids[opt_count++] = OPT_NETWORK;
@@ -1339,6 +1343,7 @@ options_name(int index) {
         case OPT_DISC:
             snprintf(disc, sizeof(disc), "Disc  < %d of %d >", uil_disc_index() + 1, uil_disc_total(uil_item(uil_cursor())));
             return disc;
+        case OPT_EMU: return launch_psx_emulator() ? "Emulator  < Bloom >" : "Emulator  < Bleem! >";
         case OPT_INFO: return "Game information";
         case OPT_NETWORK: return "Network (coming soon)";
         case OPT_CHEATS: return "Cheats (coming soon)";
@@ -1410,6 +1415,9 @@ handle_options(button_t b) {
         case BTN_RIGHT:
             if (id == OPT_DISC) { /* the list's own disc picking (only reached on a set, where Left/Right do not page) */
                 sound_sfx(uil_button(b, &dummy) == UIL_REDRAW ? BAUDIO_SFX_CURSOR : BAUDIO_SFX_ERROR);
+            } else if (id == OPT_EMU) {
+                launch_set_psx_emulator(!launch_psx_emulator());
+                sound_sfx(BAUDIO_SFX_CURSOR);
             }
             break;
         case BTN_A:
@@ -1419,7 +1427,8 @@ handle_options(button_t b) {
                     options_open = 0;
                     launch_selected();
                     break;
-                case OPT_DISC: sound_sfx(BAUDIO_SFX_ERROR); break; /* Left/Right pick it */
+                case OPT_DISC:
+                case OPT_EMU: sound_sfx(BAUDIO_SFX_ERROR); break; /* Left/Right pick it */
                 case OPT_INFO:
                     options_open = 0;
                     if (!viewer_open) {
@@ -1985,6 +1994,7 @@ ui_bios_run(const bios_rom* rom) {
         /* the online engine: a game the DreamPi's phone page asked for starts only on the plain main menu or game list */
         online_tick((screen == SCREEN_MAIN || screen == SCREEN_GAMES) && !recent_open && !settings_popup && !about_open &&
                     !viewer_open && !options_open);
+        clock_extender_tick(); /* openMenu 1.7.1's Clock extender: one date write per run when it is on */
 
         sync_us_sum += timer_us_gettime64() - logic_t0;
         frames_this_second++;

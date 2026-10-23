@@ -2,8 +2,11 @@
  * File: launch.c
  * Mount a GDEMU disc image and hand control to the game.
  *
- * This is the launch path of the full openMenu reduced to the essentials: no VM2 ids, no background music.
+ * The launch path of the full openMenu (1.7.1): Dreamcast games through the loader, other discs through the BIOS,
+ * PlayStation discs through Bleem! or Bloom from the menu disc, and the game's ID sent to a VM2, VMU Pro, USB4Maple or
+ * Pico2Maple as its Settings row says. Not here yet: the Serial VMU restore before a game.
  */
+#include <malloc.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -15,6 +18,7 @@
 
 #include <openmenu_settings.h>
 
+#include "backend/controls.p1.h"
 #include "backend/gdemu_sdk.h"
 #include "backend/gdmenu_binary.h"
 #include "bloader.h"
@@ -22,6 +26,75 @@
 #include "launch.h"
 #include "online.h"
 #include "sound.h"
+#include "vm2/vm2_api.h"
+
+/* VM2 and friends: the memory cards that switch to a game's own card when they are told its ID (openMenu 1.7.1's
+ * vm2_rescan / vm2_send_id_to_all, Settings > VM2 game ID). */
+#define VM2_MAX_DEVICES 8
+
+static void
+vm2_send_game_id(const gd_item* disc) {
+    maple_device_t* found[VM2_MAX_DEVICES];
+    int n = 0;
+    if (sf_vm2_send_all[0] == VM2_SEND_OFF) {
+        return;
+    }
+    for (int i = 0; i < 8 && n < VM2_MAX_DEVICES; i++) {
+        maple_device_t* vmu = maple_enum_type(i, MAPLE_FUNC_MEMCARD);
+        if (vmu && vmu->valid && check_vm2_present(vmu)) {
+            found[n++] = vmu;
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        vm2_set_id(found[i], disc->product, disc->name);
+        if (sf_vm2_send_all[0] == VM2_SEND_FIRST) {
+            break;
+        }
+    }
+}
+
+/* ---- PlayStation discs: Bleem! (BLEEM.BIN) or Bloom (BLOOM.BIN) from the menu disc, as openMenu 1.7.1 starts them */
+static int psx_use_bloom;
+
+int
+launch_bloom_available(void) {
+    static int known = -1;
+    if (known < 0) {
+        file_t f = fs_open("/cd/BLOOM.BIN", O_RDONLY);
+        known = f != -1;
+        if (known) {
+            fs_close(f);
+        }
+    }
+    return known;
+}
+
+void
+launch_set_psx_emulator(int bloom) {
+    psx_use_bloom = bloom && launch_bloom_available();
+}
+
+int
+launch_psx_emulator(void) {
+    return psx_use_bloom;
+}
+
+/* The emulator read into a 32 byte aligned buffer; NULL if it is not on the menu disc. */
+static uint8_t*
+load_emulator(const char* path, uint32_t* size) {
+    file_t fd = fs_open(path, O_RDONLY);
+    if (fd == -1) {
+        return NULL;
+    }
+    *size = (uint32_t)fs_total(fd);
+    uint8_t* buf = *size ? memalign(32, *size) : NULL;
+    if (buf && fs_read(fd, buf, *size) != (ssize_t)*size) {
+        free(buf);
+        buf = NULL;
+    }
+    fs_close(fd);
+    return buf;
+}
 
 /* Wait for the GDEMU to present the newly selected image. 0 when it is ready, -1 after ten seconds without. */
 static int
@@ -76,14 +149,42 @@ launch_disc(const gd_item* disc) {
         return;
     }
 
+    int psx = !strcmp(disc->type, "psx");
+    uint8_t* emu = NULL;
+    uint32_t emu_size = 0;
+    if (psx) { /* the emulator first: without it there is nothing to start */
+        emu = load_emulator(psx_use_bloom ? "/cd/BLOOM.BIN" : "/cd/BLEEM.BIN", &emu_size);
+        if (!emu) {
+            return;
+        }
+    }
+
     /* the image first: if it cannot be selected or does not come up, the caller says so (no entry in the recently
      * played list, the menu's sound still running; an online connection has been let go) */
     online_shutdown(); /* as the main branch: the modem or adapter is let go before the image changes */
     if (select_image(disc) != 0) {
+        free(emu);
         return;
     }
     history_record(disc);
     sound_shutdown(); /* the next program must not inherit a running sound driver */
+
+    if (psx) {
+        ((uint16_t*)0xAC000198)[0] = 0xFF86; /* as 1.7.1 */
+        if (!psx_use_bloom && emu_size > 0x7079C + (uint32_t)altctrl_size && emu_size > 0x1CA70) {
+            for (int i = 0; i < altctrl_size; i++) {
+                emu[i + 0x7079C] = altctrl_data[i]; /* Bleem!'s alternative controls */
+            }
+            emu[0x49E6] = 0x06; /* restart the emulator: A+B+X+Y+down */
+            emu[0x49E7] = 0x0E; /* back to the menu: A+B+X+Y+Start */
+            emu[0x1CA70] = 1;
+        }
+        arch_exec(emu, emu_size);
+        return;
+    }
+    if (strcmp(disc->type, "other") != 0) {
+        vm2_send_game_id(disc);
+    }
 
     if (!strcmp(disc->type, "other")) {
         launch_other();

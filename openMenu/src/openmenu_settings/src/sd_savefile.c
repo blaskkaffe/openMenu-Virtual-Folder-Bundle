@@ -79,6 +79,7 @@ static sd_var_entry_t sd_variables[] = {
     {NULL, 1, SFV_ONLINE_TIME_SYNC},     /* sf_online_time_sync */
     {NULL, 1, SFV_MOUSE_SPEEDS},         /* sf_mouse_cursor_speed */
     {NULL, 1, SFV_MOUSE_SPEEDS},         /* sf_mouse_scroll_speed */
+    {NULL, 1, SFV_CLOCK_EXTENDER},       /* sf_clock_extender */
 };
 #define SD_VAR_COUNT (sizeof(sd_variables) / sizeof(sd_variables[0]))
 
@@ -124,6 +125,7 @@ sd_init_var_pointers(void) {
     sd_variables[36].var_ptr = sf_online_time_sync;
     sd_variables[37].var_ptr = sf_mouse_cursor_speed;
     sd_variables[38].var_ptr = sf_mouse_scroll_speed;
+    sd_variables[39].var_ptr = sf_clock_extender;
 }
 
 /* Calculate total data size for current version */
@@ -449,6 +451,9 @@ sd_savefile_load(void) {
         if (header.version < SFV_MOUSE_SPEEDS) {
             sf_mouse_cursor_speed[0] = MOUSE_SPEED_MEDIUM;
             sf_mouse_scroll_speed[0] = MOUSE_SPEED_MEDIUM;
+        }
+        if (header.version < SFV_CLOCK_EXTENDER) {
+            sf_clock_extender[0] = CLOCK_EXTENDER_OFF;
         }
 
         /* Let settings_sanitize() handle defaults for any new variables */

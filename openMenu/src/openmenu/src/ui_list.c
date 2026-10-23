@@ -18,7 +18,7 @@ static int* vis;
 static int vis_count;
 static int vis_valid;
 
-#define MAX_SET_DISCS 10
+#define MAX_SET_DISCS 99 /* gd_list's MULTIDISC_MAX_GAMES_PER_SET */
 static const gd_item* members[MAX_SET_DISCS]; /* discs of the set under the cursor, in disc order */
 static int member_count;
 static const gd_item* members_of; /* the list row `members` was built for */

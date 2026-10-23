@@ -167,7 +167,7 @@ list_view_get(list_view* out) {
 }
 
 /* Temporary list for holding all multidisc games in a set */
-#define MULTIDISC_MAX_GAMES_PER_SET (10)
+#define MULTIDISC_MAX_GAMES_PER_SET (99) /* as openMenu 1.7.1 */
 static int num_items_multidisc = -1;
 static gd_item* list_multidisc[MULTIDISC_MAX_GAMES_PER_SET] = {NULL};
 

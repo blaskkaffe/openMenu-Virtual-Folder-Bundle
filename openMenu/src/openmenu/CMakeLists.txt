@@ -40,6 +40,7 @@ set(OPENMENU_SOURCES
         src/backend/online_games.c
         src/backend/online_time_sync.c
         src/backend/serial_port.c
+        src/vm2/vm2_api.c
 )
 
 add_executable(openmenu ${OPENMENU_SOURCES})
