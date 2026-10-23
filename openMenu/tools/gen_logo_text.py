@@ -13,10 +13,10 @@ TOP, BOT = 7.6, 24.6
 CAP = BOT - TOP
 XT = 12.4                  # x-height top
 MID = (TOP + BOT) / 2
-TS = 2.6                   # thick stroke (stems, thick diagonals)
-TN = 2.0                   # thin stroke (arms, tops and bottoms of bowls)
+TS = 1.95                  # thick stroke (stems, thick diagonals)
+TN = 1.3                   # thin stroke (arms, tops and bottoms of bowls)
 SX = 0.9                   # glyphs are drawn a little wide and squeezed horizontally by this
-FL = 0.6                   # flare added at stroke ends
+FL = 0.5                   # flare added at stroke ends
 
 class Glyph:
     def __init__(self, ox):
@@ -63,9 +63,9 @@ def C(ox):
     return g, 16.3
 def N(ox):
     g = Glyph(ox)
-    stem(g, 1.1, TOP, BOT, 1.9, 0.5, 0.5)
-    stem(g, 15.3, TOP, BOT, 1.9, 0.5, 0.5)
-    g.poly([(0.4, TOP), (3.6, TOP), (15.9, BOT), (12.7, BOT)])   # the thick diagonal
+    stem(g, 1.1, TOP, BOT, 1.35, 0.5, 0.5)
+    stem(g, 15.3, TOP, BOT, 1.35, 0.5, 0.5)
+    g.poly([(0.5, TOP), (3.0, TOP), (15.8, BOT), (13.3, BOT)])   # the thick diagonal
     return g, 16.2
 def E(ox):
     g = Glyph(ox)
@@ -87,17 +87,17 @@ def o(ox):
     return g, 12.8
 def w(ox):
     g = Glyph(ox)
-    # thick down strokes, thin up strokes
-    g.poly([(0.0, XT), (2.5, XT), (6.1, BOT), (4.1, BOT)])
-    g.poly([(4.1, BOT), (6.1, BOT), (9.3, XT + 1.0), (8.0, XT + 1.0)])
-    g.poly([(7.4, XT + 1.0), (9.9, XT + 1.0), (13.5, BOT), (11.5, BOT)])
-    g.poly([(11.5, BOT), (13.5, BOT), (16.9, XT), (15.5, XT)])
+    # thicker down strokes, thin up strokes
+    g.poly([(0.0, XT), (2.1, XT), (5.9, BOT), (3.9, BOT)])
+    g.poly([(3.9, BOT), (5.9, BOT), (9.0, XT + 1.0), (7.7, XT + 1.0)])
+    g.poly([(7.5, XT + 1.0), (9.6, XT + 1.0), (13.4, BOT), (11.4, BOT)])
+    g.poly([(11.4, BOT), (13.4, BOT), (16.9, XT), (15.6, XT)])
     return g, 17.0
 def bang(ox):
     g = Glyph(ox)
-    g.poly([(0.0, TOP), (3.3, TOP), (2.55, 19.6), (0.75, 19.6)])
-    g.ellipse(1.65, BOT - 1.35, 1.45, 1.4)
-    return g, 3.3
+    g.poly([(0.0, TOP), (2.7, TOP), (2.1, 19.2), (0.6, 19.2)])
+    g.ellipse(1.35, BOT - 1.15, 1.2, 1.15)
+    return g, 2.7
 
 def render(glyphs, width, gaps, x0=0.8):
     from PIL import ImageChops
@@ -136,7 +136,7 @@ def white_text(mask, width):
 if __name__ == '__main__':
     here = os.path.dirname(os.path.abspath(__file__))
     outdir = os.environ.get('LOGO_OUT', os.path.join(here, '..', '..', 'GD MENU Card Manager', 'src', 'GDMENUCardManager.Core', 'tools', 'openMenu', 'menu_data'))
-    pics = {'DCNET.PVR': white_text(render([D, C, N, E, T], 88, [1.6, 1.7, 1.5, 1.5, 0]), 128),
+    pics = {'DCNET.PVR': white_text(render([D, C, N, E, T], 88, [1.6, 1.8, 2.3, 1.5, 0]), 128),
             'NOW.PVR': white_text(render([N, o, w, bang], 56, [1.5, 1.1, 1.2, 0]), 64)}
     os.makedirs(outdir, exist_ok=True)
     for name, img in pics.items():
