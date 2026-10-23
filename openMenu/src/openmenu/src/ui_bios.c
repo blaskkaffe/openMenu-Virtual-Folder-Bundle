@@ -163,6 +163,15 @@ static dbglog_sample last_sample;
 
 static char status_line[64];
 
+/* The logo at the left of the bar follows the connection: the plain logo, the swirl turning while connecting, "Now!" behind it on
+ * Dreamcast Now!, "DCNET" on DCNET. Every frame, so the turning starts when the dial does. */
+static void
+update_logo_mode(void) {
+    online_header oh;
+    online_header_get(&oh);
+    gfx_set_logo_mode(!oh.shown ? 0 : oh.state == 1 ? 3 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1);
+}
+
 /* The BIOS shows the date and time in the header bar, in its own small antialiased font (fx_debug_hex_text
  * 0x8C021FC0): the header's 256x32 text surface, from (40, 16). Format of format_datetime_string 0x8C01BAE0 for the
  * console's date order; the console's clock holds local time. */
@@ -179,8 +188,6 @@ update_clock(void) {
     online_header oh;
     online_header_get(&oh);
     int lamp = oh.shown ? oh.state + 1 : 0; /* 0 none, 1 grey, 2 yellow, 3 green, 4 red */
-    /* The logo at the left of the bar follows the network: the plain logo, "Now!" behind it on Dreamcast Now!, "DCNET" on DCNET */
-    gfx_set_logo_mode(!oh.shown || oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1);
     if (oh.shown && oh.state == 2 && oh.players >= 0) {
         snprintf(counts, sizeof(counts), "DCNow! %d DCNet %d", oh.dcnow, oh.dcnet);
     }
@@ -1271,6 +1278,7 @@ draw_frame(void) {
         }
     }
     if (screen == SCREEN_MAIN) {
+        update_logo_mode();
         gfx_logo_badge();
     }
     if (svmu_active()) {

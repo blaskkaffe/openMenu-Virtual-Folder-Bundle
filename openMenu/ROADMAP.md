@@ -46,7 +46,7 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 |---|---|---|
 | BIOS look, icons, animations, sound | Done | ROM-driven; colours/font weight still tuned on hardware (checklist) |
 | Music -> Internet | Done | only while Online features is On; Off keeps Music + CD player |
-| Logo follows the online mode | Partial | normal / "Now!" (in the swirl's colour) behind the logo on Dreamcast Now! / "DCNET" instead of the wordmark when the DreamPi has DCNET selected (`gfx_set_logo_mode`); a Pi without the add-on counts as Dreamcast Now!; untested on a console, letters drawn to match |
+| Logo follows the online mode | Partial | normal / swirl turning while connecting / "Now!" (in the swirl's colour) behind the logo on Dreamcast Now! / "DCNET" instead of the wordmark when the DreamPi has DCNET selected (`gfx_set_logo_mode`); a Pi without the add-on counts as Dreamcast Now!; untested on a console, letters drawn to match |
 | Blue swirl logo for PAL, custom LOGO.PVR | Done | header logo; the checklist notes the logo setting only affects game launch |
 | Online player count in the taskbar | Partial | drawn into the header's text surface in the row above the clock, in the clock's font: a connection lamp and "DCNow! n DCNet n" while online (`update_clock` in ui_bios.c; the letters were drawn to match the ROM digits: `tools/gen_clock_letters.py`). `online.c` reads the list once a link is up. Rendered with the real engine code on the preview, untested on a console |
 | Notifications (starred player/game/event) | Missing | `dreampi_link_event_banner()` exists but nothing draws it |

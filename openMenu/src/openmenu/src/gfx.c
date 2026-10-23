@@ -2,6 +2,7 @@
  * gfx: PVR backend for the BIOS-style menu, see gfx.h.
  */
 #include <malloc.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +65,8 @@ static int num_rom_texes;
 static rom_tex logo_tex;
 static rom_tex logo_dcnet_tex;  /* the swirl of the BIOS logo with "DCNET" instead of the wordmark */
 static rom_tex logo_badge_tex;  /* "Now!" */
+static rom_tex logo_word_tex;   /* the BIOS logo without its swirl (mode 3) */
+static rom_tex logo_swirl_tex;  /* the swirl alone, 32x32, turned while connecting (mode 3) */
 static int logo_mode;           /* see gfx_set_logo_mode */
 static int logo_variants_tried;
 static text_tex text_texes[MAX_TEXT_ENTRIES];
@@ -633,6 +636,8 @@ static rom_tex* get_rom_texture_uncached(bscene_texref ref);
 #define LOGO_H 32
 #define LOGO_SWIRL_W 29 /* columns of the logo texture that are the swirl; the wordmark starts at 30 */
 #define LOGO_DCNET_X 30
+#define LOGO_SWIRL_CX 14.0f /* the swirl's centre in the logo texture */
+#define LOGO_SWIRL_CY 16.0f
 
 static void
 upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
@@ -666,7 +671,9 @@ build_logo_variants(void) {
     uint32_t* argb = malloc(sizeof(uint32_t) * LOGO_W * LOGO_H);
     unsigned short* out = calloc((size_t)LOGO_W * LOGO_H, sizeof(unsigned short));
     unsigned short* badge = calloc((size_t)LOGO_NOW_MASK_W * LOGO_H, sizeof(unsigned short));
-    if (argb && out && badge && bios_header_logo(g_rom, *(volatile uint8_t*)0x8C000072 & 0xF, &t) == 0 && t.width == LOGO_W
+    unsigned short* word = calloc((size_t)LOGO_W * LOGO_H, sizeof(unsigned short));
+    unsigned short* swirl = calloc((size_t)32 * LOGO_H, sizeof(unsigned short));
+    if (argb && out && badge && word && swirl && bios_header_logo(g_rom, *(volatile uint8_t*)0x8C000072 & 0xF, &t) == 0 && t.width == LOGO_W
         && t.height == LOGO_H && bios_texture_decode(&t, argb) == 0) {
         /* "Now!" takes the swirl's colour: the most saturated opaque pixel of the swirl (orange on NTSC and PAL-J, blue on PAL) */
         unsigned swirl_rgb = 0x3BD;
@@ -687,6 +694,11 @@ build_logo_variants(void) {
             for (int x = 0; x < LOGO_SWIRL_W; x++) { /* the swirl as it is */
                 uint32_t c = argb[y * LOGO_W + x];
                 out[y * LOGO_W + x] = (unsigned short)((((c >> 24) & 0xFF) >> 4) << 12 | (((c >> 16) & 0xFF) >> 4) << 8 | (((c >> 8) & 0xFF) >> 4) << 4 | ((c & 0xFF) >> 4));
+                swirl[y * 32 + x] = out[y * LOGO_W + x];
+            }
+            for (int x = LOGO_SWIRL_W; x < LOGO_W; x++) { /* the wordmark alone */
+                uint32_t c = argb[y * LOGO_W + x];
+                word[y * LOGO_W + x] = (unsigned short)((((c >> 24) & 0xFF) >> 4) << 12 | (((c >> 16) & 0xFF) >> 4) << 8 | (((c >> 8) & 0xFF) >> 4) << 4 | ((c & 0xFF) >> 4));
             }
             for (int x = 0; x < LOGO_DCNET_MASK_W && LOGO_DCNET_X + x < LOGO_W; x++) { /* "DCNET" in the wordmark's grey (68, 68, 68) */
                 unsigned a = logo_dcnet_mask[y * LOGO_DCNET_MASK_W + x] >> 4;
@@ -699,10 +711,14 @@ build_logo_variants(void) {
         }
         upload_argb4444(out, LOGO_W, LOGO_H, &logo_dcnet_tex);
         upload_argb4444(badge, LOGO_NOW_MASK_W, LOGO_H, &logo_badge_tex);
+        upload_argb4444(word, LOGO_W, LOGO_H, &logo_word_tex);
+        upload_argb4444(swirl, 32, LOGO_H, &logo_swirl_tex);
     }
     free(argb);
     free(out);
     free(badge);
+    free(word);
+    free(swirl);
 }
 
 void
@@ -756,10 +772,11 @@ get_rom_texture_uncached(bscene_texref ref) {
     if (logo_tex.valid && ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
         return &logo_tex;
     }
-    if (logo_mode == 2 && ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
+    if ((logo_mode == 2 || logo_mode == 3) && ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
         build_logo_variants();
-        if (logo_dcnet_tex.valid) {
-            return &logo_dcnet_tex;
+        rom_tex* v = logo_mode == 2 ? &logo_dcnet_tex : &logo_word_tex; /* 3: the swirl is drawn turning by gfx_logo_badge */
+        if (v->valid && (logo_mode == 2 || logo_swirl_tex.valid)) {
+            return v;
         }
     }
     for (int i = 0; i < num_rom_texes; i++) {
@@ -1481,6 +1498,25 @@ gfx_image(int id, float x, float y, float w, float h, float z) {
 /* Where the header logo is on the screen (measured on the preview: the 128x32 texture covers x 27..165, y 28..61). */
 void
 gfx_logo_badge(void) {
+    const float sx = 139.0f / 128.0f, sy = 34.0f / 32.0f;
+    if (logo_mode == 3) { /* connecting: the swirl turns, the wordmark stays */
+        static unsigned turn;
+        build_logo_variants();
+        if (!logo_swirl_tex.valid || !logo_word_tex.valid) {
+            return;
+        }
+        const float s = 1.074f; /* one scale both ways keeps the swirl round while it turns */
+        float a = (float)(turn++ % 72u) * (6.2831853f / 72.0f); /* one turn in 72 frames */
+        float ca = cosf(a), sa = sinf(a);
+        float cx = 27.0f + LOGO_SWIRL_CX * sx, cy = 28.0f + LOGO_SWIRL_CY * sy;
+        ensure_header(&logo_swirl_tex, NULL, 0);
+        for (int i = 0; i < 4; i++) {
+            float tx = (i & 1) ? 32.0f : 0.0f, ty = (i & 2) ? (float)LOGO_H : 0.0f;
+            float dx = (tx - LOGO_SWIRL_CX) * s, dy = (ty - LOGO_SWIRL_CY) * s;
+            send_vertex(cx + dx * ca - dy * sa, cy + dx * sa + dy * ca, 0.5f, tx / 32.0f, ty / (float)LOGO_H, 0xFFFFFFFFu, i == 3);
+        }
+        return;
+    }
     if (logo_mode != 1) {
         return;
     }
@@ -1488,7 +1524,6 @@ gfx_logo_badge(void) {
     if (!logo_badge_tex.valid) {
         return;
     }
-    const float sx = 139.0f / 128.0f, sy = 34.0f / 32.0f;
     float x = 27.0f + 127.0f * sx - 2.0f, y = 28.0f;
     ensure_header(&logo_badge_tex, NULL, 0);
     send_vertex(x, y, 0.5f, 0.0f, 0.0f, 0xFFFFFFFFu, 0);
