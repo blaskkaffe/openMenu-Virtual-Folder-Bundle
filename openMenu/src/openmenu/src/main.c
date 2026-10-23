@@ -28,6 +28,7 @@
 #include "ui_bios.h"
 #include "video.h"
 #include "ui_fallback.h"
+#include "ui_settings.h"
 
 int
 main(int argc, char* argv[]) {
@@ -55,6 +56,7 @@ main(int argc, char* argv[]) {
 
     dbglog_boot("rom", (unsigned)timer_ms_gettime64());
     savefile_init();
+    uis_apply_card_defaults(); /* the card's [BIOSMENU] defaults (stock Card Manager), before online_boot reads them */
     dbglog_boot("save", (unsigned)timer_ms_gettime64());
     online_boot(); /* Auto-Connect dials on its own thread while the game list loads */
 

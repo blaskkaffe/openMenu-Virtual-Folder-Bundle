@@ -1,5 +1,11 @@
 /* ui_settings: the launcher's settings, see ui_settings.h. */
+#include <ctype.h>
+#include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <strings.h>
+
+#include <ini.h>
 
 #include <openmenu_savefile.h>
 #include <openmenu_settings.h>
@@ -9,6 +15,7 @@
 #include <dc/maple/vmu.h>
 
 #include "clock.h"
+#include "serial_log.h"
 #include "sound.h"
 #include "ui_settings.h"
 
@@ -82,6 +89,8 @@ static const row_def rows[] = {
     {0, -1, "System", "VM2 game ID", "Tell VM2, VMU Pro and co. the game", &sf_vm2_send_all, VM2_SEND_END + 1, vm2_modes},
     {0, -1, "Starting games", "Boot animation", "What the BIOS shows before a game", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
     {0, -1, "Starting games", "Exit to BIOS", "How other discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
+    {0, -1, "Other", "Card defaults", "Use DEFAULTS.INI [BIOSMENU] at start", &sf_honor_defaults, HONOR_DEFAULTS_END + 1,
+     on_off},
     {UIS_ACTION_ABOUT, 3, "Other", "About", "Version and credits", NULL, 0, NULL},
 };
 
@@ -222,4 +231,106 @@ uis_commit(void) {
         save_syscfg_settings();
     }
     return savefile_save() >= 0 ? 0 : -1;
+}
+
+/* ---- Card defaults: the [BIOSMENU] section of DEFAULTS.INI on the menu disc ------------------------------------------
+ * Derek's Card Manager copies its tools/openMenu/menu_data folder into the menu image and keeps DEFAULTS.INI sections
+ * it does not know when it rewrites the file, so a stock Card Manager carries this section to the console. Each key is a
+ * settings row's label in lower case with '_' between the words, each value one of its choices the same way, or the
+ * choice's number (0 = first):
+ *   [BIOSMENU]
+ *   game_order=sd_card_order
+ *   online_features=on_auto_connect
+ *   recently_played=last_20
+ * With "Card defaults" on (Settings > Other, the 1.7.1 Honor Menu Defaults byte) the keys that are there win at every
+ * start; rows without a key keep what was saved, and what is changed on the console lasts until the next start. The
+ * BIOS's own rows (language, sound, auto start: flash, not the save file) are not taken from the card. */
+static void
+cfg_norm(const char* in, char* out, size_t size) {
+    size_t n = 0;
+    int gap = 0;
+    for (; *in && n + 1 < size; in++) {
+        if ((*in == '+' || *in == '-') && isdigit((unsigned char)in[1])) { /* UTC+1 / UTC-1: a word of its own */
+            const char* w = *in == '+' ? "plus" : "minus";
+            if (n > 0 && n + 2 < size) {
+                out[n++] = '_';
+            }
+            while (*w && n + 1 < size) {
+                out[n++] = *w++;
+            }
+            gap = 1;
+            continue;
+        }
+        if (isalnum((unsigned char)*in)) {
+            if (gap && n > 0 && n + 2 < size) {
+                out[n++] = '_';
+            }
+            out[n++] = (char)tolower((unsigned char)*in);
+            gap = 0;
+        } else {
+            gap = 1;
+        }
+    }
+    out[n] = '\0';
+}
+
+static int cfg_applied;
+
+static int
+cfg_handler(void* user, const char* section, const char* name, const char* value) {
+    (void)user;
+    if (strcasecmp(section, "BIOSMENU") != 0) {
+        return 1;
+    }
+    char key[48], want[48], have[48], line[96];
+    cfg_norm(name, key, sizeof(key));
+    cfg_norm(value, want, sizeof(want));
+    for (int r = 0; r < NUM_ROWS; r++) {
+        if (!rows[r].var || rows[r].sysoff || rows[r].var == &sf_honor_defaults) {
+            continue;
+        }
+        cfg_norm(rows[r].label, have, sizeof(have));
+        if (strcmp(have, key) != 0) {
+            continue;
+        }
+        int pick = -1;
+        char* end;
+        long n = strtol(value, &end, 10);
+        if (end != value && *end == '\0' && n >= 0 && n < rows[r].count) {
+            pick = (int)n;
+        }
+        for (int c = 0; pick < 0 && c < rows[r].count; c++) {
+            cfg_norm(rows[r].names[c], have, sizeof(have));
+            if (!strcmp(have, want)) {
+                pick = c;
+            }
+        }
+        if (pick < 0) {
+            snprintf(line, sizeof(line), "bad value %.24s=%.40s", name, value);
+            serial_log_block("cfg", line);
+            return 1;
+        }
+        (*rows[r].var)[0] = (uint8_t)pick;
+        cfg_applied++;
+        return 1;
+    }
+    snprintf(line, sizeof(line), "unknown key %.40s", name);
+    serial_log_block("cfg", line);
+    return 1;
+}
+
+int
+uis_apply_card_defaults(void) {
+    cfg_applied = 0;
+    if (sf_honor_defaults[0] != HONOR_DEFAULTS_ON) {
+        return 0;
+    }
+    if (ini_parse("/cd/DEFAULTS.INI", cfg_handler, NULL) == -1) {
+        return 0; /* no file: nothing to do */
+    }
+    settings_sanitize();
+    char line[48];
+    snprintf(line, sizeof(line), "%d settings from DEFAULTS.INI", cfg_applied);
+    serial_log_block("cfg", line);
+    return cfg_applied;
 }
