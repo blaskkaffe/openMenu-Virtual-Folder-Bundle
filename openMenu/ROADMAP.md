@@ -1,6 +1,6 @@
 # Roadmap: the project brief against the code (dev, 65878e8; updated after the controls and 1.7.1 work)
 
-Status of every part of the project brief, checked against the source on `dev`. Keys: **Done**, **Partial**,
+Status of every part of the project brief (full text, ideas and roadmap: `PROJECT_BRIEF.md`), checked against the source on `dev`. Keys: **Done**, **Partial**,
 **Missing**, **Blocked** (needs firmware, a DreamPi-side change or data we do not have yet), **Conflict** (the code does
 something the brief asks to do differently). Hardware-test results are in `TEST_CHECKLIST.md`; this file only says what
 exists in code.
@@ -59,7 +59,7 @@ background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's
 | 7 rows | Done | one box, `UIL_VISIBLE` 7 (ui_list.h), engine up to 13; text size at 9+ rows untested on hardware |
 | Spinning GD-ROM disc with the game's label | Done | DISC.DAT from the Card Manager, fallbacks to ICON.DAT / region disc |
 | 3D jewel case with front art | Done | back art slot exists (`BMODEL_TEX_BACK`) but nothing fills it |
-| Info beside the art | Partial | product, region, players, VMU blocks, disc count on the bottom buttons; no genre, no description |
+| Info beside the art | Partial | product, region, players, VMU blocks, disc count on the bottom buttons; no genre, no description. The brief also wants the favourite star and genre on the list itself |
 | Favourite / star | Missing | needs a save-file list and a key |
 | Disc number on multi-disc | Done | 3D digits at the bottom right of the spinning CD (selected row only, no total); Compact mode, Left/Right pick the disc |
 | Sort A-Z / SD order | Done | Settings > Game order |
@@ -115,6 +115,18 @@ background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's
 | Background colour choice, dark mode | Missing | `dcbg` takes the gradient from the ROM; needs a small palette table |
 | Online rows that belong in the Internet menu | To move | brief: keep Internet settings in the Internet menu |
 | Flash partition 2 compaction | Missing | OPEN item 4; risk grows with every flash write (clock, ISP editor) |
+
+## Added by the consolidated brief (PROJECT_BRIEF.md)
+
+Checked against the earlier tables above; only what is new or sharper:
+
+- **Group control list** is longer: Developer, Publisher, Local multiplayer, Online multiplayer, Online features, Modem, Serial, W5500, Broadband (besides Folder, Favorites, Genre, Homebrew, Tools, Browsers). Developer/Publisher need decision 4; Modem/BBA come from META.DAT `network`; Serial/W5500 need version tags (decision 5). Nothing new is built yet.
+- **Sort and group are separate, independently configurable controls**, and the active sort shows in the bottom row (Missing, see the Play menu table).
+- **Internet > Play** also reaches a web browser; **Internet > Online** A joins/launches a game (Partial: A refreshes today).
+- **Version picker** in the X popup appears only when several variants are installed; labels must be region + patch type, not filenames.
+- **Optional, later:** opening the case and showing the disc on the Y screen.
+- **Hardware items stay conditional**: pico2maple, BlueRetro, iBlueControlMod, VM2, VMU Pro need firmware first (Blocked rows above).
+- The brief's phase order (Play, File/Settings, Internet, hardware) differs from the order below, which puts data-ready and no-hardware work first; keep the order below unless you want the brief's.
 
 ## Suggested order
 

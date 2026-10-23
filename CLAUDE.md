@@ -6,6 +6,7 @@ the `dev` branch; `main` is the release line. Commit and push to `dev` when a ch
 ## Layout
 - `openMenu/src/bios_engine/` portable engine (Ninja models, script VM, scene, game list `bios_list.c`, pages, CD player).
 - `openMenu/src/bios_rom/` reads the BIOS ROM dump. `openMenu/src/openmenu/src/` the app (`ui_bios.c` screens, `gfx.c` PVR backend).
+- Vision: `openMenu/PROJECT_BRIEF.md` (the owner's consolidated brief: ideas and roadmap, not a statement of what exists). `ROADMAP.md` checks it against the code.
 - Docs: `openMenu/NEWMENU.md` (design, per screen), `ROADMAP.md` (project brief vs code), `TEST_CHECKLIST.md` (hardware results, the user's notes: do not overwrite their measurements).
 
 ## Preview without hardware
@@ -26,4 +27,5 @@ has no right panel; real text/art only on the PVR path (hardware).
 ## Open items
 - Hardware checks: title legibility at 7/9 rows, digits on a CRT, panel alignment with the box, fps, memory.
 - Disc total ("2:4") is no longer shown anywhere; ask the user if it should come back.
+- Brief says: favourite star and genre on the list rows, separate sort/group controls, X popup (cheats, disc, version, per-game network), Y screen text. Follow its button mappings and B hierarchy; mark hardware-dependent features as not working until firmware exists.
 - See ROADMAP.md for the rest (favourites, genre, X popup, Y screen text, 60 fps).
