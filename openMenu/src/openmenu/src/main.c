@@ -23,6 +23,7 @@
 #include <openmenu_settings.h>
 
 #include "dbglog.h"
+#include "favorites.h"
 #include "serial_log.h"
 #include "online.h"
 #include "ui_bios.h"
@@ -63,6 +64,7 @@ main(int argc, char* argv[]) {
     if (list_read_default() == 0) {
         list_folder_init();
         list_set_folder_root(); /* folders first; sorted as the Sort setting says */
+        favorites_init();
     }
     dbglog_boot("list", (unsigned)timer_ms_gettime64());
 

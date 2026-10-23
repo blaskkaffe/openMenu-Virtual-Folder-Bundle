@@ -73,6 +73,11 @@ int vf_copy_check(int src, const vf_file* file, int dst);
 /* Copy a file from one card to another. */
 int vf_copy(int src, const vf_file* file, int dst, int overwrite);
 
+/* A whole file by name, as stored (VMS header included). On success *data is malloc'd (free it) and 0 is returned. */
+int vf_read_named(int slot, const char* name, unsigned char** data, int* size);
+/* Write (or replace) a data file. Returns 0 on success. */
+int vf_write_named(int slot, const char* name, const void* data, int size);
+
 /* Delete a file. Returns 0 on success. */
 int vf_delete(int slot, const vf_file* file);
 

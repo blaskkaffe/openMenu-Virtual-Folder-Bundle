@@ -136,6 +136,25 @@ vf_copy(int src, const vf_file* file, int dst, int overwrite) {
 }
 
 int
+vf_read_named(int slot, const char* name, unsigned char** data, int* size) {
+    maple_device_t* dev = card(slot);
+    void* buf = NULL;
+    int len = 0;
+    if (!dev || vmufs_read(dev, name, &buf, &len) < 0 || !buf) {
+        return -1;
+    }
+    *data = buf;
+    *size = len;
+    return 0;
+}
+
+int
+vf_write_named(int slot, const char* name, const void* data, int size) {
+    maple_device_t* dev = card(slot);
+    return dev && vmufs_write(dev, name, (void*)data, size, VMUFS_OVERWRITE) >= 0 ? 0 : -1;
+}
+
+int
 vf_delete(int slot, const vf_file* file) {
     maple_device_t* dev = card(slot);
     return dev && vmufs_delete(dev, file->name) >= 0 ? 0 : -1;

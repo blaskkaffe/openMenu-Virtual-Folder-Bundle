@@ -29,6 +29,7 @@
 #include "clock.h"
 #include <bios_surface.h>
 #include "gfx.h"
+#include "favorites.h"
 #include "history.h"
 #include "input.h"
 #include "launch.h"
@@ -140,7 +141,8 @@ pointer_screen_x(void) {
 static int settings_popup;     /* a settings row popup is open */
 static int settings_popup_sel;
 static int games_opened;  /* the game browser has been opened once (last game restored) */
-static int recent_open;   /* recently played popup */
+static int recent_open;   /* recently played popup (also the favorites list: popup_favorites) */
+static int popup_favorites; /* that popup shows the favorites, not the recently played games */
 static int recent_row;
 static int options_open;  /* the game options popup (X) */
 static int options_row;
@@ -313,12 +315,13 @@ games_sync(void) {
         if (item) {
             multi = !uil_is_folder(item) && uil_disc_total(item) > 1;
             size_t keep = 24;
+            const char* mark = !uil_is_folder(item) && favorites_is(item) ? "* " : ""; /* a favorite starts with a star */
             if (row == uil_cursor()) {
-                snprintf(line, sizeof(line), "%.41s", item->name); /* the selected title scrolls if it is long */
-            } else if (strlen(item->name) > keep) {
-                snprintf(line, sizeof(line), "%.*s..", (int)keep - 2, item->name);
+                snprintf(line, sizeof(line), "%s%.41s", mark, item->name); /* the selected title scrolls if it is long */
+            } else if (strlen(item->name) + strlen(mark) > keep) {
+                snprintf(line, sizeof(line), "%s%.*s..", mark, (int)(keep - 2 - strlen(mark)), item->name);
             } else {
-                snprintf(line, sizeof(line), "%s", item->name);
+                snprintf(line, sizeof(line), "%s%s", mark, item->name);
             }
         }
         gfx_set_row_scroll(s, 0, 0);
@@ -349,8 +352,8 @@ games_sync(void) {
 }
 
 /* The five buttons along the bottom (the CD player's, without their pictures) are the list's controls: X or Right from the
- * BACK marker moves the cursor there. From the left: Recent (the recently played popup), Favorites (not there yet: it
- * needs a list of its own in a separate file and a key to star a game, see ROADMAP.md), Folders (back to the top of the
+ * BACK marker moves the cursor there. From the left: Recent (the recently played popup), Favorites (the starred
+ * games, a popup like Recent's; the Favorite row of the X popup stars a game; see favorites.c), Folders (back to the top of the
  * folder tree), Sort (A cycles A-Z, release year, SD card order; the same setting as Settings > Game order) and Group
  * (the other groups of the brief need metadata that is not there yet). */
 #define LBTN_RECENT 0
@@ -894,9 +897,19 @@ draw_popup(const char* title, const char* hint, int count, int sel, popup_name_f
     gfx_text(hint, POPUP_X + 16.0f, rows_y + (float)rows * GFX_LINE_H + 2.0f, 0.7f, 0xFFA0A0A0u, 0);
 }
 
+static int
+popup_count(void) {
+    return popup_favorites ? favorites_count() : history_recent_count();
+}
+
+static const gd_item*
+popup_item(int index) {
+    return popup_favorites ? favorites_item(index) : history_recent(index);
+}
+
 static const char*
 recent_name(int index) {
-    const gd_item* g = history_recent(index);
+    const gd_item* g = popup_item(index);
     return g ? g->name : "?";
 }
 
@@ -1214,7 +1227,11 @@ draw_frame(void) {
         if (screen == SCREEN_GAMES) {
             draw_games();
             if (recent_open) {
-                draw_popup("Recently played", "A: start   B: close", history_recent_count(), recent_row, recent_name, NULL);
+                if (popup_favorites) {
+                    draw_popup("Favorites", "A: start  Y: remove  B: close", favorites_count(), recent_row, recent_name, NULL);
+                } else {
+                    draw_popup("Recently played", "A: start   B: close", history_recent_count(), recent_row, recent_name, NULL);
+                }
             }
             if (options_open) {
                 draw_options();
@@ -1354,7 +1371,7 @@ handle_main(button_t b) {
 
 static void
 handle_recent(button_t b) {
-    int n = history_recent_count();
+    int n = popup_count();
     switch (b) {
         case BTN_UP:
             if (recent_row > 0) {
@@ -1370,7 +1387,7 @@ handle_recent(button_t b) {
             break;
         case BTN_A:
         case BTN_START: {
-            const gd_item* g = history_recent(recent_row);
+            const gd_item* g = popup_item(recent_row);
             if (g) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 launch_disc(g); /* only returns if the launch failed */
@@ -1380,6 +1397,20 @@ handle_recent(button_t b) {
             recent_open = 0;
             break;
         }
+        case BTN_Y:
+            if (popup_favorites && popup_item(recent_row)) { /* take the game off the favorites */
+                favorites_toggle(popup_item(recent_row));
+                sound_sfx(BAUDIO_SFX_CONFIRM);
+                if (!favorites_save_ok()) {
+                    show_notice("Could not save favorites");
+                }
+                if (favorites_count() == 0) {
+                    recent_open = 0;
+                } else if (recent_row >= favorites_count()) {
+                    recent_row = favorites_count() - 1;
+                }
+            }
+            break;
         case BTN_B:
         case BTN_X:
             sound_sfx(BAUDIO_SFX_CANCEL);
@@ -1389,9 +1420,24 @@ handle_recent(button_t b) {
     }
 }
 
+/* The favorites list: the same popup as the recently played one. */
+static void
+open_favorites(void) {
+    popup_favorites = 1;
+    if (favorites_count() > 0) {
+        recent_open = 1;
+        recent_row = 0;
+        sound_sfx(BAUDIO_SFX_ENTER);
+    } else {
+        sound_sfx(BAUDIO_SFX_ERROR);
+        show_notice("No favorites yet: X on a game, Favorite");
+    }
+}
+
 /* The recently played list (a popup over the game list). */
 static void
 open_recent(void) {
+    popup_favorites = 0;
     if (history_recent_count() > 0) {
         recent_open = 1;
         recent_row = 0;
@@ -1404,8 +1450,8 @@ open_recent(void) {
 
 /* ---- Game options popup (X on a game, also from the case viewer): BIOS window with what can be chosen before a game
  * starts. Rows that are planned but not there yet are shown greyed and say so, as the brief asks. */
-enum { OPT_START, OPT_DISC, OPT_EMU, OPT_INFO, OPT_NETWORK, OPT_CHEATS };
-#define OPT_MAX 6
+enum { OPT_START, OPT_DISC, OPT_EMU, OPT_FAVORITE, OPT_INFO, OPT_NETWORK, OPT_CHEATS };
+#define OPT_MAX 7
 static int opt_ids[OPT_MAX];
 static int opt_count;
 
@@ -1420,6 +1466,7 @@ options_build(void) {
     if (cur && !strcmp(cur->type, "psx") && launch_bloom_available()) {
         opt_ids[opt_count++] = OPT_EMU; /* PlayStation disc: Bleem! or Bloom */
     }
+    opt_ids[opt_count++] = OPT_FAVORITE;
     opt_ids[opt_count++] = OPT_INFO;
     opt_ids[opt_count++] = OPT_NETWORK;
     opt_ids[opt_count++] = OPT_CHEATS;
@@ -1437,6 +1484,7 @@ options_name(int index) {
             snprintf(disc, sizeof(disc), "Disc  < %d of %d >", uil_disc_index() + 1, uil_disc_total(uil_item(uil_cursor())));
             return disc;
         case OPT_EMU: return launch_psx_emulator() ? "Emulator  < Bloom >" : "Emulator  < Bleem! >";
+        case OPT_FAVORITE: return favorites_is(uil_item(uil_cursor())) ? "Favorite  < On >" : "Favorite  < Off >";
         case OPT_INFO: return "Game information";
         case OPT_NETWORK: return "Network (coming soon)";
         case OPT_CHEATS: return "Cheats (coming soon)";
@@ -1486,6 +1534,21 @@ launch_selected(void) {
     show_notice("Could not start the game");
 }
 
+/* Star or unstar the game under the cursor (the Favorite row of the options popup). */
+static void
+toggle_favorite(void) {
+    int now = favorites_toggle(uil_item(uil_cursor()));
+    if (now < 0) {
+        sound_sfx(BAUDIO_SFX_ERROR);
+        show_notice("The favorites list is full");
+        return;
+    }
+    sound_sfx(BAUDIO_SFX_CONFIRM);
+    if (!favorites_save_ok()) {
+        show_notice("Could not save favorites");
+    }
+}
+
 static void
 handle_options(button_t b) {
     options_build();
@@ -1511,6 +1574,8 @@ handle_options(button_t b) {
             } else if (id == OPT_EMU) {
                 launch_set_psx_emulator(!launch_psx_emulator());
                 sound_sfx(BAUDIO_SFX_CURSOR);
+            } else if (id == OPT_FAVORITE) {
+                toggle_favorite();
             }
             break;
         case BTN_A:
@@ -1522,6 +1587,7 @@ handle_options(button_t b) {
                     break;
                 case OPT_DISC:
                 case OPT_EMU: sound_sfx(BAUDIO_SFX_ERROR); break; /* Left/Right pick it */
+                case OPT_FAVORITE: toggle_favorite(); break;
                 case OPT_INFO:
                     options_open = 0;
                     if (!viewer_open) {
@@ -1603,8 +1669,7 @@ handle_games(button_t b) {
                 if (glist.button == LBTN_RECENT) {
                     open_recent();
                 } else if (glist.button == LBTN_FAVORITES) {
-                    sound_sfx(BAUDIO_SFX_ERROR);
-                    show_notice("Favorites not available yet");
+                    open_favorites();
                 } else if (glist.button == LBTN_FOLDERS) {
                     go_folders();
                 } else if (glist.button == LBTN_SORT) {
@@ -1951,7 +2016,7 @@ apply_hover(void) {
     int popup_rows = 0, popup_sel = -1;
     int* popup_cur = NULL;
     if (recent_open) {
-        popup_rows = history_recent_count();
+        popup_rows = popup_count();
         popup_cur = &recent_row;
     } else if (options_open && screen == SCREEN_GAMES) {
         options_build();
