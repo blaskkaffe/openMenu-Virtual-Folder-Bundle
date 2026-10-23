@@ -53,13 +53,22 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build openMenu
+        shell: bash
         run: |
           docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" -e GITHUB_SHA \
             -v "$PWD/openMenu:/workspaces/openmenu" -w /workspaces/openmenu \
             openmenu-build:ci bash -c '
               source /opt/toolchains/dc/kos/environ.sh &&
               cmake --preset dc-release &&
-              cmake --build --preset dc-release'
+              cmake --build --preset dc-release' 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          # compiler errors and warnings as annotations, so they can be read without the full log
+          grep -E "(error|warning):" build.log | sed -E 's|^/workspaces/openmenu/|openMenu/|' | head -40 | while IFS= read -r line; do
+            file=$(echo "$line" | cut -d: -f1); ln=$(echo "$line" | cut -d: -f2)
+            case "$line" in *error:*) kind=error ;; *) kind=warning ;; esac
+            echo "::$kind file=$file,line=$ln::$line"
+          done
+          exit $status
 
       - uses: actions/upload-artifact@v4
         with:
