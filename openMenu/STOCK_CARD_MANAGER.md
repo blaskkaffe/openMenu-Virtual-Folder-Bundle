@@ -26,7 +26,7 @@ card without losing settings.
 | `BLEEM.BIN`, `BLOOM.BIN` in menu_data | used for PSX discs |
 | Menu Options: style and theme (`[DEFAULTS]`) | ignored: the look is the console's BIOS |
 | Menu Options: background music (`[BGM]`, `BGM.ADP`) | ignored for now: the menu plays the BIOS's own sounds |
-| Menu Options: Serial SD warning (`[MISC]`) | ignored: Serial VMU is not in this branch yet |
+| Menu Options: Serial SD warning (`[MISC]`) | ignored: no warning is shown (Serial VMU itself works: restore and backup, one image per game) |
 | Theme folders, `FOLDRART.DAT` | ignored |
 
 ## Settings from the card: `[BIOSMENU]`

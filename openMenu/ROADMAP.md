@@ -14,8 +14,8 @@ Storage rule from the 1.7.1 work: `OPENMENU.SYS` is shared with Derek's menu, so
 it (a version step there would make 1.7.1 treat it as unknown). Our own saved data (per-game network, favourites,
 background colour, dark mode) needs a separate file on the VMU / SD, or keys in DEFAULTS.INI `[BIOSMENU]`.
 
-Not in this branch yet from 1.7.1: the Serial VMU restore before a game (the setting is kept but not acted on),
-background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's).
+Serial VMU (`serial_vmu.c`) restores a game's VMU image from the serial SD card before the game starts and backs it up at the next start, with 1.7.1's file layout (one image per game; not yet: Serial VMU Slots, the fallback VMU picker, exit to BIOS). Written without a console build: untested.
+Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's).
 
 ## Decisions needed before coding
 
@@ -82,7 +82,7 @@ background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's
 |---|---|---|
 | BIOS File screen (cards, copy, delete, memory reset with icon/colour) | Done | ported from the ROM; untested on real cards |
 | VMU icon and colour | Partial | only through memory reset (BIOS behaviour); no change without wiping |
-| Serial VMU submenu (enable, slot, backup/restore) | Missing | needs the serial VMU emulation's interface on the SD side |
+| Serial VMU submenu (enable, slot, backup/restore) | Partial | Settings > Game list > Serial VMU picks the VMU socket; restore before launch and backup at start work as 1.7.1 (`serial_vmu.c`, untested on hardware). No File-menu submenu yet, no manual backup/load, no Slots |
 | Expand VMU storage | Blocked | depends on the device (VM2/VMU Pro/pico2maple) |
 | VMU slot selection, GameID box | Blocked | no protocol yet for VM2, VMU Pro, pico2maple |
 | Controller type label per port | Partial | types can be read from maple function codes today; selecting/emulating a type is Blocked (BlueRetro/pico2maple firmware) |

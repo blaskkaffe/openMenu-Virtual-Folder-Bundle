@@ -33,6 +33,7 @@
 #include "history.h"
 #include "input.h"
 #include "launch.h"
+#include "serial_vmu.h"
 #include "serial_region.h"
 #include "sound.h"
 #include <openmenu_savefile.h>
@@ -192,6 +193,9 @@ show_notice(const char* text) {
     notice_text = text;
     notice_frames = NOTICE_FRAMES;
 }
+
+static int svmu_active(void); /* the Serial VMU popup, further down */
+static void draw_svmu(void);
 
 /* ---- Game list -------------------------------------------------------------------------- */
 
@@ -1238,6 +1242,9 @@ draw_frame(void) {
             }
         }
     }
+    if (svmu_active()) {
+        draw_svmu();
+    }
     if (show_debug) {
         if (screen == SCREEN_MAIN) {
             gfx_text(status_line, TEXT_X, STATUS_Y, 0.5f, 0x80FFFFFFu, 0);
@@ -1369,6 +1376,110 @@ handle_main(button_t b) {
     }
 }
 
+/* ---- Serial VMU: before a game starts its VMU image is restored from the serial SD card (serial_vmu.c); at the next start
+ * the VMU is backed up to the card. A popup shows the progress and asks what to do when something is not as expected. */
+static const gd_item* svmu_item; /* the game that starts when the restore is done (NULL for the backup at start-up) */
+static int svmu_row;
+
+static int
+svmu_active(void) {
+    return svmu_phase_get() != SVMU_OFF;
+}
+
+/* Starts a game. Returns 1 if the Serial VMU restore went first (the game starts when it is done), 0 if the game was started
+ * here and only returned because the launch failed. */
+static int
+start_game(const gd_item* g) {
+    if (svmu_slots_unsupported(g)) {
+        show_notice("Serial VMU Slots are not supported yet");
+    }
+    if (svmu_applies(g)) {
+        svmu_item = g;
+        svmu_row = 0;
+        svmu_begin_restore(g);
+        return 1;
+    }
+    launch_disc(g);
+    return 0;
+}
+
+static const char*
+svmu_choice_name(int index) {
+    return svmu_choice_text(index);
+}
+
+static void
+draw_svmu(void) {
+    char hint[48];
+    if (svmu_phase_get() == SVMU_ASK) {
+        draw_popup(svmu_message(), "A: choose   B: cancel", svmu_choice_count(), svmu_row, svmu_choice_name, NULL);
+    } else {
+        snprintf(hint, sizeof(hint), "%d%%   do not turn the console off", svmu_progress());
+        draw_popup(svmu_message(), hint, 0, 0, svmu_choice_name, NULL);
+    }
+}
+
+static void
+handle_svmu(button_t b) {
+    if (svmu_phase_get() != SVMU_ASK) {
+        return; /* busy: nothing to choose */
+    }
+    int n = svmu_choice_count();
+    switch (b) {
+        case BTN_UP:
+            if (svmu_row > 0) {
+                svmu_row--;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_DOWN:
+            if (svmu_row < n - 1) {
+                svmu_row++;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        case BTN_A:
+        case BTN_START:
+            sound_sfx(BAUDIO_SFX_CONFIRM);
+            svmu_choose(svmu_row);
+            svmu_row = 0;
+            break;
+        case BTN_B:
+        case BTN_X:
+            sound_sfx(BAUDIO_SFX_CANCEL);
+            svmu_cancel();
+            svmu_row = 0;
+            break;
+        default: break;
+    }
+}
+
+/* Once per frame: one block of the copy, and what to do when it is over. */
+static void
+svmu_tick(void) {
+    svmu_step();
+    switch (svmu_phase_get()) {
+        case SVMU_LAUNCH:
+        case SVMU_LAUNCH_PLAIN: {
+            const gd_item* g = svmu_item;
+            svmu_item = NULL;
+            svmu_finish();
+            if (g) {
+                sound_sfx(BAUDIO_SFX_ENTER);
+                launch_disc(g); /* only returns if the launch failed */
+                sound_sfx(BAUDIO_SFX_ERROR);
+                show_notice("Could not start the game");
+            }
+            break;
+        }
+        case SVMU_CLOSE:
+            svmu_item = NULL;
+            svmu_finish();
+            break;
+        default: break;
+    }
+}
+
 static void
 handle_recent(button_t b) {
     int n = popup_count();
@@ -1390,9 +1501,11 @@ handle_recent(button_t b) {
             const gd_item* g = popup_item(recent_row);
             if (g) {
                 sound_sfx(BAUDIO_SFX_ENTER);
-                launch_disc(g); /* only returns if the launch failed */
-                sound_sfx(BAUDIO_SFX_ERROR);
-                show_notice("Could not start the game");
+                recent_open = 0;
+                if (!start_game(g)) { /* only returns if the launch failed */
+                    sound_sfx(BAUDIO_SFX_ERROR);
+                    show_notice("Could not start the game");
+                }
             }
             recent_open = 0;
             break;
@@ -1528,7 +1641,9 @@ launch_selected(void) {
     const gd_item* cur = uil_item(uil_cursor());
     if (cur && !uil_is_folder(cur) && uil_button(BTN_A, &game) == UIL_LAUNCH && game) {
         sound_sfx(BAUDIO_SFX_ENTER);
-        launch_disc(game);
+        if (start_game(game)) {
+            return;
+        }
     }
     sound_sfx(BAUDIO_SFX_ERROR);
     show_notice("Could not start the game");
@@ -1730,9 +1845,10 @@ handle_games(button_t b) {
     }
     uil_result r = uil_button(b, &game);
     if (r == UIL_LAUNCH) {
-        launch_disc(game); /* straight away; only returns if the launch failed */
-        sound_sfx(BAUDIO_SFX_ERROR);
-        show_notice("Could not start the game");
+        if (!start_game(game)) { /* straight away; only returns if the launch failed */
+            sound_sfx(BAUDIO_SFX_ERROR);
+            show_notice("Could not start the game");
+        }
     } else if (r == UIL_EXIT) {
         /* B at the top folder: first to the bottom row (BACK), a second B leaves; levels are never skipped */
         glist.back_selected = 1;
@@ -2151,6 +2267,9 @@ ui_bios_run(const bios_rom* rom) {
         serial_log_block("boot", b2);
     }
 
+    svmu_item = NULL;
+    svmu_begin_backup(); /* the last game's VMU goes back to the serial SD card, if it left a note */
+
     uint64_t last_ms = timer_ms_gettime64();
     uint64_t fps_since = last_ms;
     uint32_t step_credit = 0;
@@ -2198,6 +2317,10 @@ ui_bios_run(const bios_rom* rom) {
             handle_report(b);
             b = BTN_NONE;
         }
+        if (svmu_active()) {
+            handle_svmu(b);
+            b = BTN_NONE;
+        }
         if (screen == SCREEN_MAIN) {
             handle_main(b);
         } else if (screen == SCREEN_GAMES) {
@@ -2219,6 +2342,7 @@ ui_bios_run(const bios_rom* rom) {
         if (notice_frames > 0) {
             notice_frames--;
         }
+        svmu_tick();
 
         /* Real-time logic steps: as many as the elapsed time asks for. */
         uint64_t now = timer_ms_gettime64();
@@ -2263,7 +2387,7 @@ ui_bios_run(const bios_rom* rom) {
 
         /* the online engine: a game the DreamPi's phone page asked for starts only on the plain main menu or game list */
         online_tick((screen == SCREEN_MAIN || screen == SCREEN_GAMES) && !recent_open && !settings_popup && !about_open &&
-                    !viewer_open && !options_open);
+                    !viewer_open && !options_open && !svmu_active());
         clock_extender_tick(); /* openMenu 1.7.1's Clock extender: one date write per run when it is on */
 
         uint64_t logic_end = timer_us_gettime64();

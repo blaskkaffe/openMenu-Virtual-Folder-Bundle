@@ -92,6 +92,13 @@ Mark OK / FAIL / n.a. and write what you saw.
 - [-] Main menu: items, icons, accent colours, sound, music on/off - colors are still a bit off, font to thin both on the clock and date and labels. time and date uses antialised font in original
 - [-] Logo setting (BIOS logo vs custom), language rows present? - language rows are not present, logo setting present but only affects when launching games, not openmenu itself
 
+### Serial VMU (serial SD adapter; written without a console build)
+- [ ] Settings > Game list > Serial VMU: choose the VMU socket. A game with a serial starts with a popup: no image on the card yet -> "Start with a blank VMU" (asks to erase first; needs EMPTY.VMU on the menu disc), "Launch with the VMU as is", "Launch without Serial VMU", "Cancel"
+- [ ] With an image (made by this menu or 1.7.1): 256 blocks are written to the VMU with a progress popup (about 4 s), then the game starts; `OPENMENU/LASTDISC.TXT` holds `<serial>-1`, `TITLE.TXT` is next to `SLOT1.VMU`
+- [ ] After the game, next start of this menu: "Backing up the VMU" and the new data is in `SLOT1.VMU`, LASTDISC.TXT is gone. Swap with 1.7.1's menu: it restores/backs up the same files
+- [ ] Wrong size file -> "damaged" question; no SD adapter, no VMU in the socket -> the questions; Skip keeps LASTDISC.TXT and the next restore warns that the last game's VMU is not backed up
+- [ ] Homebrew/tools (type other) and games without a serial start without any of this; Serial VMU Slots On: the game starts without it and says so
+
 ### Game list
 - [ ] Favorites (written without a console build; the VMS file layout and the SD write are unverified): X on a game > Favorite toggles On/Off with a click, the title gets "* " (check the BIOS font has the star character), the Favorites button lists starred games newest first, A starts one, Y removes one, an empty list says so; restart: the stars are still there (VMU only, SD only, both); the file OPENMENU.FAV shows in the BIOS File screen with a gold icon and is 3 blocks; with no card and no SD it still works until power off and says "Could not save favorites"; 101st star says the list is full
 - [ ] Bottom row (not compiled for the console yet, written without KOS): Sort button cycles A-Z / Year / SD order and the list follows, in a subfolder too, cursor stays on the game; Settings > Game order shows the same value; labels fit on the buttons (long form or short); Folders jumps to the top of the tree from a subfolder; Favorites and Group show their notices

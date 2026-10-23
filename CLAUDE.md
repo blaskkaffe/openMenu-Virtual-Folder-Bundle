@@ -24,6 +24,8 @@ has no right panel; real text/art only on the PVR path (hardware).
 - Disc and lit pill only on the selected row. Multi-disc number = 3D digit models at the CD's bottom right (`disc_number`).
 - Favorites: `favorites.c/.h` (1.7.1 has none; own file, not OPENMENU.SYS: SD `FAVORITES.DAT` + memory card `OPENMENU.FAV`). Host-tested logic (pack/unpack, VMS wrap, crc); the card/SD I/O and UI are not compiled or run.
 - Bottom row: Recent, Favorites (popup), Folders (top of tree), Sort (cycles A-Z / Year / SD order, `sf_sort`), Group (placeholder). Code in `ui_bios.c` (`button_text`, `cycle_sort`), order in `gd_list.c` `folder_cmp`. The app side cannot be compiled in the cloud session (no KOS; gnu.org is blocked); the owner compiles and tests on their side. Code for it is checked only with stub harnesses, so expect compile fixes after changes there.
+- Serial VMU: `serial_vmu.c/.h` (restore before launch, backup at start; ported from main's `ui_menu_credits.c`, same SD layout; single image, no Slots). State machine host-tested with a fake VMU and SD folder (build with `-DSVMU_HOST_TEST -DSVMU_SD=... -DSVMU_EMPTY_VMU=...` and stub headers); the popup in `ui_bios.c` (`start_game`, `svmu_tick`) is not compiled.
+- Online ("never connects"): not diagnosed yet, needs the owner's setup and the status lines/serial log (see TEST_CHECKLIST Internet section).
 - `BVM_MAX_OBJECTS` is 128 (13 rows need it).
 
 ## Open items

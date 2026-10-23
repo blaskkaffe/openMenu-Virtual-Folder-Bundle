@@ -36,6 +36,7 @@ static const char* const multidisc_modes[] = {"Show all discs", "Compact"};
 static const char* const multidisc_groups[] = {"Anywhere", "Same folder only"};
 static const char* const recent_modes[] = {"Off", "Last 10", "Last 20", "Last 30", "Last 40", "Last 50"}; /* as 1.7.1 */
 static const char* const on_off[] = {"Off", "On"};
+static const char* const serial_vmu_modes[] = {"Off", "On (A1)", "On (A2)", "On (B1)", "On (B2)", "On (C1)", "On (C2)", "On (D1)", "On (D2)"}; /* as 1.7.1 */
 static const char* const vm2_modes[] = {"Send to all", "Send to first", "Off"};
 static const char* const aspect_modes[] = {"4:3", "16:9"};
 static const char* const boot_modes[] = {"Full", "License only", "Animation only", "Fast"};
@@ -76,6 +77,8 @@ static const row_def rows[] = {
      recent_modes},
     {0, -1, "Game list", "Remember last game", "Start browsing where you left off", &sf_remember_last_game,
      REMEMBER_LAST_GAME_END + 1, on_off},
+    {0, -1, "Game list", "Serial VMU", "Each game's VMU image kept on the serial SD card", &sf_serial_vmu, SERIAL_VMU_END + 1,
+     serial_vmu_modes},
     {0, -1, "Display", "Aspect ratio", "16:9 is squeezed for wide TVs", &sf_aspect, ASPECT_END + 1, aspect_modes},
     /* the main branch's online (DC Now) setting, same values: Off, On, Auto-connect. While it is on, the third main
      * menu icon is "Internet" instead of "Music" */

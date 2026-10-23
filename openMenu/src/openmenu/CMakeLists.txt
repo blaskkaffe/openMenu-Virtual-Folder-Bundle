@@ -22,6 +22,7 @@ set(OPENMENU_SOURCES
         src/launch.c
         src/qr.c
         src/serial_region.c
+        src/serial_vmu.c
         src/sound.c
         src/ui_bios.c
         src/ui_fallback.c
