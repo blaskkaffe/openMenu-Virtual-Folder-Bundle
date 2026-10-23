@@ -46,6 +46,7 @@
 #define BOX_TOP_PX 73.5f
 #define BOX_BOTTOM_PX 350.5f
 #define BOX_PAD_PX 8.0f
+#define BOX_STRAIGHT_Y 0.6f /* model units around the middle of the bar that are straight (no corner), scaled when the box grows */
 #define BAR_H_PX 53.0f /* height of the row bar model at ROW_SY */
 
 /* the selected disc spins as the CD player's (script 0x1c), per frame in the original's angle units */
@@ -307,7 +308,8 @@ blist_sync(blist* l) {
             set_hidden(parts[i].o, !parts[i].show);
         }
         if (anchor) {
-            set_scale(anchor, 0.8671875f, ROW_SY * 0.8671875f * box_h / BAR_H_PX, 0.8671875f);
+            set_scale(anchor, 0.8671875f, ROW_SY * 0.8671875f, 0.8671875f); /* made taller in blist_draw, not scaled: the corners keep their radius */
+            (void)box_h;
         }
         if (pill) {
             set_scale(pill, PILL_SCALE, ROW_SY * PILL_SCALE * (pitch > BAR_H_PX ? BAR_H_PX : pitch) / BAR_H_PX, PILL_SCALE);
@@ -420,10 +422,13 @@ blist_draw(blist* l, const bscene_sink* sink) {
             m->scene.no_decals = o->id >= ID_BUTTON(0) && o->id < ID_BUTTON(BLIST_BUTTONS);
             /* shorten bars and pills along x without squeezing their ends */
             m->scene.stretch_on = 1;
+            m->scene.stretch_yc = m->scene.stretch_yd = 0.0f;
             if (o->id >= ID_ANCHOR(0) && o->id < ID_ANCHOR(BLIST_MAX_SLOTS)) {
                 m->scene.stretch_a = BAR_CAP_L;
                 m->scene.stretch_b = BAR_CAP_R;
                 m->scene.stretch_f = BAR_MIDDLE_F;
+                m->scene.stretch_yc = BOX_STRAIGHT_Y;
+                m->scene.stretch_yd = (BOX_BOTTOM_PX - BOX_TOP_PX - BAR_H_PX) * 0.5f / (PX_PER_UNIT * 0.8671875f * ROW_SY);
             } else if (o->id >= ID_PILL(0) && o->id < ID_PILL(BLIST_MAX_SLOTS)) {
                 m->scene.stretch_a = PILL_CAP_L;
                 m->scene.stretch_b = PILL_CAP_R;
@@ -439,6 +444,7 @@ blist_draw(blist* l, const bscene_sink* sink) {
         }
     }
     m->scene.fullbright = 0;
+    m->scene.stretch_yc = m->scene.stretch_yd = 0.0f;
     m->scene.stretch_on = 0;
     m->scene.no_decals = 0;
     m->scene.ovr_n = 0;
