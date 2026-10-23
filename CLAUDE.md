@@ -22,6 +22,7 @@ has no right panel; real text/art only on the PVR path (hardware).
 ## Game list (current state, see NEWMENU.md "Game browser")
 - One box, fixed height 73.5-350.5 px, 7 lines (`UIL_VISIBLE`, engine max 13). Corners keep the single-row radius (y-growth in `bios_scene`).
 - Disc and lit pill only on the selected row. Multi-disc number = 3D digit models at the CD's bottom right (`disc_number`).
+- Bottom row: Recent, Sort (cycles A-Z / Year / SD order, `sf_sort`), Group (Folder only), 2 free. Code in `ui_bios.c` (`button_text`, `cycle_sort`), order in `gd_list.c` `folder_cmp`. The app side cannot be compiled here (no KOS); it was checked only with a stub harness.
 - `BVM_MAX_OBJECTS` is 128 (13 rows need it).
 
 ## Open items

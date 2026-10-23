@@ -141,8 +141,12 @@ selected row only; the total is not shown). Left/Right on such a row pick the di
 list on other rows). Multi-disc titles use the full title width. The BACK marker sits under the info box.
 
 Game list bottom row: the BACK marker and the CD player's five buttons (without their pictures)
-sit where they do in the CD player. For now the buttons show product code, region, players, VMU
-blocks and disc count (`draw_button_text` in `ui_bios.c`); they are free for other info.
+sit where they do in the CD player (X or Right from BACK reaches them, B goes on to the main menu). Button 1 is
+Recent (the recently played popup), button 2 Sort (A cycles A-Z, Release year, SD card order and shows the
+active one; it is the Settings > Game order value `sf_sort`, saved at once, and the list is rebuilt in the same
+folder with the cursor on the same game), button 3 Group (shows Folder; A answers that only Folder exists yet),
+buttons 4 and 5 are free. The text is the long form ("Sort A-Z") when it fits in 80 px, else the short one
+(`button_text` in `ui_bios.c`). Release year is the IP.BIN build date of the disc (`folder_cmp` in `gd_list.c`).
 
 Disc colour: a game without icon art shows the BIOS disc of its region, chosen from the serial number
 (`serial_region.c`): PAL (Sega MK + 7 digits, third party ...D, ...D50, ...N50) gets the blue disc,

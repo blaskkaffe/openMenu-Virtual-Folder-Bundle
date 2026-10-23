@@ -31,7 +31,7 @@ typedef struct {
     int sysoff;        /* nonzero: the choice is a byte of the BIOS system settings at 0x8C000078 + sysoff */
 } row_def;
 
-static const char* const sort_modes[] = {"A-Z", "SD card order"};
+static const char* const sort_modes[] = {"A-Z", "SD card order", "Release year"}; /* sf_sort 0, 1 (SORT_NAME), 2 (SORT_DATE) */
 static const char* const multidisc_modes[] = {"Show all discs", "Compact"};
 static const char* const multidisc_groups[] = {"Anywhere", "Same folder only"};
 static const char* const recent_modes[] = {"Off", "Last 10", "Last 20", "Last 30", "Last 40", "Last 50"}; /* as 1.7.1 */
@@ -67,7 +67,7 @@ static const row_def rows[] = {
     {UIS_ACTION_VMUCLOCK, 1, "BIOS", "Memory card clock", "Set the clock of the memory cards", NULL, 0, NULL, 0},
     {0, 1, "BIOS", "Clock extender", "Keep the date in flash at each start", &sf_clock_extender, CLOCK_EXTENDER_END + 1,
      on_off},
-    {0, -1, "Game list", "Game order", "Order of the games", &sf_sort, 2, sort_modes},
+    {0, -1, "Game list", "Game order", "Order of the games", &sf_sort, 3, sort_modes},
     {0, -1, "Game list", "Multi-disc games", "List every disc or one entry per set", &sf_multidisc, MULTIDISC_END + 1,
      multidisc_modes},
     {0, -1, "Game list", "Disc sets from", "Where the other discs are looked for", &sf_multidisc_grouping,

@@ -983,9 +983,22 @@ folder_cmp(const void* a, const void* b) {
     /* In Folders mode, mapping is inverted for backward compatibility:
      * - SORT_DEFAULT (0) = Alphabetical (old default behavior)
      * - SORT_NAME (1) = SD Card Order
+     * - SORT_DATE (2) = Release year (disc build date)
      * Sort by slot order when Sort = Name, otherwise alphabetically */
     if (sf_sort[0] == SORT_NAME) {
         return (*item_a)->slot_num - (*item_b)->slot_num;
+    }
+
+    /* Release year: the build date of the disc (IP.BIN, YYYYMMDD), oldest first, games without one last, then by name */
+    if (sf_sort[0] == SORT_DATE && !is_dir_a) {
+        int none_a = (*item_a)->date[0] == '\0', none_b = (*item_b)->date[0] == '\0';
+        if (none_a != none_b) {
+            return none_a - none_b;
+        }
+        int by_date = strcmp((*item_a)->date, (*item_b)->date);
+        if (by_date != 0) {
+            return by_date;
+        }
     }
 
     return strcasecmp((*item_a)->name, (*item_b)->name);

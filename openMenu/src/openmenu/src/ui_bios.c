@@ -348,19 +348,85 @@ games_sync(void) {
     blist_sync(&glist);
 }
 
-/* The five buttons along the bottom (the CD player's, without their pictures) are the list's tools: X moves the cursor
- * there. The leftmost is the recently played list; the others are still free. */
-static const char* const button_names[BLIST_BUTTONS] = {"Recent", "", "", "", ""};
+/* The five buttons along the bottom (the CD player's, without their pictures) are the list's controls: X or Right from the
+ * BACK marker moves the cursor there. From the left: Recent (the recently played popup), Sort (A cycles A-Z, release year,
+ * SD card order; the same setting as Settings > Game order) and Group (only Folder exists so far; the other groups of the
+ * brief need metadata that is not there yet). The two on the right are still free. */
+#define LBTN_RECENT 0
+#define LBTN_SORT 1
+#define LBTN_GROUP 2
+#define BUTTON_TEXT_W 80 /* pixels that fit on a button */
+
+/* The sort modes in the order A cycles them, as sf_sort values: A-Z (SORT_DEFAULT), release year (SORT_DATE), SD order (SORT_NAME) */
+static const uint8_t sort_cycle[3] = {SORT_DEFAULT, SORT_DATE, SORT_NAME};
+static const char* const sort_long[3] = {"Sort A-Z", "Sort Year", "Sort SD"};
+static const char* const sort_short[3] = {"A-Z", "Year", "SD order"};
+
+static int
+sort_index(void) {
+    for (int i = 0; i < 3; i++) {
+        if (sf_sort[0] == sort_cycle[i]) {
+            return i;
+        }
+    }
+    return 0; /* anything else (the other openMenu's sort modes) lists A-Z */
+}
+
+/* The text of button i: the long form if it fits on the button, else the short one. */
+static const char*
+button_text(int i) {
+    const char* lng = "";
+    const char* sht = "";
+    switch (i) {
+        case LBTN_RECENT: lng = sht = "Recent"; break;
+        case LBTN_SORT: lng = sort_long[sort_index()]; sht = sort_short[sort_index()]; break;
+        case LBTN_GROUP: lng = "Group Folder"; sht = "Folder"; break;
+        default: break;
+    }
+    return gfx_text_width(lng) <= BUTTON_TEXT_W ? lng : sht;
+}
 
 static void
 draw_button_text(void) {
     for (int i = 0; i < BLIST_BUTTONS; i++) {
-        if (button_names[i][0]) {
+        const char* text = button_text(i);
+        if (text[0]) {
             float x, y;
             blist_button_center_px(i, &x, &y);
-            gfx_text(button_names[i], x - (float)gfx_text_width(button_names[i]) / 2.0f, y - (float)GFX_LINE_H / 2.0f, 0.5f,
-                     0xFFFFFFFFu, 1);
+            gfx_text(text, x - (float)gfx_text_width(text) / 2.0f, y - (float)GFX_LINE_H / 2.0f, 0.5f, 0xFFFFFFFFu, 1);
         }
+    }
+}
+
+/* Show the list again in the current order, in the folder it was in, with the cursor on the same game. */
+static void
+resort_list(void) {
+    const gd_item* cur = uil_item(uil_cursor());
+    list_view view;
+    char path[LIST_FOLDER_PATH_MAX];
+    list_view_get(&view);
+    snprintf(path, sizeof(path), "%s", view.folder_path ? view.folder_path : "");
+    list_set_folder_root();
+    if (view.kind == LIST_VIEW_FOLDER && path[0]) {
+        list_folder_enter_path(path);
+    }
+    uil_reset();
+    if (cur && !uil_is_folder(cur)) {
+        int row = list_index_of(cur);
+        if (row >= 0) {
+            uil_goto_real(row);
+        }
+    }
+}
+
+/* A on the Sort button: the next order, kept in the save file like the Settings row. */
+static void
+cycle_sort(void) {
+    sf_sort[0] = sort_cycle[(sort_index() + 1) % 3];
+    resort_list();
+    sound_sfx(BAUDIO_SFX_CONFIRM);
+    if (uis_commit() != 0) {
+        show_notice("Could not save settings");
     }
 }
 
@@ -1511,8 +1577,13 @@ handle_games(button_t b) {
             case BTN_A:
             case BTN_START:
                 blist_press_button(&glist, glist.button);
-                if (glist.button == 0) {
+                if (glist.button == LBTN_RECENT) {
                     open_recent();
+                } else if (glist.button == LBTN_SORT) {
+                    cycle_sort();
+                } else if (glist.button == LBTN_GROUP) {
+                    sound_sfx(BAUDIO_SFX_ERROR);
+                    show_notice("Only Folder grouping so far");
                 } else {
                     sound_sfx(BAUDIO_SFX_ERROR);
                 }
