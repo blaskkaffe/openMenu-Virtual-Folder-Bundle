@@ -71,6 +71,9 @@ logo is used. `tools/bios-logo/biologo.py` makes the file: `convert logo.png LOG
 (any PNG, scaled to 128x32, transparency kept) and `extract dc_boot.bin logo.png` saves the
 BIOS logo as a starting point. `BIOS_PREVIEW_LOGO=LOGO.PVR bios_preview ...` shows it on a PC.
 A fully transparent picture hides the logo.
+`tools/bios-logo/make_online_logos.py dc_boot.bin outdir` (at the repo root) writes the online logos as .PVR files (DCNET and "Now!", orange
+and blue; the format of LOGO.PVR: ARGB4444, GBIX + PVRT) and PNGs from your own ROM dump; they contain the ROM's swirl, so they are not in
+the repo. The menu still builds the same pictures itself at run time.
 Online modes (not with a `LOGO.PVR` of your own): while connecting the swirl turns (a turn in 72 frames, the wordmark stays; the swirl is
 drawn as its own rotated quad by `gfx_logo_badge`); once connected the swirl stops and the logo changes to the one for the network. Over a modem or the serial cable the swirl keeps turning (up to 6 s) until the DreamPi has said which network it has selected, so the logo does not flip from "Now!" to "DCNET". Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
 (`gfx_logo_badge`); connected through a DreamPi that has DCNET selected the wordmark is replaced by "DCNET" next to the swirl
