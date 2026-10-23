@@ -1,5 +1,7 @@
 /* ui_internet: see ui_internet.h. The connection, the player list and the online games are the main branch's engine
- * (backend/dcnow_*, dreampi_link, online_games); the events are backend/events_fetch. */
+ * (backend/dcnow_*, dreampi_link, online_games); the events are backend/events_fetch.
+ * Sections as the brief has them, one per button: Online (players and games side by side), Play (browsers; the online game
+ * catalogue is not there yet), Events, News (needs the DreamPi companion) and Settings (connection, interface, ISP, network). */
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -28,7 +30,7 @@
 #define BACK_X (-19.53125f)
 #define BACK_Y (-14.84375f)
 #define BACK_Z (-351.5625f)
-#define PAGES 4
+#define PAGES 5
 #define CUR_BACK (-1)
 
 /* The panel: from where the rows start to the right edge of the rows' area, down to just above the buttons */
@@ -44,8 +46,17 @@
 #define ROWS 7 /* LIST_Y + 7 rows ends above the footer line */
 #define CHAR_W 11 /* the BIOS font's advance */
 
-enum { PAGE_EVENTS, PAGE_PLAYERS, PAGE_GAMES, PAGE_BROWSERS };
-static const char* const page_names[PAGES] = {"Events", "Players", "Games", "Browsers"};
+enum { PAGE_ONLINE, PAGE_PLAY, PAGE_EVENTS, PAGE_NEWS, PAGE_SETTINGS };
+static const char* const page_names[PAGES] = {"Online", "Play", "Events", "News", "Settings"};
+
+/* The lists behind the pages (the Online page has two, Y moves between them) */
+enum { LIST_PLAYERS, LIST_GAMES, LIST_EVENTS, LIST_PLAY, LIST_SETTINGS, LISTS };
+enum { SET_CONNECTION, SET_INTERFACE, SET_ISP, SET_NETWORK, SET_COMPANION, SET_TEST, SET_ROWS };
+
+/* The Online page's columns */
+#define COL_L_X (PANE_X + PAD)
+#define COL_L_W 290.0f
+#define COL_R_X (PANE_X + PAD + 300.0f)
 
 #define WHITE 0xFFFFFFFFu
 #define GREY 0xFFB0B0B0u
@@ -57,9 +68,11 @@ static const char* const page_names[PAGES] = {"Events", "Players", "Games", "Bro
 
 static bmenu* menu;
 static int console_pal;
-static int cursor = PAGE_EVENTS; /* CUR_BACK or the page button */
-static int page = PAGE_EVENTS;
-static int top[PAGES], sel[PAGES];
+static int cursor = PAGE_ONLINE; /* CUR_BACK or the page button */
+static int page = PAGE_ONLINE;
+static int top[LISTS], sel[LISTS];
+static int focus_games; /* the Online page: the games column has the cursor, not the players */
+static int (*start_game_fn)(const gd_item*); /* the game list's start (Serial VMU first); NULL: launch directly */
 static unsigned anim;
 static int probed;
 static int adapter_tried; /* the adapter was connected on its own once since the start */
@@ -164,32 +177,60 @@ find_browsers(void) {
     }
 }
 
-/* Rows of a page: the browsers page has its discs and one more, ISP settings. */
+/* The list the cursor is in on a page, -1 when the page has none. */
 static int
-page_rows(int p) {
+page_list(int p) {
     switch (p) {
-        case PAGE_EVENTS: return nevents;
-        case PAGE_PLAYERS: return nplayers;
-        case PAGE_GAMES: return ngames;
-        default: return nbrowsers + 1;
+        case PAGE_ONLINE: return focus_games ? LIST_GAMES : LIST_PLAYERS;
+        case PAGE_PLAY: return LIST_PLAY;
+        case PAGE_EVENTS: return LIST_EVENTS;
+        case PAGE_SETTINGS: return LIST_SETTINGS;
+        default: return -1;
+    }
+}
+
+/* Rows of a list: the Play page has the browser discs and one more (the catalogue to come). */
+static int
+list_rows(int l) {
+    switch (l) {
+        case LIST_PLAYERS: return nplayers;
+        case LIST_GAMES: return ngames;
+        case LIST_EVENTS: return nevents;
+        case LIST_PLAY: return nbrowsers + 1;
+        default: return SET_ROWS;
     }
 }
 
 static void
-clamp_page(int p) {
-    int n = page_rows(p);
-    if (sel[p] > n - 1) {
-        sel[p] = n - 1;
+clamp_list(int l) {
+    int n = list_rows(l);
+    if (sel[l] > n - 1) {
+        sel[l] = n - 1;
     }
-    if (sel[p] < 0) {
-        sel[p] = 0;
+    if (sel[l] < 0) {
+        sel[l] = 0;
     }
-    if (sel[p] < top[p]) {
-        top[p] = sel[p];
+    if (sel[l] < top[l]) {
+        top[l] = sel[l];
     }
-    if (sel[p] >= top[p] + ROWS) {
-        top[p] = sel[p] - ROWS + 1;
+    if (sel[l] >= top[l] + ROWS) {
+        top[l] = sel[l] - ROWS + 1;
     }
+}
+
+/* Starts a game of the card (through the game list's start when it has one). Returns 1 if that took over. */
+static int
+start_item(const gd_item* g) {
+    if (start_game_fn) {
+        return start_game_fn(g);
+    }
+    launch_disc(g); /* only returns if it could not be started */
+    return 0;
+}
+
+void
+uin_set_launch(int (*start)(const gd_item*)) {
+    start_game_fn = start;
 }
 
 /* ---- connection and fetches ------------------------------------------------------------------------------------------- */
@@ -254,6 +295,31 @@ uin_open(bmenu* m, int pal) {
 
 /* ---- input -------------------------------------------------------------------------------------------------------------- */
 
+/* Settings page rows: the label, and whether it does something yet */
+static const char*
+setting_text(int row, char* out, size_t size) {
+    dcnow_device_t used = dcnow_device_hint();
+    int online = conn.state == DCNOW_CONN_ONLINE;
+    switch (row) {
+        case SET_CONNECTION:
+            snprintf(out, size, "Connection  %s", online ? "Online (A: hang up)" : conn.state == DCNOW_CONN_CONNECTING ? "Connecting..." : "Off (A: connect)");
+            break;
+        case SET_INTERFACE:
+            snprintf(out, size, "Interface  %s", used == DCNOW_DEV_NONE && device == DCNOW_DEV_NONE ? "none found (serial cable?)" : dcnow_device_name(used != DCNOW_DEV_NONE ? used : device));
+            break;
+        case SET_ISP: snprintf(out, size, "ISP settings (coming soon)"); break;
+        case SET_NETWORK: snprintf(out, size, "Preferred network (coming soon)"); break;
+        case SET_COMPANION: snprintf(out, size, "DreamPi add-on  %s", pstat.from_pi ? "in use" : "not used"); break;
+        default: snprintf(out, size, "Network test (coming soon)"); break;
+    }
+    return out;
+}
+
+static int
+setting_dim(int row) {
+    return row == SET_ISP || row == SET_NETWORK || row == SET_TEST;
+}
+
 int
 uin_handle(button_t b) {
     switch (b) {
@@ -277,46 +343,94 @@ uin_handle(button_t b) {
         case BTN_DOWN:
         case BTN_PAGE_UP:
         case BTN_PAGE_DOWN: {
+            int l = page_list(page);
+            if (l < 0) {
+                break;
+            }
             int step = b == BTN_UP ? -1 : b == BTN_DOWN ? 1 : b == BTN_PAGE_UP ? -ROWS : ROWS;
-            int before = sel[page];
-            sel[page] += step;
-            clamp_page(page);
-            if (sel[page] != before) {
+            int before = sel[l];
+            sel[l] += step;
+            clamp_list(l);
+            if (sel[l] != before) {
                 sound_sfx(BAUDIO_SFX_CURSOR);
             }
             break;
         }
+        case BTN_Y: /* the Online page: the other column */
+            if (page == PAGE_ONLINE) {
+                focus_games = !focus_games;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
         case BTN_A:
-        case BTN_START:
+        case BTN_START: {
             if (cursor == CUR_BACK) {
                 sound_sfx(BAUDIO_SFX_CANCEL);
                 events_fetch_abort();
                 return 1;
             }
-            {
-                bvm_obj* o = bvm_find(&menu->vm, ID_BUTTON(cursor));
-                if (o) {
-                    o->var[1] = 1; /* the button jumps, as in the CD player */
-                }
+            bvm_obj* o = bvm_find(&menu->vm, ID_BUTTON(cursor));
+            if (o) {
+                o->var[1] = 1; /* the button jumps, as in the CD player */
             }
-            if (page == PAGE_BROWSERS) {
-                if (sel[page] < nbrowsers) {
-                    sound_sfx(BAUDIO_SFX_ENTER);
-                    launch_disc(browsers[sel[page]]); /* only returns if it could not be started */
+            int online = conn.state == DCNOW_CONN_ONLINE;
+            switch (page) {
+                case PAGE_ONLINE:
+                    if (!online) {
+                        sound_sfx(BAUDIO_SFX_ERROR);
+                        say("Not connected: X connects");
+                    } else if (focus_games && sel[LIST_GAMES] < ngames) { /* join: start the game if it is on the card */
+                        const gd_item* g = games[sel[LIST_GAMES]].on_card ? online_games_find(games[sel[LIST_GAMES]].title) : NULL;
+                        if (g) {
+                            sound_sfx(BAUDIO_SFX_ENTER);
+                            if (!start_item(g)) {
+                                sound_sfx(BAUDIO_SFX_ERROR);
+                                say("Could not start the game");
+                            }
+                        } else {
+                            sound_sfx(BAUDIO_SFX_ERROR);
+                            say("That game is not on your card");
+                        }
+                    } else {
+                        sound_sfx(BAUDIO_SFX_CONFIRM);
+                        start_fetches();
+                    }
+                    break;
+                case PAGE_PLAY:
+                    if (sel[LIST_PLAY] < nbrowsers) {
+                        sound_sfx(BAUDIO_SFX_ENTER);
+                        launch_disc(browsers[sel[LIST_PLAY]]); /* only returns if it could not be started */
+                        sound_sfx(BAUDIO_SFX_ERROR);
+                        say("Could not start the browser");
+                    } else {
+                        sound_sfx(BAUDIO_SFX_ERROR);
+                        say("Online game catalogue: coming soon");
+                    }
+                    break;
+                case PAGE_EVENTS:
+                    if (online) {
+                        sound_sfx(BAUDIO_SFX_CONFIRM);
+                        start_fetches();
+                    } else {
+                        sound_sfx(BAUDIO_SFX_ERROR);
+                        say("Not connected: X connects");
+                    }
+                    break;
+                case PAGE_NEWS:
                     sound_sfx(BAUDIO_SFX_ERROR);
-                    say("Could not start the browser");
-                } else {
-                    sound_sfx(BAUDIO_SFX_ERROR);
-                    say("ISP settings: coming soon");
-                }
-            } else if (conn.state == DCNOW_CONN_ONLINE) {
-                sound_sfx(BAUDIO_SFX_CONFIRM);
-                start_fetches();
-            } else {
-                sound_sfx(BAUDIO_SFX_ERROR);
-                say("Not connected: X connects");
+                    say("News needs the DreamPi companion");
+                    break;
+                default:
+                    if (sel[LIST_SETTINGS] == SET_CONNECTION) {
+                        connect_or_hang_up();
+                    } else {
+                        sound_sfx(setting_dim(sel[LIST_SETTINGS]) ? BAUDIO_SFX_ERROR : BAUDIO_SFX_CURSOR);
+                        say(setting_dim(sel[LIST_SETTINGS]) ? "Coming soon" : "Nothing to change here");
+                    }
+                    break;
             }
             break;
+        }
         case BTN_X: connect_or_hang_up(); break;
         case BTN_B:
             sound_sfx(BAUDIO_SFX_CANCEL);
@@ -398,8 +512,8 @@ uin_sync(void) {
         last_players_fetch = timer_ms_gettime64();
         dcnow_fetch_start();
     }
-    for (int p = 0; p < PAGES; p++) {
-        clamp_page(p);
+    for (int l = 0; l < LISTS; l++) {
+        clamp_list(l);
     }
 
     bvm_obj* back = bvm_find(&menu->vm, ID_BACK);
@@ -459,32 +573,6 @@ draw_status(void) {
     text_cut(line, 44, PANE_X + PAD, PANE_Y + 8.0f, conn.state == DCNOW_CONN_ONLINE ? GREY : YELLOW);
 }
 
-/* the page's heading and what is behind its list */
-static void
-draw_heading(void) {
-    char line[64];
-    switch (page) {
-        case PAGE_EVENTS:
-            snprintf(line, sizeof(line), "Upcoming events%s", nevents ? "" : estat.state == EVENTS_RUNNING ? ": loading" : "");
-            break;
-        case PAGE_PLAYERS: {
-            int net = 0;
-            for (int i = 0; i < nplayers; i++) {
-                net += !strcmp(players[i].network, "DCNET");
-            }
-            if (pstat.list_valid) {
-                snprintf(line, sizeof(line), "Players online: %d  (DCNow! %d, DCNET %d)", pstat.online_total, nplayers - net, net);
-            } else {
-                snprintf(line, sizeof(line), "Players online%s", pstat.state == DCNOW_FETCH_RUNNING ? ": loading" : pstat.state == DCNOW_FETCH_FAILED ? ": failed" : "");
-            }
-            break;
-        }
-        case PAGE_GAMES: snprintf(line, sizeof(line), "Games being played: %d", ngames); break;
-        default: snprintf(line, sizeof(line), "Browsers on the card: %d", nbrowsers); break;
-    }
-    gfx_text(line, PANE_X + PAD, PANE_Y + 40.0f, TEXT_Z, WHITE, 1);
-}
-
 /* What the player fetch is doing or why it failed (its last status line), for the empty lists: "Loading..." alone hides where
  * it stops (the DreamPi add-on, DNS, the connection to the server, the answer). */
 static const char*
@@ -499,78 +587,173 @@ fetch_note(char* out, size_t size) {
     return "Loading...";
 }
 
+/* One row's highlight bar over `w` pixels from x */
 static void
-draw_rows(void) {
-    char line[96];
-    char note[DCNOW_STATUS_WIDTH + 16];
-    int n = page_rows(page);
-    const char* empty = NULL;
-    if (n == 0) {
-        int online = conn.state == DCNOW_CONN_ONLINE;
-        switch (page) {
-            case PAGE_EVENTS: empty = !online ? "Connect to see the events" : estat.state == EVENTS_FAILED ? estat.line : "No events coming"; break;
-            case PAGE_PLAYERS: empty = !online ? "Connect to see who is online" : pstat.list_valid ? "Nobody is online" : fetch_note(note, sizeof(note)); break;
-            case PAGE_GAMES: empty = !online ? "Connect to see the games" : pstat.list_valid ? "Nobody is in a game" : fetch_note(note, sizeof(note)); break;
-            default: break;
-        }
-        if (empty) {
-            text_cut(empty, 44, PANE_X + PAD, LIST_Y, GREY);
-        }
-        return;
+row_bar(float x, float w, float y) {
+    gfx_rect(x - 8.0f, y - 2.0f, w + 8.0f, ROW_H, 0.45f, 0x40FFFFFFu);
+}
+
+/* The Online page: the players on the left, the games being played on the right; Y moves the cursor between them. */
+static void
+draw_online(void) {
+    char line[64];
+    int online = conn.state == DCNOW_CONN_ONLINE;
+    if (pstat.list_valid) {
+        snprintf(line, sizeof(line), "Players: %d", pstat.online_total);
+    } else {
+        snprintf(line, sizeof(line), "Players%s", pstat.state == DCNOW_FETCH_RUNNING ? ": loading" : pstat.state == DCNOW_FETCH_FAILED ? ": failed" : "");
     }
-    for (int r = 0; r < ROWS && top[page] + r < n; r++) {
-        int i = top[page] + r;
+    gfx_text(line, COL_L_X, PANE_Y + 40.0f, TEXT_Z, !focus_games ? YELLOW : WHITE, 1);
+    snprintf(line, sizeof(line), "Games: %d", ngames);
+    gfx_text(line, COL_R_X, PANE_Y + 40.0f, TEXT_Z, focus_games ? YELLOW : WHITE, 1);
+
+    if (nplayers == 0) {
+        char note[DCNOW_STATUS_WIDTH + 16];
+        text_cut(!online ? "Connect to see who is online" : pstat.list_valid ? "Nobody is online" : fetch_note(note, sizeof(note)), 26,
+                 COL_L_X, LIST_Y, GREY);
+    }
+    for (int r = 0; r < ROWS && top[LIST_PLAYERS] + r < nplayers; r++) {
+        int i = top[LIST_PLAYERS] + r;
         float y = LIST_Y + (float)r * ROW_H;
-        int is_sel = i == sel[page];
-        uint32_t col = is_sel ? YELLOW : WHITE;
+        int is_sel = !focus_games && i == sel[LIST_PLAYERS];
         if (is_sel) {
-            gfx_rect(PANE_X + 6.0f, y - 2.0f, PANE_W - 12.0f, ROW_H, 0.45f, 0x40FFFFFFu);
+            row_bar(COL_L_X, COL_L_W - 12.0f, y);
         }
-        switch (page) {
-            case PAGE_EVENTS:
-                gfx_text(events[i].when, PANE_X + PAD, y, TEXT_Z, GREY, 1);
-                text_cut(events[i].title, 27, PANE_X + PAD + 190.0f, y, col);
-                break;
-            case PAGE_PLAYERS:
-                text_cut(players[i].name, 14, PANE_X + PAD, y, col);
-                gfx_text(players[i].network, PANE_X + PAD + 165.0f, y, TEXT_Z, DIM, 1);
-                text_cut(players[i].title[0] ? players[i].title : "(lobby)", 23, PANE_X + PAD + 235.0f, y, players[i].title[0] ? col : DIM);
-                break;
-            case PAGE_GAMES:
-                snprintf(line, sizeof(line), "%2d", games[i].players);
-                gfx_text(line, PANE_X + PAD, y, TEXT_Z, GREY, 1);
-                text_cut(games[i].title, games[i].on_card ? 32 : 41, PANE_X + PAD + 40.0f, y, col);
-                if (games[i].on_card) {
-                    gfx_text("on card", PANE_X + PANE_W - PAD - 77.0f, y, TEXT_Z, DIM, 1);
-                }
-                break;
-            default:
-                text_cut(i < nbrowsers ? browsers[i]->name : "ISP settings...", 42, PANE_X + PAD, y, col);
-                break;
+        text_cut(players[i].name, 13, COL_L_X, y, is_sel ? YELLOW : WHITE);
+        gfx_text(players[i].network, COL_L_X + 150.0f, y, TEXT_Z, DIM, 1);
+    }
+    if (ngames == 0 && online && pstat.list_valid) {
+        text_cut("Nobody is in a game", 19, COL_R_X, LIST_Y, GREY);
+    }
+    for (int r = 0; r < ROWS && top[LIST_GAMES] + r < ngames; r++) {
+        int i = top[LIST_GAMES] + r;
+        float y = LIST_Y + (float)r * ROW_H;
+        int is_sel = focus_games && i == sel[LIST_GAMES];
+        if (is_sel) {
+            row_bar(COL_R_X, 196.0f, y);
+        }
+        snprintf(line, sizeof(line), "%2d", games[i].players);
+        gfx_text(line, COL_R_X, y, TEXT_Z, GREY, 1);
+        text_cut(games[i].title, 14, COL_R_X + 30.0f, y, is_sel ? YELLOW : WHITE);
+        if (games[i].on_card) {
+            gfx_text("*", COL_R_X + 188.0f, y, TEXT_Z, YELLOW, 1);
         }
     }
-    /* more above / below */
-    if (top[page] > 0) {
+    if (top[LIST_PLAYERS] > 0) {
+        gfx_text("^", COL_L_X + COL_L_W - 14.0f, LIST_Y - 4.0f, TEXT_Z, GREY, 1);
+    }
+    if (top[LIST_PLAYERS] + ROWS < nplayers) {
+        gfx_text("v", COL_L_X + COL_L_W - 14.0f, LIST_Y + (ROWS - 1) * ROW_H, TEXT_Z, GREY, 1);
+    }
+}
+
+/* A plain list page: heading, the rows of `l` drawn by `row_text`, the arrows. */
+typedef const char* (*row_text_fn)(int index, char* out, size_t size, uint32_t* colour);
+
+static void
+draw_list(int l, row_text_fn row_text) {
+    int n = list_rows(l);
+    char line[96];
+    for (int r = 0; r < ROWS && top[l] + r < n; r++) {
+        int i = top[l] + r;
+        float y = LIST_Y + (float)r * ROW_H;
+        int is_sel = i == sel[l];
+        uint32_t col = is_sel ? YELLOW : WHITE;
+        const char* text = row_text(i, line, sizeof(line), &col);
+        if (is_sel) {
+            row_bar(PANE_X + PAD, PANE_W - PAD * 2.0f - 12.0f, y);
+        }
+        text_cut(text, 44, PANE_X + PAD, y, is_sel && col == WHITE ? YELLOW : col);
+    }
+    if (top[l] > 0) {
         gfx_text("^", PANE_X + PANE_W - PAD - 11.0f, LIST_Y - 4.0f, TEXT_Z, GREY, 1);
     }
-    if (top[page] + ROWS < n) {
+    if (top[l] + ROWS < n) {
         gfx_text("v", PANE_X + PANE_W - PAD - 11.0f, LIST_Y + (ROWS - 1) * ROW_H, TEXT_Z, GREY, 1);
+    }
+}
+
+static const char*
+play_row(int i, char* out, size_t size, uint32_t* colour) {
+    (void)size;
+    (void)out;
+    if (i < nbrowsers) {
+        return browsers[i]->name;
+    }
+    *colour = DIM;
+    return "Online game catalogue (coming soon)";
+}
+
+static const char*
+event_row(int i, char* out, size_t size, uint32_t* colour) {
+    (void)colour;
+    snprintf(out, size, "%-17.17s %s", events[i].when, events[i].title);
+    return out;
+}
+
+static const char*
+settings_row(int i, char* out, size_t size, uint32_t* colour) {
+    if (setting_dim(i)) {
+        *colour = DIM;
+    }
+    return setting_text(i, out, size);
+}
+
+static void
+draw_page(void) {
+    int online = conn.state == DCNOW_CONN_ONLINE;
+    char line[64];
+    switch (page) {
+        case PAGE_ONLINE: draw_online(); break;
+        case PAGE_PLAY:
+            gfx_text("Browsers on this card", PANE_X + PAD, PANE_Y + 40.0f, TEXT_Z, WHITE, 1);
+            draw_list(LIST_PLAY, play_row);
+            break;
+        case PAGE_EVENTS:
+            snprintf(line, sizeof(line), "Upcoming events%s", nevents ? "" : estat.state == EVENTS_RUNNING ? ": loading" : "");
+            gfx_text(line, PANE_X + PAD, PANE_Y + 40.0f, TEXT_Z, WHITE, 1);
+            if (nevents == 0) {
+                text_cut(!online ? "Connect to see the events" : estat.state == EVENTS_FAILED ? estat.line : "No events coming", 44, PANE_X + PAD, LIST_Y, GREY);
+            } else {
+                draw_list(LIST_EVENTS, event_row);
+            }
+            break;
+        case PAGE_NEWS:
+            gfx_text("Community news", PANE_X + PAD, PANE_Y + 40.0f, TEXT_Z, WHITE, 1);
+            gfx_text("The DreamPi companion will collect the news", PANE_X + PAD, LIST_Y, TEXT_Z, GREY, 1);
+            gfx_text("(DC99, DreamcastLive, ...) and send it here.", PANE_X + PAD, LIST_Y + ROW_H, TEXT_Z, GREY, 1);
+            gfx_text("Not available yet.", PANE_X + PAD, LIST_Y + 3.0f * ROW_H, TEXT_Z, DIM, 1);
+            break;
+        default:
+            gfx_text("Network and DreamPi", PANE_X + PAD, PANE_Y + 40.0f, TEXT_Z, WHITE, 1);
+            draw_list(LIST_SETTINGS, settings_row);
+            break;
     }
 }
 
 static void
 draw_footer(void) {
     const char* text = NULL;
-    char line[64];
+    char line[96];
     if (notice_frames > 0) {
         text = notice;
     } else if (conn.state == DCNOW_CONN_FAILED && conn.count > 2) {
         text = conn.lines[2]; /* the advice that goes with the reason */
+    } else if (page == PAGE_ONLINE) {
+        if (focus_games && sel[LIST_GAMES] < ngames) {
+            text = games[sel[LIST_GAMES]].on_card ? "A: start this game (it is on your card)  Y: players" : "Not on your card  Y: players";
+        } else if (!focus_games && sel[LIST_PLAYERS] < nplayers) {
+            snprintf(line, sizeof(line), "%s: %s  Y: games", players[sel[LIST_PLAYERS]].name,
+                     players[sel[LIST_PLAYERS]].title[0] ? players[sel[LIST_PLAYERS]].title : "in the lobby");
+            text = line;
+        } else {
+            text = "Y: switch between players and games";
+        }
     } else if (page == PAGE_EVENTS && nevents > 0) {
-        snprintf(line, sizeof(line), "%s", events[sel[page]].source);
+        snprintf(line, sizeof(line), "%s", events[sel[LIST_EVENTS]].source);
         text = line;
-    } else if (page == PAGE_BROWSERS) {
-        text = sel[page] < nbrowsers ? "A: start the browser" : "Dial-up and network settings";
+    } else if (page == PAGE_PLAY) {
+        text = sel[LIST_PLAY] < nbrowsers ? "A: start the browser" : "Games with online features, from the DreamPi";
     }
     if (text) {
         text_cut(text, 44, PANE_X + PAD, PANE_Y + PANE_H - 34.0f, DIM);
@@ -582,8 +765,7 @@ uin_draw(void) {
     const bscene_sink* sink = gfx_sink();
     gfx_pane(PANE_X, PANE_Y, PANE_W, PANE_H, PANE_Z, BSCENE_PANE_ARGB);
     draw_status();
-    draw_heading();
-    draw_rows();
+    draw_page();
     draw_footer();
 
     /* BACK and the buttons: BACK lit with its frame blinking while it is selected, the buttons without their pictures */

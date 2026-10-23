@@ -2252,6 +2252,7 @@ ui_bios_run(const bios_rom* rom) {
     set_icon_labels();
     update_clock();
     online_set_hangup_hook(show_hangup);
+    uin_set_launch(start_game); /* games started from the Internet screen restore their Serial VMU first */
     dbglog_boot("menu", (unsigned)timer_ms_gettime64());
 
     /* Cover the first frames (texture uploads) with the start colour so nothing pops in. */

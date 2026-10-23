@@ -218,6 +218,17 @@ Not yet: mouse hover. Untested on hardware: copying and resetting real cards; ba
 - Much later: integrate with DreamPi so that the DreamPi script can load, download and upload saves
   and VMU backups.
 
+## Internet screen layout (ui_internet.c)
+
+One large panel (as the game list's box) with the connection status on top, a page below and a footer line; the CD player's
+five buttons pick the page: Online (players on the left, games being played on the right; Y moves the cursor between the
+columns, A on a game that is on the card starts it through the same start as the game list, A on a player refreshes), Play
+(the browser discs on the card, then a row for the online game catalogue, which needs data from the DreamPi: coming soon),
+Events (upcoming events, refreshed with A), News (placeholder until the DreamPi companion sends news) and Settings (Connection:
+connect or hang up, Interface, ISP settings, Preferred network, DreamPi add-on state, Network test; the ones not built yet are
+dim and say coming soon). X connects or hangs up from any page, B or BACK leaves. The empty player list shows what the fetch is
+doing or why it failed.
+
 ## Todo: Online menu item (blue, takes the place of Music)
 
 - Online players: from DreamcastLive (as openMenu 1.7 does) and from dc99.net. Favourite players.

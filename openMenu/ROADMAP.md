@@ -92,7 +92,7 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 
 | Item | Status | Notes |
 |---|---|---|
-| Sections | Conflict | code: Events, Players, Games, Browsers. Brief: Online (players + games), Play (online catalogue + browser), Events, Settings, plus News |
+| Sections | Done (layout) | buttons: Online (players and games side by side, Y switches column, A on a game starts it if it is on the card), Play (browsers; the online game catalogue row says coming soon), Events, News (placeholder: needs the DreamPi companion), Settings (connection, interface, ISP / preferred network / test as coming soon rows). Untested: written without a console build |
 | Players online | Done | Pi `/players` first, fallbacks; DCNow!/DCNET counts |
 | Games being played | Partial | listed; A refreshes instead of launching the game. Launch by Pi queue works (`dreampi_link.c`) |
 | Star player/game/event + notifications | Missing | needs Pi-side storage or a save-file list, plus the banner (see main menu) |

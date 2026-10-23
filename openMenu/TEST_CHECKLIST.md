@@ -142,9 +142,10 @@ Drops to 30fps
 - [ ] Serial: launch a game while online (hangs up first); Alien Front Online then dials over serial by itself (needs the console's ISP settings set to the serial port)
 - [ ] Nothing on the serial port and no modem: "No modem, network adapter, or DreamPi on the serial port"
 - [ ] Events: upcoming DC99 events from the DreamPi add-on; without the add-on from dc99.net (only if it answers plain http)
+- [ ] Layout (written without a console build): five buttons Online / Play / Events / News / Settings fit the CD buttons; Online shows Players left and Games right, Y switches the yellow heading, rows and arrows scroll, footer shows the selected player's game; Play lists the browsers + a dim catalogue row; News shows its placeholder; Settings rows: A on Connection connects/hangs up, the others say coming soon
 - [ ] Players: DCNow! and DCNET players (from the DreamPi add-on, else dreamcast.online), refresh as set
-- [ ] Games: games being played with player counts, "on card" for the ones on the SD card
-- [ ] Browsers: browser discs on the card start with A; ISP settings row says "coming soon"
+- [ ] Games: games being played with player counts, "*" for the ones on the SD card; A on one of those starts it (through the Serial VMU restore when that is on)
+- [ ] Play: browser discs on the card start with A; the catalogue row says "coming soon"
 - [ ] VMU online status, Online time sync, phone page launch (DreamPi openMenu link) work as on the main branch
 
 ### Settings / date and time / About
