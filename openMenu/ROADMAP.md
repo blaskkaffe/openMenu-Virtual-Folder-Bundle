@@ -103,7 +103,7 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 | ISP settings editor | Missing | OPEN item 3; "coming soon" row; flash format partly decoded |
 | DreamPi Ethernet / Wi-Fi settings | Blocked | Pi-side endpoints first |
 | Network selection global + per game | Partial | the Pi switch exists, no UI (decision 6) |
-| Interface tests (modem, BBA, serial, W5500) | Missing | connection engine covers modem/BBA/LAN/serial; W5500 not in `dcnow_net.c` |
+| Interface tests (modem, BBA, serial, W5500) | Missing | connection engine covers modem/BBA/LAN/serial (as the main branch: modem, BBA, LAN); W5500 is in no engine here or on main |
 | Serial PPP to DreamPi | Done in code | hardware test open (OPEN item 6) |
 
 ## 7. Settings menu

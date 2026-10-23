@@ -2267,6 +2267,9 @@ ui_bios_run(const bios_rom* rom) {
         serial_log_block("boot", b2);
     }
 
+    /* Auto-Connect dials on its own thread. It starts here, with the screen and the sound driver up: probing the modem or
+     * adapter (G2 bus) while they were being set up could upset either. */
+    online_boot();
     svmu_item = NULL;
     svmu_begin_backup(); /* the last game's VMU goes back to the serial SD card, if it left a note */
 

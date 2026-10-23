@@ -132,6 +132,7 @@ Drops to 30fps
 - [ ] A on a game starts it at once (no launch animation, no Launch animation row in Settings)
 
 ### Internet (Settings > Online > Online features On)
+- [ ] "Never connects" (modem, serial, W5500 all tried): changes made without a console build, none proven to be the cause: Auto-Connect now starts after the menu and sound driver are up (it used to start on a thread while they were set up), a BBA/LAN adapter connects when the Internet screen opens (as the main branch's window does), and a failed connect shows the reason on the status line and the advice at the bottom. Please report the text after pressing X (or after Auto-Connect, then opening Internet). W5500 is in neither this branch nor the main branch's engine (only modem, BBA, LAN, serial)
 - [ ] The Music icon reads Internet and opens the Internet screen (Off: Music and the CD player as before)
 - [ ] X connects (modem: dials DreamPi; adapter: the console's settings), X again hangs up; Auto-Connect dials at boot
 - [ ] Serial cable to DreamPi 2.0+ (no adapter): X shows "Serial: Looking for DreamPi... OK", dials, "PPP: Connected", status reads "Online via serial cable"; DreamPi log shows AT / OK / ATDT1111111 / CONNECT

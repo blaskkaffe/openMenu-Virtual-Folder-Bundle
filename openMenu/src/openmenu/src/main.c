@@ -59,7 +59,6 @@ main(int argc, char* argv[]) {
     savefile_init();
     uis_apply_card_defaults(); /* the card's [BIOSMENU] defaults (stock Card Manager), before online_boot reads them */
     dbglog_boot("save", (unsigned)timer_ms_gettime64());
-    online_boot(); /* Auto-Connect dials on its own thread while the game list loads */
 
     if (list_read_default() == 0) {
         list_folder_init();
@@ -71,6 +70,7 @@ main(int argc, char* argv[]) {
     if (rom_err == BIOS_ROM_OK) {
         ui_bios_run(&rom); /* only returns if the PVR cannot be set up */
     }
+    online_boot(); /* the plain screen has no menu to start it from */
     ui_fallback_run(status);
 
     savefile_close();

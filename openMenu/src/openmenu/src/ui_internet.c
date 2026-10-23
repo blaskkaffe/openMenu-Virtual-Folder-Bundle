@@ -62,6 +62,7 @@ static int page = PAGE_EVENTS;
 static int top[PAGES], sel[PAGES];
 static unsigned anim;
 static int probed;
+static int adapter_tried; /* the adapter was connected on its own once since the start */
 static dcnow_device_t device = DCNOW_DEV_NONE;
 static dcnow_isp_t isp;
 static dcnow_status_t conn;
@@ -361,6 +362,13 @@ uin_sync(void) {
         /* the expansion port is probed once the screen shows (it can take a moment), as the main branch's window */
         probed = 1;
         device = dcnow_detect_device();
+        /* An adapter needs no Connect step (the main branch's window connects it at once); a modem or the serial cable waits
+         * for X, since a dial takes the phone line. Only once per start: after a hang-up X connects again. */
+        dcnow_conn_poll(&conn);
+        if (!adapter_tried && conn.state == DCNOW_CONN_IDLE && (device == DCNOW_DEV_BBA || device == DCNOW_DEV_LAN)) {
+            adapter_tried = 1;
+            connect_or_hang_up();
+        }
     }
     dcnow_conn_poll(&conn);
     int online = conn.state == DCNOW_CONN_ONLINE;
@@ -441,7 +449,8 @@ draw_status(void) {
             break;
         case DCNOW_CONN_COOLDOWN: snprintf(line, sizeof(line), "Wait %d s before calling again", conn.cooldown_seconds); break;
         case DCNOW_CONN_FAILED:
-            snprintf(line, sizeof(line), "%s  X: retry", conn.count > 0 ? conn.lines[conn.count - 1] : "Connection failed");
+            /* the engine's failure lines are "Connection failed.", the reason, and advice when there is any: show the reason */
+            snprintf(line, sizeof(line), "%s  X: retry", conn.count > 1 ? conn.lines[1] : conn.count > 0 ? conn.lines[0] : "Connection failed");
             break;
         default:
             snprintf(line, sizeof(line), "%s", !probed ? "Looking for a modem..." : device == DCNOW_DEV_NONE ? "Not connected  X: connect by serial cable" : "Not connected  X: connect");
@@ -540,6 +549,8 @@ draw_footer(void) {
     char line[64];
     if (notice_frames > 0) {
         text = notice;
+    } else if (conn.state == DCNOW_CONN_FAILED && conn.count > 2) {
+        text = conn.lines[2]; /* the advice that goes with the reason */
     } else if (page == PAGE_EVENTS && nevents > 0) {
         snprintf(line, sizeof(line), "%s", events[sel[page]].source);
         text = line;
