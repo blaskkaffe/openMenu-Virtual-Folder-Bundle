@@ -93,7 +93,7 @@ Mark OK / FAIL / n.a. and write what you saw.
 - [-] Logo setting (BIOS logo vs custom), language rows present? - language rows are not present, logo setting present but only affects when launching games, not openmenu itself
 
 ### Game list
-- [ ] Bottom row (not compiled for the console yet, written without KOS): Sort button cycles A-Z / Year / SD order and the list follows, in a subfolder too, cursor stays on the game; Settings > Game order shows the same value; labels fit on the buttons (long form or short); Group says "Only Folder grouping so far"
+- [ ] Bottom row (not compiled for the console yet, written without KOS): Sort button cycles A-Z / Year / SD order and the list follows, in a subfolder too, cursor stays on the game; Settings > Game order shows the same value; labels fit on the buttons (long form or short); Folders jumps to the top of the tree from a subfolder; Favorites and Group show their notices
 - [ ] New layout (one box, 7 rows, disc only on the selected row, disc number as 3D digits on the CD): titles readable at the 37 px pitch (try 9 rows too: `UIL_VISIBLE`), box corners/left edge clean, right panel lines up with the box, digits readable on a CRT, fps, `BVM_MAX_OBJECTS` 128 memory
 Drops to 30fps
 - [x] 5 rows, titles readable, long titles scroll, multi-disc pill, GD discs, BACK + 5 buttons with info  - Back button in normal dreamcast Bios has yellow blinking frame when selected, othwerwise no blinking or yellow frame. This build it is not selectable at all.

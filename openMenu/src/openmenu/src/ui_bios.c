@@ -349,12 +349,15 @@ games_sync(void) {
 }
 
 /* The five buttons along the bottom (the CD player's, without their pictures) are the list's controls: X or Right from the
- * BACK marker moves the cursor there. From the left: Recent (the recently played popup), Sort (A cycles A-Z, release year,
- * SD card order; the same setting as Settings > Game order) and Group (only Folder exists so far; the other groups of the
- * brief need metadata that is not there yet). The two on the right are still free. */
+ * BACK marker moves the cursor there. From the left: Recent (the recently played popup), Favorites (not there yet: it
+ * needs a list of its own in a separate file and a key to star a game, see ROADMAP.md), Folders (back to the top of the
+ * folder tree), Sort (A cycles A-Z, release year, SD card order; the same setting as Settings > Game order) and Group
+ * (the other groups of the brief need metadata that is not there yet). */
 #define LBTN_RECENT 0
-#define LBTN_SORT 1
-#define LBTN_GROUP 2
+#define LBTN_FAVORITES 1
+#define LBTN_FOLDERS 2
+#define LBTN_SORT 3
+#define LBTN_GROUP 4
 #define BUTTON_TEXT_W 80 /* pixels that fit on a button */
 
 /* The sort modes in the order A cycles them, as sf_sort values: A-Z (SORT_DEFAULT), release year (SORT_DATE), SD order (SORT_NAME) */
@@ -380,7 +383,9 @@ button_text(int i) {
     switch (i) {
         case LBTN_RECENT: lng = sht = "Recent"; break;
         case LBTN_SORT: lng = sort_long[sort_index()]; sht = sort_short[sort_index()]; break;
-        case LBTN_GROUP: lng = "Group Folder"; sht = "Folder"; break;
+        case LBTN_FAVORITES: lng = "Favorites"; sht = "Favs"; break;
+        case LBTN_FOLDERS: lng = sht = "Folders"; break;
+        case LBTN_GROUP: lng = "Group None"; sht = "Group"; break;
         default: break;
     }
     return gfx_text_width(lng) <= BUTTON_TEXT_W ? lng : sht;
@@ -416,6 +421,24 @@ resort_list(void) {
         if (row >= 0) {
             uil_goto_real(row);
         }
+    }
+}
+
+/* A on the Folders button: the top of the folder tree, with the cursor on the list again. */
+static void
+go_folders(void) {
+    list_set_folder_root();
+    uil_reset();
+    glist.button = -1;
+    int folders = 0;
+    for (int i = 0; i < uil_count(); i++) {
+        folders |= uil_is_folder(uil_item(i));
+    }
+    if (folders) {
+        sound_sfx(BAUDIO_SFX_CONFIRM);
+    } else {
+        sound_sfx(BAUDIO_SFX_ERROR);
+        show_notice("No folders on this card");
     }
 }
 
@@ -1579,11 +1602,16 @@ handle_games(button_t b) {
                 blist_press_button(&glist, glist.button);
                 if (glist.button == LBTN_RECENT) {
                     open_recent();
+                } else if (glist.button == LBTN_FAVORITES) {
+                    sound_sfx(BAUDIO_SFX_ERROR);
+                    show_notice("Favorites not available yet");
+                } else if (glist.button == LBTN_FOLDERS) {
+                    go_folders();
                 } else if (glist.button == LBTN_SORT) {
                     cycle_sort();
                 } else if (glist.button == LBTN_GROUP) {
                     sound_sfx(BAUDIO_SFX_ERROR);
-                    show_notice("Only Folder grouping so far");
+                    show_notice("No other groups yet");
                 } else {
                     sound_sfx(BAUDIO_SFX_ERROR);
                 }

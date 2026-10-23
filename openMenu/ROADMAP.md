@@ -60,12 +60,12 @@ background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's
 | Spinning GD-ROM disc with the game's label | Done | DISC.DAT from the Card Manager, fallbacks to ICON.DAT / region disc |
 | 3D jewel case with front art | Done | back art slot exists (`BMODEL_TEX_BACK`) but nothing fills it |
 | Info beside the art | Partial | product, region, players, VMU blocks, disc count on the bottom buttons; no genre, no description. The brief also wants the favourite star and genre on the list itself |
-| Favourite / star | Missing | needs a save-file list and a key |
+| Favourite / star | Missing | needs a save-file list and a key; the Favorites bottom button exists and says not available yet |
 | Disc number on multi-disc | Done | 3D digits at the bottom right of the spinning CD (selected row only, no total); Compact mode, Left/Right pick the disc |
 | Sort A-Z / SD order | Done | Settings > Game order, and the Sort button on the bottom row |
 | Sort by release year | Partial | by the disc's IP.BIN build date (decision 4, option b): oldest first, no date last. Real release years need META2.DAT |
 | Group control (Folder, Favourites, Genre, ...) | Partial | only Folder and Recently played. Genre filter code exists in gd_list.c (`list_set_genre`) but is off: genre data is unreliable (NEWMENU todo). Modem/BBA from META.DAT `network`; Serial and W5500 need version tags (decision 5); Homebrew/Tools/Browsers need a tag too (browsers are found by name today) |
-| Sort and group as separate controls on the bottom row | Partial | bottom row: Recent, Sort (A cycles A-Z / Year / SD order, shows the active one, saved), Group (shows Folder; A says only Folder exists). Two buttons free. Group needs the other groups first |
+| Sort and group as separate controls on the bottom row | Partial | bottom row, left to right: Recent, Favorites (button only: says not available yet), Folders (top of the folder tree), Sort (A cycles A-Z / Year / SD order, shows the active one, saved), Group (shows None; says no other groups yet). Group needs the other groups first |
 | Disc organisation setting | Done | Settings > Multi-disc games, Disc sets from |
 | Version organisation | Missing | decision 5 |
 | X popup: cheats | Missing | no cheat code in this branch (removed in Phase 0) |

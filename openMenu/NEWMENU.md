@@ -142,11 +142,12 @@ list on other rows). Multi-disc titles use the full title width. The BACK marker
 
 Game list bottom row: the BACK marker and the CD player's five buttons (without their pictures)
 sit where they do in the CD player (X or Right from BACK reaches them, B goes on to the main menu). Button 1 is
-Recent (the recently played popup), button 2 Sort (A cycles A-Z, Release year, SD card order and shows the
-active one; it is the Settings > Game order value `sf_sort`, saved at once, and the list is rebuilt in the same
-folder with the cursor on the same game), button 3 Group (shows Folder; A answers that only Folder exists yet),
-buttons 4 and 5 are free. The text is the long form ("Sort A-Z") when it fits in 80 px, else the short one
-(`button_text` in `ui_bios.c`). Release year is the IP.BIN build date of the disc (`folder_cmp` in `gd_list.c`).
+Recent (the recently played popup), button 2 Favorites (only the button so far: it says "not available yet", since
+favourites need a list in a separate file and a key to star a game), button 3 Folders (A goes to the top of the folder
+tree and back to the list), button 4 Sort (A cycles A-Z, Release year, SD card order and shows the active one; it is
+the Settings > Game order value `sf_sort`, saved at once, and the list is rebuilt in the same folder with the cursor on
+the same game), button 5 Group (shows None; A says there are no other groups yet). The text is the long form
+("Sort A-Z") when it fits in 80 px, else the short one (`button_text` in `ui_bios.c`). Release year is the IP.BIN build date of the disc (`folder_cmp` in `gd_list.c`).
 
 Disc colour: a game without icon art shows the BIOS disc of its region, chosen from the serial number
 (`serial_region.c`): PAL (Sega MK + 7 digits, third party ...D, ...D50, ...N50) gets the blue disc,
