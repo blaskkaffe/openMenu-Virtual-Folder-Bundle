@@ -13,10 +13,14 @@ TOP, BOT = 7.6, 24.6
 CAP = BOT - TOP
 XT = 12.4                  # x-height top
 MID = (TOP + BOT) / 2
-TS = 2.1                   # thick stroke (stems, thick diagonals)
-TN = 1.25                  # thin stroke (arms, tops and bottoms of bowls)
+TS = 2.5                   # thick stroke (stems, thick diagonals)
+TN = 1.75                  # thin stroke (arms, tops and bottoms of bowls)
 SX = 0.9                   # glyphs are drawn a little wide and squeezed horizontally by this
 FL = 0.6                   # flare added at stroke ends
+
+SHARP = 2.6     # edge contrast: the coverage is pushed away from the middle, so edges are one crisp step instead of a two-pixel smear
+def sharpen_curve(v):
+    return max(0, min(255, int(((v / 255.0 - 0.5) * SHARP + 0.5) * 255 + 0.5)))
 
 class Glyph:
     def __init__(self, ox):
@@ -63,8 +67,8 @@ def C(ox):
     return g, 16.3
 def N(ox):
     g = Glyph(ox)
-    stem(g, 1.0, TOP, BOT, 1.3, 0.5, 0.5)
-    stem(g, 15.4, TOP, BOT, 1.3, 0.5, 0.5)
+    stem(g, 1.1, TOP, BOT, 1.9, 0.5, 0.5)
+    stem(g, 15.3, TOP, BOT, 1.9, 0.5, 0.5)
     g.poly([(0.4, TOP), (3.6, TOP), (15.9, BOT), (12.7, BOT)])   # the thick diagonal
     return g, 16.2
 def E(ox):
@@ -107,7 +111,8 @@ def render(glyphs, width, gaps, x0=0.8):
         g, adv = fn(x)
         out = ImageChops.lighter(out, g.img)
         x += adv * SX + gap
-    return out.crop((0, 0, width * SS, 32 * SS)).resize((width, 32), Image.BOX)
+    small = out.crop((0, 0, width * SS, 32 * SS)).resize((width, 32), Image.BOX)
+    return small.point(sharpen_curve)
 
 def write_pvr(img, path):
     """ARGB4444 rectangle texture with a GBIX header: the format of LOGO.PVR (tools/bios-logo/biologo.py). Sizes are powers of two, which
@@ -135,6 +140,7 @@ if __name__ == '__main__':
     outdir = os.environ.get('LOGO_OUT', os.path.join(here, '..', '..', 'GD MENU Card Manager', 'src', 'GDMENUCardManager.Core', 'tools', 'openMenu', 'menu_data'))
     pics = {'DCNET.PVR': white_text(render([D, C, N, E, T], 88, [1.6, 1.7, 1.5, 1.5, 0]), 128),
             'NOW.PVR': white_text(render([N, o, w, bang], 56, [1.5, 1.1, 1.2, 0]), 64)}
+    os.makedirs(outdir, exist_ok=True)
     for name, img in pics.items():
         write_pvr(img, os.path.join(outdir, name))
         print('wrote', os.path.join(outdir, name), img.size)
