@@ -162,6 +162,40 @@ static dbglog_sample last_sample;
 
 static char status_line[64];
 
+/* The top bar of the main menu, in the row above the clock: a lamp for the connection (green online, yellow connecting, red
+ * failed, grey not connected) and the player count when there is a list. Only while Online features is on. */
+#define HEADER_STATUS_RIGHT 612.0f /* the clock's right edge */
+#define HEADER_STATUS_Y 12.0f
+#define HEADER_STATUS_SCALE 0.62f
+
+static void
+draw_header_status(void) {
+    online_header h;
+    char text[40];
+    online_header_get(&h);
+    if (!h.shown) {
+        return;
+    }
+    static const uint32_t lamp[4] = {0xFF909090u, 0xFFF0D040u, 0xFF40D060u, 0xFFE04040u};
+    switch (h.state) {
+        case 2:
+            if (h.players >= 0) {
+                snprintf(text, sizeof(text), "Online  %d player%s", h.players, h.players == 1 ? "" : "s");
+            } else {
+                snprintf(text, sizeof(text), "Online");
+            }
+            break;
+        case 1: snprintf(text, sizeof(text), "Connecting..."); break;
+        case 3: snprintf(text, sizeof(text), "No connection"); break;
+        default: snprintf(text, sizeof(text), "Offline"); break;
+    }
+    float w = (float)gfx_text_width(text) * HEADER_STATUS_SCALE;
+    float x = HEADER_STATUS_RIGHT - w;
+    uint32_t colour = h.state == 2 ? 0xFF202020u : 0xFF505050u; /* dark text on the grey bar, as the clock */
+    gfx_rect(x - 16.0f, HEADER_STATUS_Y + 7.0f, 10.0f, 10.0f, 0.5f, lamp[h.state]);
+    gfx_text_scaled(text, x, HEADER_STATUS_Y, 0.5f, colour, HEADER_STATUS_SCALE);
+}
+
 /* The BIOS shows the date and time in the header bar, in its own small antialiased font (fx_debug_hex_text
  * 0x8C021FC0): the header's 256x32 text surface, from (40, 16). Format of format_datetime_string 0x8C01BAE0 for the
  * console's date order; the console's clock holds local time. */
@@ -1241,6 +1275,9 @@ draw_frame(void) {
                 draw_options();
             }
         }
+    }
+    if (screen == SCREEN_MAIN) {
+        draw_header_status();
     }
     if (svmu_active()) {
         draw_svmu();

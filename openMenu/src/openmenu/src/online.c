@@ -4,9 +4,12 @@
 #include <dc/maple.h>
 #include <dc/maple/vmu.h>
 
+#include <arch/timer.h>
+
 #include <openmenu_savefile.h>
 #include <openmenu_settings.h>
 
+#include "backend/dcnow_fetch.h"
 #include "backend/dcnow_net.h"
 #include "backend/dcnow_vmu.h"
 #include "backend/dreampi_link.h"
@@ -55,9 +58,68 @@ vmu_lcd_check_insertions(void) {
     }
 }
 
+/* The top bar shows the player count, so the list is read once a link is up even when nobody has opened the Internet screen. The
+ * online games code keeps it fresh when it can; with the DreamPi add-on it does not use the list, so this keeps it fresh then. */
+static void
+header_fetch_tick(void) {
+    static uint64_t last_start;
+    dcnow_status_t conn;
+    dcnow_fetch_status_t fetch;
+
+    if (sf_dcnow[0] == DCNOW_OFF) {
+        return;
+    }
+    dcnow_conn_poll(&conn);
+    if (conn.state != DCNOW_CONN_ONLINE) {
+        return;
+    }
+    dcnow_fetch_poll(&fetch);
+    if (fetch.state == DCNOW_FETCH_RUNNING) {
+        last_start = timer_ms_gettime64();
+        return;
+    }
+    if (!fetch.list_valid && fetch.state == DCNOW_FETCH_IDLE) {
+        last_start = timer_ms_gettime64();
+        dcnow_fetch_start(); /* once per link: a failure leaves the state FAILED, not IDLE, until the Internet screen retries */
+    } else if (fetch.list_valid && dreampi_link_playing_known()) {
+        int seconds = dcnow_refresh_seconds(sf_dcnow_refresh[0]);
+        if (seconds > 0 && timer_ms_gettime64() - last_start >= (uint64_t)seconds * 1000u) {
+            last_start = timer_ms_gettime64();
+            dcnow_fetch_start();
+        }
+    }
+}
+
+void
+online_header_get(online_header* out) {
+    dcnow_status_t conn;
+    dcnow_fetch_status_t fetch;
+
+    out->shown = sf_dcnow[0] != DCNOW_OFF;
+    out->state = 0;
+    out->players = -1;
+    if (!out->shown) {
+        return;
+    }
+    dcnow_conn_poll(&conn);
+    switch (conn.state) {
+        case DCNOW_CONN_ONLINE: out->state = 2; break;
+        case DCNOW_CONN_CONNECTING: out->state = conn.hanging_up ? 0 : 1; break;
+        case DCNOW_CONN_FAILED: out->state = 3; break;
+        default: break;
+    }
+    if (out->state == 2) {
+        dcnow_fetch_poll(&fetch);
+        if (fetch.list_valid) {
+            out->players = fetch.online_total;
+        }
+    }
+}
+
 void
 online_tick(int menu_idle) {
     vmu_lcd_check_insertions();
+    header_fetch_tick();
     dcnow_conn_tick();
     dreampi_link_ui_idle(menu_idle);
     dreampi_link_tick();

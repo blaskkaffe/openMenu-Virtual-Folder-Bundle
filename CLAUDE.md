@@ -27,6 +27,7 @@ has no right panel; real text/art only on the PVR path (hardware).
 - Serial VMU: `serial_vmu.c/.h` (restore before launch, backup at start; ported from main's `ui_menu_credits.c`, same SD layout; single image, no Slots). State machine host-tested with a fake VMU and SD folder (build with `-DSVMU_HOST_TEST -DSVMU_SD=... -DSVMU_EMPTY_VMU=...` and stub headers); the popup in `ui_bios.c` (`start_game`, `svmu_tick`) is not compiled.
 - Online ("never connects", modem/serial/W5500 all tried): not diagnosed. Compared with main (`git diff origin/main HEAD -- openMenu/src/openmenu/src/backend/dcnow_net.c`): the engine is main's plus a serial-cable path that probes the serial port before the modem dial. Changes so far (untested): Auto-Connect starts after gfx/sound init, adapters connect on opening Internet, failure reason/advice shown. W5500 is in no engine. Needs the failure text from the owner.
 - Internet screen (`ui_internet.c`): pages Online / Play / Events / News / Settings on the five CD buttons; syntax-checked on the host (`gcc -fsyntax-only` with a stub `arch/timer.h`, include paths of openmenu_shared/settings/bios_engine/bios_rom and external/crayon_savefile), not run.
+- Main menu top bar: `draw_header_status` in `ui_bios.c` (lamp + "Online  N players" above the clock, right edge x=612, y=12, scale 0.62; layout checked only in a mock-up on the preview image), data from `online_header_get` in `online.c`. Not compiled.
 - `BVM_MAX_OBJECTS` is 128 (13 rows need it).
 
 ## Open items
