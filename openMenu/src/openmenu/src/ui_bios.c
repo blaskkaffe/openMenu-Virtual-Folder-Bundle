@@ -169,7 +169,7 @@ static void
 update_logo_mode(void) {
     online_header oh;
     online_header_get(&oh);
-    gfx_set_logo_mode(!oh.shown ? 0 : oh.state == 1 ? 3 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1);
+    gfx_set_logo_mode(!oh.shown ? 0 : oh.state == 1 || (oh.state == 2 && oh.pi_pending) ? 3 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1);
 }
 
 /* The BIOS shows the date and time in the header bar, in its own small antialiased font (fx_debug_hex_text

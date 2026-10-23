@@ -100,6 +100,7 @@ online_header_get(online_header* out) {
     out->players = -1;
     out->dcnow = out->dcnet = 0;
     out->network = 0;
+    out->pi_pending = 0;
     if (!out->shown) {
         return;
     }
@@ -110,8 +111,20 @@ online_header_get(online_header* out) {
         case DCNOW_CONN_FAILED: out->state = 3; break;
         default: break;
     }
+    static uint64_t online_since;
+    if (out->state != 2) {
+        online_since = 0;
+    }
     if (out->state == 2) {
         out->network = dreampi_link_network();
+        if (online_since == 0) {
+            online_since = timer_ms_gettime64();
+        }
+        dcnow_device_t used = dcnow_device_hint();
+        if ((used == DCNOW_DEV_MODEM || used == DCNOW_DEV_SERIAL) && out->network == 0 && !dreampi_link_playing_known()
+            && timer_ms_gettime64() - online_since < 6000u) {
+            out->pi_pending = 1;
+        }
         dcnow_fetch_poll(&fetch);
         if (fetch.list_valid) {
             out->players = fetch.online_total;
