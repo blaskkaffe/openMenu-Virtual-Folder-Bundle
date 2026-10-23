@@ -1,7 +1,8 @@
 /*
- * bios_list: a dense version of the BIOS Settings look for browsing games. Five or seven rows
- * (a pill, a 3D disc and a text line each) take about 60% of the screen width, leaving room on
- * the right for the box art. The selected row's disc spins like the CD player's. Portable C.
+ * bios_list: a dense version of the BIOS Settings look for browsing games. One tall box about 60%
+ * of the screen wide holds 5 to 13 text lines (the box has a fixed height, the line spacing
+ * shrinks as lines are added), leaving room on the right for the box art. Only the selected line
+ * has a lit pill and a 3D disc, which spins like the CD player's. Portable C.
  */
 #ifndef BIOS_LIST_H
 #define BIOS_LIST_H
@@ -12,7 +13,7 @@
 extern "C" {
 #endif
 
-#define BLIST_MAX_SLOTS 7
+#define BLIST_MAX_SLOTS 13
 
 /* Text object ids of the rows (left aligned, one string each). */
 #define BLIST_TEXT_ID(slot) (0x17C0 + (slot))
@@ -35,7 +36,7 @@ extern "C" {
 
 typedef struct blist {
     bmenu* m;
-    int slots; /* rows shown: 5 or 7 */
+    int slots; /* rows shown: 1..BLIST_MAX_SLOTS, all in the same box */
     int count; /* rows in the list */
     int cursor;
     int top;

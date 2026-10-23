@@ -21,7 +21,7 @@
 extern "C" {
 #endif
 
-#define BVM_MAX_OBJECTS 64
+#define BVM_MAX_OBJECTS 128 /* 13 list rows need 6 objects each, plus the box, BACK and buttons */
 #define BVM_TRACKS 4
 #define BVM_VARS 16
 #define BVM_STEP_BUDGET 4096 /* instructions one track may run before yielding */

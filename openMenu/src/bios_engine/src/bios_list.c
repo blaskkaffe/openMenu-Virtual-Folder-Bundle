@@ -41,8 +41,12 @@
 #define BACK_SCALE 1.0f
 #define BUTTON_Y (-14.84375f)
 #define ID_BUTTON(i) ((uint16_t)(0x1301 + (i)))
-#define Y_CENTER_5 3.53f /* five rows: centred at y = 200 px */
-#define Y_CENTER 2.47f /* the rows sit above the buttons: centred at y = 212 px */
+/* The box: one bar for all rows, fixed in size so that any number of rows fits the space five rows
+ * had (above the BACK marker and the buttons). */
+#define BOX_TOP_PX 46.0f
+#define BOX_BOTTOM_PX 352.0f
+#define BOX_PAD_PX 8.0f
+#define BAR_H_PX 53.0f /* height of the row bar model at ROW_SY */
 
 /* the selected disc spins as the CD player's (script 0x1c), per frame in the original's angle units */
 #define SPIN_Y 140 /* 0.77 degrees: 0x10000 = 360 degrees */
@@ -69,9 +73,7 @@ blist_open(blist* l, bmenu* m, int slots, int count) {
     l->button = -1;
     l->anim = 0;
     bvm_kill_all(&m->vm);
-    for (int s = 0; s < l->slots; s++) {
-        bvm_create(&m->vm, proto.anchor_script, ID_ANCHOR(s), PRIO);
-    }
+    bvm_create(&m->vm, proto.anchor_script, ID_ANCHOR(0), PRIO); /* the one box bar */
     for (int s = 0; s < l->slots; s++) {
         bvm_create(&m->vm, proto.pill_script, ID_PILL(s), PRIO);
     }
@@ -190,6 +192,7 @@ blist_button_center_px(int i, float* x, float* y) {
 }
 
 static float row_y(const blist* l, int s);
+static float pitch_px(int slots);
 
 int
 blist_back_at_px(float x, float y) {
@@ -204,7 +207,8 @@ blist_slot_at_px(const blist* l, float x, float y) {
     }
     for (int s = 0; s < l->slots; s++) {
         float cy = 240.0f - row_y(l, s) * PX_PER_UNIT;
-        if (y >= cy - 27.0f && y <= cy + 27.0f && blist_row_in_slot(l, s) >= 0) {
+        float half = pitch_px(l->slots) * 0.5f;
+        if (y >= cy - half && y <= cy + half && blist_row_in_slot(l, s) >= 0) {
             return s;
         }
     }
@@ -213,8 +217,9 @@ blist_slot_at_px(const blist* l, float x, float y) {
 
 void
 blist_rows_extent_px(const blist* l, float* top, float* bottom) {
-    *top = 240.0f - row_y(l, 0) * PX_PER_UNIT - 28.5f; /* the bars are about 53 px high; the panel starts 2 px higher (checked on a console) */
-    *bottom = 240.0f - row_y(l, l->slots - 1) * PX_PER_UNIT + 26.5f;
+    (void)l;
+    *top = BOX_TOP_PX;
+    *bottom = BOX_BOTTOM_PX;
 }
 
 float
@@ -222,22 +227,18 @@ blist_row_right_px(void) {
     return 320.0f + (ANCHOR_X + (BAR_CAP_L + (BAR_CAP_R - BAR_CAP_L) * BAR_MIDDLE_F + 1.0f) * 0.8671875f) * PX_PER_UNIT;
 }
 
-/* Distance between rows in pixels: the bars are about 53 px high, so 6 rows have a 9 px gap and
- * 7 rows nearly touch; the rows are centred on the screen. */
+/* Distance between rows in pixels: the box has a fixed height, the rows share what is left after
+ * the padding. 5 rows: 58 px, 7: 41 px, 9: 32 px, 11: 26 px. */
 static float
 pitch_px(int slots) {
-    switch (slots) {
-        case 5: return 62.0f;
-        case 6: return 58.0f;
-        default: return 56.0f;
-    }
+    return (BOX_BOTTOM_PX - BOX_TOP_PX - 2.0f * BOX_PAD_PX) / (float)(slots < 1 ? 1 : slots);
 }
 
 static float
 row_y(const blist* l, int s) {
-    float pitch = pitch_px(l->slots) / PX_PER_UNIT;
-    /* five rows are lifted a little: more room above the BACK marker and below the last row */
-    return (l->slots == 5 ? Y_CENTER_5 : Y_CENTER) + ((float)(l->slots - 1) * 0.5f - (float)s) * pitch;
+    float centre_px = (BOX_TOP_PX + BOX_BOTTOM_PX) * 0.5f;
+    float pitch = pitch_px(l->slots);
+    return (240.0f - centre_px) / PX_PER_UNIT + ((float)(l->slots - 1) * 0.5f - (float)s) * pitch / PX_PER_UNIT;
 }
 
 static void
@@ -283,6 +284,8 @@ blist_sync(blist* l) {
         bvm_obj* text = bvm_find(vm, (uint16_t)BLIST_TEXT_ID(s));
         bvm_obj* num = bvm_find(vm, (uint16_t)BLIST_NUM_ID(s));
         float y = row_y(l, s);
+        float pitch = pitch_px(l->slots);
+        float box_h = BOX_BOTTOM_PX - BOX_TOP_PX;
 
         /* the row bar and its parts: x of each part in the resting layout */
         struct {
@@ -290,8 +293,8 @@ blist_sync(blist* l) {
             float x, z;
             int show;
         } parts[4] = {
-            {anchor, ANCHOR_X, ROW_Z, on},
-            {pill, PILL_X, ROW_Z + 0.78f, on}, /* every row has it, as the Settings rows: lit on the selected one */
+            {anchor, ANCHOR_X, ROW_Z, s == 0}, /* one bar for the whole box, from slot 0 */
+            {pill, PILL_X, ROW_Z + 0.78f, sel}, /* only the selected row has a pill (lit) */
             {spill, SPILL_X, ROW_Z + 1.6f, multi}, /* in front of the row pill */
             {mini, MINI_X, ROW_Z + 2.2f, multi},
         };
@@ -299,19 +302,19 @@ blist_sync(blist* l) {
             if (!parts[i].o) {
                 continue;
             }
-            set_pos(parts[i].o, parts[i].x, y, parts[i].z);
+            set_pos(parts[i].o, parts[i].x, i == 0 ? (240.0f - (BOX_TOP_PX + BOX_BOTTOM_PX) * 0.5f) / PX_PER_UNIT : y, parts[i].z);
             parts[i].o->rot_tw[2].cur = 0;
             set_hidden(parts[i].o, !parts[i].show);
         }
         if (anchor) {
-            set_scale(anchor, 0.8671875f, ROW_SY * 0.8671875f, 0.8671875f);
+            set_scale(anchor, 0.8671875f, ROW_SY * 0.8671875f * box_h / BAR_H_PX, 0.8671875f);
         }
         if (pill) {
-            set_scale(pill, PILL_SCALE, ROW_SY * PILL_SCALE, PILL_SCALE);
+            set_scale(pill, PILL_SCALE, ROW_SY * PILL_SCALE * (pitch > BAR_H_PX ? BAR_H_PX : pitch) / BAR_H_PX, PILL_SCALE);
             pill->var[1] = sel; /* the selected row is lit */
         }
         if (spill) {
-            set_scale(spill, PILL_SCALE, ROW_SY * PILL_SCALE * 0.85f, PILL_SCALE);
+            set_scale(spill, PILL_SCALE, ROW_SY * PILL_SCALE * 0.85f * (pitch > BAR_H_PX ? BAR_H_PX : pitch) / BAR_H_PX, PILL_SCALE);
             spill->var[1] = sel;
         }
         if (mini) {
@@ -319,7 +322,11 @@ blist_sync(blist* l) {
             mini->model = BLIST_DISC_MODEL;
             mini->texlist = BLIST_DISC_MODEL;
             mini->flags &= ~(uint32_t)BVM_F_MOTION;
-            set_scale(mini, MINI_SCALE, MINI_SCALE, MINI_SCALE);
+            {
+                float ms = 0.7f * pitch / 320.0f;
+                ms = ms < MINI_SCALE ? ms : MINI_SCALE;
+                set_scale(mini, ms, ms, ms);
+            }
             mini->rot_tw[0].cur = 0;
             mini->rot_tw[1].cur = 0x8000;
             mini->rot_tw[0].step = mini->rot_tw[1].step = mini->rot_tw[2].step = 0;
@@ -331,7 +338,11 @@ blist_sync(blist* l) {
             icon->flags &= ~(uint32_t)BVM_F_MOTION;
             icon->var[0] = sel;
             set_pos(icon, ICON_X, y, ICON_Z);
-            set_scale(icon, ICON_SCALE, ICON_SCALE, ICON_SCALE);
+            {
+                float is = 0.9f * pitch / 320.0f; /* the disc is 320 px per unit of scale; shrink it to the row */
+                is = is < ICON_SCALE ? is : ICON_SCALE;
+                set_scale(icon, is, is, is);
+            }
             /* the selected disc spins as in the CD player; the others rest */
             if (sel) {
                 icon->rot_tw[1].step = SPIN_Y;
@@ -340,7 +351,7 @@ blist_sync(blist* l) {
                 icon->rot_tw[0].cur = icon->rot_tw[1].cur = icon->rot_tw[2].cur = 0;
                 icon->rot_tw[0].step = icon->rot_tw[1].step = icon->rot_tw[2].step = 0;
             }
-            set_hidden(icon, !on);
+            set_hidden(icon, !sel); /* only the selected row shows its disc */
         }
         if (text) {
             text->text_w = BLIST_TEXT_W;
