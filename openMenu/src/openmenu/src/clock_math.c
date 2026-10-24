@@ -30,15 +30,21 @@ void
 clock_header_text(char* out, unsigned size, int date_order, int mode, int year, int month, int day, int hour, int minute,
                   int utc_offset_min, int offset_known) {
     int beats = (mode == 3 || mode == 4) && offset_known;
-    char date[16], time[16];
+    /* The header's text surface shows about 17 characters from x 40: a 12 hour clock takes a two digit year (or, with beats, one
+     * letter A/P) so that the end is not cut off. */
+    int twelve = mode == 0 || mode == 3;
+    int yr = twelve ? year % 100 : year;
+    const char* yfmt = twelve ? "%02d" : "%04d";
+    char date[24], time[16], ys[8];
+    snprintf(ys, sizeof(ys), yfmt, yr);
     if (beats) { /* no year: the line has to fit the header */
         snprintf(date, sizeof(date), "%02d/%02d", date_order == 2 ? day : month, date_order == 2 ? month : day);
     } else if (date_order == 0) {
-        snprintf(date, sizeof(date), "%04d/%02d/%02d", year, month, day);
+        snprintf(date, sizeof(date), "%s/%02d/%02d", ys, month, day);
     } else if (date_order == 2) {
-        snprintf(date, sizeof(date), "%02d/%02d/%04d", day, month, year);
+        snprintf(date, sizeof(date), "%02d/%02d/%s", day, month, ys);
     } else {
-        snprintf(date, sizeof(date), "%02d/%02d/%04d", month, day, year);
+        snprintf(date, sizeof(date), "%02d/%02d/%s", month, day, ys);
     }
     if (mode == 2) {
         snprintf(out, size, "%s", date);
@@ -46,7 +52,11 @@ clock_header_text(char* out, unsigned size, int date_order, int mode, int year, 
     }
     if (mode == 0 || mode == 3) {
         int h12 = hour % 12 == 0 ? 12 : hour % 12;
-        snprintf(time, sizeof(time), "%d:%02d %s", h12, minute, hour < 12 ? "AM" : "PM");
+        if (beats) {
+            snprintf(time, sizeof(time), "%d:%02d%c", h12, minute, hour < 12 ? 'A' : 'P');
+        } else {
+            snprintf(time, sizeof(time), "%d:%02d %s", h12, minute, hour < 12 ? "AM" : "PM");
+        }
     } else {
         snprintf(time, sizeof(time), "%02d:%02d", hour, minute);
     }

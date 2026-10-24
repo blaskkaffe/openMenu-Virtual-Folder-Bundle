@@ -26,19 +26,27 @@ main(void) {
         clock_header_text(t, sizeof(t), 1, 1, 2026, 10, 10, 22, 27, 0, 1);
         CHECK(!strcmp(t, "10/10/2026 22:27"));
         clock_header_text(t, sizeof(t), 1, 0, 2026, 10, 10, 22, 27, 0, 1);
-        CHECK(!strcmp(t, "10/10/2026 10:27 PM"));
+        CHECK(!strcmp(t, "10/10/26 10:27 PM"));
         clock_header_text(t, sizeof(t), 1, 0, 2026, 10, 10, 0, 5, 0, 1);
-        CHECK(!strcmp(t, "10/10/2026 12:05 AM"));
+        CHECK(!strcmp(t, "10/10/26 12:05 AM"));
         clock_header_text(t, sizeof(t), 2, 4, 2026, 10, 3, 22, 27, 0, 1);
         CHECK(!strcmp(t, "03/10 22:27 .977"));
         clock_header_text(t, sizeof(t), 0, 3, 2026, 10, 3, 12, 0, 0, 1);
-        CHECK(!strcmp(t, "10/03 12:00 PM .542"));
+        CHECK(!strcmp(t, "10/03 12:00P .542"));
+        for (int m = 0; m < 5; m++) {
+            for (int o = 0; o < 3; o++) {
+                clock_header_text(t, sizeof(t), o, m, 2026, 12, 31, 22, 59, 330, 1);
+                if (m != 2 && m != 0 && m != 1) CHECK(strlen(t) <= 17);
+                if (m == 0) CHECK(strlen(t) <= 17);
+                if (m == 1) CHECK(strlen(t) <= 16);
+            }
+        }
         clock_header_text(t, sizeof(t), 2, 4, 2026, 10, 3, 22, 27, 0, 0); /* zone unknown: no beats */
         CHECK(!strcmp(t, "03/10/2026 22:27"));
         clock_header_text(t, sizeof(t), 0, 2, 2026, 10, 3, 22, 27, 0, 1);
         CHECK(!strcmp(t, "2026/10/03"));
         clock_header_text(t, sizeof(t), 1, 3, 2026, 12, 31, 12, 59, 330, 1);
-        CHECK(strlen(t) <= 19);
+        CHECK(strlen(t) <= 17);
     }
     if (failures) {
         return 1;
