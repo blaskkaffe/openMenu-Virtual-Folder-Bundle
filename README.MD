@@ -66,7 +66,7 @@ The old interface and its themes are not part of this fork, so their settings ar
 The BIOS File screen, ported from the ROM with the same objects, positions, messages and behaviour, running inside the menu:
 
 - **Card grid** of the eight memory card sockets A1 to D2 with free blocks, the used-space gauge, the selected card animating and the controllers in their ports.
-- **Controller labels**: a pill in the style of the main menu's captions sits on every controller that is not a standard one: Keyboard, Mouse, Lightgun, Fishing, Arcade, Twin, Racing, Maracas, Train, Panther, Dance, Dreameye, Mic, Karaoke, in the colours of the Play, File, Music and Settings pills. The name comes from what the device reports.
+- **Controller labels**: a pill in the style of the main menu's captions sits on every controller that is not a standard one: Keyboard, Mouse, Lightgun, Fishing, Arcade, Twin, Racing, Maracas, Train, Panther, Dance, Dreameye, Mic, Karaoke, in the colours of the Play, File, Music and Settings pills. The name comes from what the device reports. Pills stay at the bottom of their controller; one that would touch its neighbour moves to the top of its own controller.
 - **Serial VMU mark**: the VMU that the Serial VMU uses carries a small SD card at the lower right of its card. Press **X** on a VMU in the grid to open a small menu, **Set as Serial VMU** or **Serial VMU Off**.
 - **File window**: 24 tiles a page with the files' animated icons and block counts, copy-protected files in red, VMU games in green, file information, select all (the card) and select every file of the same game (X or Y).
 - **Copy and delete** with the BIOS's own questions and messages, and a copy box with a progress bar.
