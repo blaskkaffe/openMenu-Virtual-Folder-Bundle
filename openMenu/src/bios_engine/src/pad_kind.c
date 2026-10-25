@@ -82,7 +82,7 @@ const char* pad_kind_name(uint32_t functions, const char* product_name, char out
     }
     /* nothing in the name: the functions say what it is */
     if (functions & FN_KEYBOARD) {
-        snprintf(out, PAD_KIND_MAX, "%s", (functions & FN_MOUSE) ? "Kbd+Mse" : "Keyboard");
+        snprintf(out, PAD_KIND_MAX, "Keyboard");
         return out;
     }
     if (functions & FN_MOUSE) {
@@ -122,7 +122,7 @@ const char* pad_kind_name(uint32_t functions, const char* product_name, char out
 #define PAD_RIGHT 35.0f  /* its right edge, from the position */
 #define PAD_BOTTOM 28.0f /* its bottom edge */
 #define PILL_H (26.0f * PAD_LABEL_SCALE + 8.0f) /* a line of the font (26 px) and 4 px above and below */
-#define PILL_PAD 8.0f /* left and right of the text */
+#define PILL_PAD 6.0f /* left and right of the text */
 
 void
 pad_label_layout(float pad_x, float pad_y, float text_w, int centred, pad_label_rect* out) {

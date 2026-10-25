@@ -810,7 +810,7 @@ test_pad_kind(void) {
         {0x40000000u, "Dreamcast Keyboard", "Keyboard"},
         {0x00020000u, "Dreamcast Mouse", "Mouse"},
         {0x00020000u, "", "Mouse"},
-        {0x40020000u, "", "Kbd+Mse"},
+        {0x40020000u, "", "Keyboard"}, /* both bits: the keyboard */
         {0x10000000u, "", "Mic"},
         {0x00080000u, "Dreameye", "Dreameye"},
     };
