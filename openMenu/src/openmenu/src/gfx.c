@@ -699,6 +699,7 @@ gfx_load_logo_texts(void) {
     if (!logo_dcnet_text_tex.valid) {
         load_pvr_file("/cd/CNET.PVR", &logo_dcnet_text_tex);
     }
+    printf("OM logo: NOWO %d NOWB %d CNET %d (/cd/*.PVR loaded)\n", logo_now_tex[0].valid, logo_now_tex[1].valid, logo_dcnet_text_tex.valid);
 }
 
 /* Pictures made from the ROM's logo while the menu runs (nothing of it is kept anywhere): the swirl with the wordmark's D, the

@@ -143,3 +143,11 @@ also happens from Files, Internet, Music, the game list and the main menu.
 Freeze on B in every menu: B is the only button that plays the CANCEL sound (id 2) and returns to the main menu. Log lines `OM B: pressed, frame n, screen s`
 then `OM B: frame n+1 after B ok` show whether the freeze is inside the B handling (second line missing) or later (second line there). A test
 build with `-DOM_MUTE_CANCEL` (sound.c) leaves out the CANCEL sound: if the freeze is gone, it comes from the sound driver command.
+
+## Todo: header logo without a DreamPi (Flycast, BBA, LAN)
+
+Open: Flycast uses DCNET, but the player lists are DCNow!'s, and with no DreamPi nothing tells the menu which network it is on
+(`dreampi_link_network()` is 0). Decision so far: "Now!" is the default whenever the network is not known. Figure out whether DCNET can be
+recognised without a DreamPi (a setting Auto / DCNow! / DCNET, or a test of the connection). Also: in Flycast no logo change is visible at all.
+Check the log: `OM logo: NOWO n NOWB n CNET n` (are the three .PVR files on the disc image?) and `OM logo: mode m (shown, state, network, ...)`
+(state must be 2 = online for mode 1; the setting Online features must not be Off).
