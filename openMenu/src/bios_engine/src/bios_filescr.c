@@ -2823,15 +2823,20 @@ bfs_draw(bfs* fs, const bscene_sink* sink) {
             m->scene.ovr_n++;
         }
     }
-    /* the port letters A to D of the card grid's frame (model 15, nodes 1..4) take the main menu's four button colours */
-    static const uint32_t port_colour[4] = {BMENU_ACCENT_GAME, BMENU_ACCENT_FILES, BMENU_ACCENT_MUSIC, BMENU_ACCENT_SETTINGS};
+    /* the port letters A to D of the card grid's frame (model 15, nodes 1..4) take the colours of the borders of the main menu's four
+     * caption pills (model 5, the rim polygon of nodes 1, 3, 2, 4: Game, Files, Music, Settings), read from the ROM */
+    static const int pill_node[4] = {1, 3, 2, 4};
     if (obj(fs, ID_FRAME)) {
         for (int p = 0; p < 4 && m->scene.ovr_n < BSCENE_OVR_MAX; p++) {
+            nj_node* pill = bscene_node(&m->scene, 5, pill_node[p]);
+            if (!pill || !pill->mesh || pill->mesh->npolys < 1 || !pill->mesh->polys[0].has_diffuse) {
+                continue;
+            }
             m->scene.ovr[m->scene.ovr_n].model = 15;
             m->scene.ovr[m->scene.ovr_n].node = 1 + p;
             m->scene.ovr[m->scene.ovr_n].poly = 0;
-            m->scene.ovr[m->scene.ovr_n].argb = port_colour[p];
-            m->scene.ovr[m->scene.ovr_n].lit = 0;
+            m->scene.ovr[m->scene.ovr_n].argb = pill->mesh->polys[0].diffuse | 0xFF000000u;
+            m->scene.ovr[m->scene.ovr_n].lit = 0; /* the border's own colour, not dimmed by the light */
             m->scene.ovr_n++;
         }
     }

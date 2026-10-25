@@ -221,7 +221,7 @@ Keyboard: arrows, Enter = A, Esc / Backspace = B, Tab = X and Space = Y (all fil
 files or icons. The areas are checked against the real ROM's render: `BIOS_PREVIEW_HITS=1 bios_preview dc_boot.bin out.ppm
 200 0 -14` outlines them (the cursor's in green); `BIOS_PREVIEW_KEYS` also takes P / N (page up / down).
 
-The port letters A to D under the controllers are drawn in the same four colours (orange, green, blue, magenta; model 15 nodes 1..4).
+The port letters A to D under the controllers take the colours of the borders of the main menu's four caption pills (read from the ROM: model 5, rim of nodes 1, 3, 2, 4; drawn into model 15 nodes 1..4, unshaded).
 
 Controller labels: on the card grid a small pill in the port's colour (A orange, B green, C blue, D magenta, the main menu's pill
 colours) sits over the lower right of the controller picture for every device that is not a standard controller: Keyboard, Mouse,
