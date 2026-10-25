@@ -97,6 +97,7 @@ static const row_def rows[] = {
     {0, -1, "Starting games", "Boot animation", "What the BIOS shows before a game", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
     {0, -1, "Starting games", "Exit to BIOS", "How other discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
     {0, -1, "System", "VMU time sync", "Set the clock from a VMU at start", &sf_vmu_time_sync, VMU_TIME_SYNC_END + 1, on_off},
+    {0, -1, "System", "VMU beep on save", "The VMU beeps when a save is written", &sf_beep, BEEP_END + 1, on_off},
     {0, -1, "System", "VM2 game ID", "Tell VM2, VMU Pro and co. the game", &sf_vm2_send_all, VM2_SEND_END + 1, vm2_modes},
     /* the main branch's online (DC Now) setting, same values: Off, On, Auto-connect. While it is on, the third main
      * menu icon is "Internet" instead of "Music". It stays here: the Internet screen only exists once it is on. */

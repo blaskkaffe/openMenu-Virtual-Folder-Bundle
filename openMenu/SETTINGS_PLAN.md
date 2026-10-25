@@ -1,13 +1,14 @@
 # Settings menu: plan (layout, compatibility, grouping, maintenance)
 
-Status: proposal, nothing of the new layout is built yet. Source of Derek's list: his 1.7.0 menu (`origin/main`,
-`ui_menu_credits.c`, 32 rows) plus what this repo's shared save header says 1.7.1 added (Clock extender, 20 theme slots).
-His 1.7.1 menu source is not in this repo: if he added rows beyond those, diff against his tree and add them to the table.
+Status: proposal, the new layout is not built yet. Derek's list is from his real 1.7.1 source (DerekPascarella/openMenu-Virtual-Folder-Bundle,
+`ui_menu_credits.c`): 33 rows, only Clock extender is new against 1.7.0. His 1.7.1 renamed three rows (Online Time Sync -> Online Clock Sync,
+VMU Time Sync -> VMU Clock Sync, Clock extender -> Clock Checkpoint Extender); the variables are the same, this menu keeps its own labels.
+Our copy of `openmenu_settings.h` matches his in every variable (checked with `tools/settings_coverage.py`).
 
 ## 1. Compatibility rules (unchanged, they decide the design)
 - `OPENMENU.SYS` is shared with Derek's menu. This menu never adds a variable to it and never changes one of his values' meaning.
   Settings he has and we do not show stay in the file untouched (we load and save every variable).
-- Our own settings live in the favorites file flags (`favorites.h`: .beat, background, dark mode), so his menu never sees them.
+- Our own settings live in the `EXTENDED.SYS` flags (same file as the favorites; the name replaces FAVORITES.DAT / OPENMENU.FAV, which are still read when it is missing) (`favorites.h`: .beat, background, dark mode), so his menu never sees them.
 - `[BIOSMENU]` keys of `DEFAULTS.INI` (stock Card Manager) are made from row labels and choice names. Shortening a label would break
   existing cards, so rows get an explicit key (his variable name) and the old long label is kept as an alias. See section 5.
 
@@ -42,7 +43,7 @@ His 1.7.1 menu source is not in this repo: if he added rows beyond those, diff a
 | Serial VMU Multi-Slot | sf_serial_vmu_multislot | not yet (Slots) |
 | VMU Game ID | sf_vm2_send_all | **VM2 game ID** |
 | VMU Time Sync | sf_vmu_time_sync | **VMU time sync** |
-| VMU Beep on Save | sf_beep | **missing, easy**: add the row |
+| VMU Beep on Save | sf_beep | **VMU beep on save** (added) |
 | Save/Load, Credits | (actions) | saving happens when leaving; About |
 
 Only in this fork: Language, Date and time, Sound, Auto start, Memory card clock (the BIOS's own, written to flash), Clock format .beat modes,
@@ -53,7 +54,7 @@ Background, Dark mode, Performance test, About (version, BIOS revision). Fork da
 Every row's value must fit: the longest are "On (Manual connect)" (19 characters), "Same folder only", "Show all discs", "On (UTC+12:45)".
 - **A. One big box** like the game picker (7 lines, `bios_list`), the width of the Settings rows, all ~27 rows scrolling, group
   name as a divider line. Simple, but 27 rows is a long scroll.
-- **B. Two levels (recommended).** Five broad rows in the Settings-row style; A opens that category as the big box. With Derek's
+- **B. Two levels (owner's choice, some settings may stay in the main box).** Five broad rows in the Settings-row style; A opens that category as the big box. With Derek's
   own visibility rules (rows that do not apply are hidden) every category is at most 7 rows, i.e. one box without scrolling.
   B goes back one level, as the brief's B hierarchy says. The same big-box list serves A and B, so A stays possible as a fallback.
 
@@ -65,12 +66,50 @@ Common to both:
 - Engine work: a row bar list with a text/pill split exists in `bios_list` (game picker); the Settings page (`bios_page`, 4 fixed slots,
   object ids of the BIOS) is replaced by it for the lists; the 5-row top level needs `BPAGE_SLOTS` 5 (or the same list engine with 5 lines).
 
-## 4. Five categories
-1. **Console** (BIOS, in flash): Language, Date and time, Sound, Auto start, Memory card clock, Clock extender (6).
-2. **Display**: Clock format, Aspect ratio, Background, Dark mode; later Marquee speed, Mouse speeds (4-7).
-3. **Game list**: Game order, Multi-disc games, Disc sets from, Recently played, Remember last game; later Filter (5-6).
-4. **Starting games**: Boot animation, Exit to BIOS, Serial VMU, VM2 game ID, VMU time sync, VMU beep on save; later Serial VMU Slots (5-7).
-5. **More**: Online features, Card defaults, Performance test, About; later Play BGM (4-5).
+## 4. The settings to sort (every one that exists or is planned)
+Not grouped yet: the columns say what each does so they can be sorted by content. "Where" = what the setting touches.
+Short label (<= 14 characters) is a suggestion; the long name stays as the help line and as the `DEFAULTS.INI` alias.
+
+| # | Setting (short label) | Values | Where it acts | Use |
+|---|---|---|---|---|
+| 1 | Language | 6 | BIOS flash | set once |
+| 2 | Date and time | editor | BIOS flash | set once |
+| 3 | Sound | Stereo / Mono | BIOS flash | set once |
+| 4 | Auto start | On / Off | BIOS flash | set once |
+| 5 | Memory card clock | action | the VMUs | rare |
+| 6 | Clock extender | Off / On | BIOS flash at each start | set once |
+| 7 | VMU time sync | Off / On | clock from a VMU at start | set once |
+| 8 | Online time sync | Off, UTC zones (39) | clock from the internet | set once, Internet screen |
+| 9 | Clock format | 12 h, 24 h, date only, + .beat | top bar | set once |
+| 10 | Aspect ratio | 4:3 / 16:9 | whole menu | set once |
+| 11 | Background | 6 colours | whole menu | set once |
+| 12 | Dark mode | Off / On | whole menu | set once |
+| 13 | Game order | A-Z, SD order, year | game list | often (also the Sort button) |
+| 14 | Multi-disc | Show all / Compact | game list | set once |
+| 15 | Disc sets from | Anywhere / Same folder | game list | set once |
+| 16 | Recently played | Off, 10..50 | Recent button | set once |
+| 17 | Remember last | Off / On | game list start | set once |
+| 18 | (Filter, planned) | genres | game list | with the Group control |
+| 19 | Boot animation | Full, license, animation, fast | when a game starts | set once |
+| 20 | Exit to BIOS | Standard, Alternate, Alternate 3D | what discs do on exit | set once |
+| 21 | Serial VMU | Off, A1..D2 | game start, SD card | set once |
+| 22 | (Serial VMU slots, planned) | Off / On | game start, SD card | with Slots |
+| 23 | VM2 game ID | All, first, off | VM2 / VMU Pro | set once |
+| 24 | VMU beep on save | Off / On | VMU (added) | set once |
+| 25 | Online features | Off, manual, auto-connect | Internet screen exists, startup | set once |
+| 26 | Player refresh | Off, 10..60 s | Internet screen | set once, Internet screen |
+| 27 | VMU online | Off / On | VMU screen | set once, Internet screen |
+| 28 | Card defaults | Off / On | DEFAULTS.INI at start | set once |
+| 29 | Performance test | action | developer | rare |
+| 30 | About | box | information | rare |
+| 31-34 | (planned) Play BGM, Marquee speed, Mouse cursor speed, Mouse scroll speed | | | later |
+
+Derek's visibility rules to port (a row only shows when it applies): Card defaults only when the disc has boot defaults, Play BGM only with a
+BGM track, Serial VMU needs an SD card and no VM2 game ID with a VM2 present, VM2 game ID needs a VM2 and Serial VMU off, Serial VMU slots
+need Serial VMU on, the Online rows need Online features on, VMU online needs a refresh time, the mouse speeds need a mouse.
+Proposal for sorting, to react to (not decided): a first sort by *when you touch it* gives "set once" (most), "often" (Game order) and
+"rare" (actions). A sort by *what it changes* gives clock/time (6-9), whole-menu look (10-12), the list (13-17), starting a game
+(19-24), BIOS (1-5), network (8, 25-27), tools (28-30).
 
 ## 5. Easy to maintain and to follow Derek's fork
 - One table (`rows[]` in `ui_settings.c`) is the only place a setting is described. Add fields: `category`, `key` (his variable name,
@@ -82,6 +121,5 @@ Common to both:
 - Rules stay: never reorder or renumber his enums; new fork choices go in the favorites flags.
 
 ## 6. Decisions needed
-1. Option A or B (recommended: B)? Category names and rows as in section 4?
-2. Add VMU Beep on Save now (needs checking what main does with `sf_beep`)?
-3. Do you have Derek's 1.7.1 source or a list of its settings rows, to complete section 2?
+1. Which rows stay in the main box and which get a second level (decide from the list in section 4)?
+2. Should the time rows (6-9) be one group, or stay with their neighbours?

@@ -123,7 +123,7 @@ A click on nothing does nothing.
 This menu is meant to be swapped with the original on the same card without damaging anything.
 
 - **`OPENMENU.SYS` and the SD copy `OPENMENU/OPENMENU.CFG`** have the same version and the same variables as the original's, in the same order, and this menu only writes values the original knows. Nothing is added to them.
-- **Things only this menu has** are stored beside them: the favorites and the Swatch .beat clock flag in `OPENMENU.FAV` on a memory card and `/sd/OPENMENU/FAVORITES.DAT` on the SD card. The original does not read these files.
+- **Things only this menu has** are stored beside them: the favorites and the Swatch .beat clock flag in `EXTENDED.SYS` on a memory card and `/sd/OPENMENU/EXTENDED.SYS` on the SD card. The original does not read these files.
 - **Serial VMU** uses the original's layout (`OPENMENU/SAVES/<serial>/SLOT1.VMU`, `TITLE.TXT`, `OPENMENU/LASTDISC.TXT`), so both menus restore and back up the same images. **Serial VMU Slots** (five images per game) are not supported yet: with it on, a game starts without Serial VMU and no file is touched.
 - The **Card Manager** needs no change: the card it writes (`OPENMENU.INI`, `ICON.DAT`, `BOX.DAT`, `META.DAT`, `DISC.DAT`, folders) is what this menu reads. The only additions are three small logo pictures (`NOWO.PVR`, `NOWB.PVR`, `CNET.PVR`) in its `tools/openMenu/menu_data` folder, which the original menu ignores.
 - The BIOS settings rows and the Clock extender write the console's flash, as the BIOS and the original do.

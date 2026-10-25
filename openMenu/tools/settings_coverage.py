@@ -22,7 +22,6 @@ NOT_SHOWN = {
     "sf_folder_art": "not wanted: Folders style artwork",
     "sf_folders_item_details": "not wanted: Folders style details",
     "sf_filter": "not yet: genre filter is the brief's Group control (needs genre data)",
-    "sf_beep": "not yet: VMU Beep on Save, easy to add (needs the save code to use it)",
     "sf_marquee_speed": "not yet: decide if the list scrolls long titles",
     "sf_mouse_cursor_speed": "not yet: with mouse support",
     "sf_mouse_scroll_speed": "not yet: with mouse support",

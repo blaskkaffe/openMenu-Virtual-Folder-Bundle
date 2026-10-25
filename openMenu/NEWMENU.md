@@ -153,7 +153,7 @@ sit where they do in the CD player (X or Right from BACK reaches them, B goes on
 Recent (the recently played popup), button 2 Favorites (the starred games in a popup like Recent's: A starts, Y removes, B closes;
 a game is starred with the Favorite row of its X popup, and a starred title starts with "* " in the list; the list is
 `favorites.c`, newest first, up to 100, kept in its own file because OPENMENU.SYS is shared with 1.7.1 and has no
-favorites: `/sd/OPENMENU/FAVORITES.DAT` when an SD card is mounted and the VMS file `OPENMENU.FAV` on a memory card, 3 blocks
+favorites: `/sd/OPENMENU/EXTENDED.SYS` when an SD card is mounted and the VMS file `EXTENDED.SYS` on a memory card, 3 blocks
 with a gold icon; at start the SD copy wins, else the first card that has the file; games are found again by their
 identity hash, so a different SD order does not matter), button 3 Folders (A goes to the top of the folder
 tree and back to the list), button 4 Sort (A cycles A-Z, Release year, SD card order and shows the active one; it is

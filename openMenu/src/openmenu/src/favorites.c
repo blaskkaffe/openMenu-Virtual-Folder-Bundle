@@ -19,8 +19,10 @@
 #include "vmu_files.h"
 #endif
 
-#define FAV_FILE "OPENMENU.FAV"        /* the memory card file (12 characters is the most a VMS name can have) */
-#define FAV_SD_FILE "/sd/OPENMENU/FAVORITES.DAT"
+#define FAV_FILE "EXTENDED.SYS"        /* the memory card file (12 characters is the most a VMS name can have) */
+#define FAV_SD_FILE "/sd/OPENMENU/EXTENDED.SYS"
+#define FAV_OLD_FILE "OPENMENU.FAV"    /* the names of earlier builds: read when the new file is not there, never written */
+#define FAV_OLD_SD_FILE "/sd/OPENMENU/FAVORITES.DAT"
 #define FAV_SD_DIR "/sd/OPENMENU"
 #define FAV_VERSION 1
 #define FAV_CARD_BLOCKS 3               /* header 0x80 + icon 512 + data 8 + 4 * FAV_MAX = 1048 bytes */
@@ -98,8 +100,8 @@ vms_wrap(uint8_t* out) {
     uint8_t payload[8 + 4 * FAV_MAX];
     int len = fav_pack(payload);
     memset(out, 0, VMS_DATA);
-    put_text(out + 0x00, 16, "OPENMENU FAVS");
-    put_text(out + 0x10, 32, "openMenu favorite games");
+    put_text(out + 0x00, 16, "OPENMENU EXTEND");
+    put_text(out + 0x10, 32, "openMenu extended settings");
     put_text(out + 0x30, 16, "openMenu");
     out[0x40] = 1; /* one icon, not animated, no eyecatch */
     out[0x48] = (uint8_t)(len & 0xFF);
@@ -147,6 +149,9 @@ sd_load(void) {
     uint8_t buf[8 + 4 * FAV_MAX];
     int fd = open(FAV_SD_FILE, O_RDONLY);
     if (fd < 0) {
+        fd = open(FAV_OLD_SD_FILE, O_RDONLY);
+    }
+    if (fd < 0) {
         return -1;
     }
     ssize_t n = read(fd, buf, sizeof(buf));
@@ -155,11 +160,11 @@ sd_load(void) {
 }
 
 static int
-card_load(void) {
+card_load_named(const char* name) {
     for (int slot = 0; slot < 8; slot++) {
         uint8_t* data = NULL;
         int size = 0;
-        if (vf_read_named(slot, FAV_FILE, &data, &size) == 0 && data) {
+        if (vf_read_named(slot, name, &data, &size) == 0 && data) {
             int rc = vms_unwrap(data, size);
             free(data);
             if (rc == 0) {
@@ -169,6 +174,11 @@ card_load(void) {
         }
     }
     return -1;
+}
+
+static int
+card_load(void) {
+    return card_load_named(FAV_FILE) == 0 ? 0 : card_load_named(FAV_OLD_FILE);
 }
 
 static int
