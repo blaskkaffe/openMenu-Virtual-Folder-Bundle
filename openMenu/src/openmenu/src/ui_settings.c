@@ -77,7 +77,7 @@ static const row_def rows[] = {
     {0, 3, "BIOS", "Auto start", "Start the disc in the drive at power on", NULL, 2, autostart_modes, 7},
     /* everything about the clock and the date, one group: the BIOS clock, the header clock, and the three ways to keep it right */
     {UIS_ACTION_DATETIME, 1, "Clock and date", "Date and time", "Set the clock of the console", NULL, 0, NULL, 0},
-    {0, 1, "Clock and date", "Clock format", ".beat uses the Internet time sync zone", &sf_clock, 5, clock_modes},
+    {0, 1, "Clock and date", "Clock format", ".beat uses the Online time sync zone", &sf_clock, 5, clock_modes},
     {UIS_ACTION_VMUCLOCK, 1, "Clock and date", "Memory card clock", "Set the clock of the memory cards", NULL, 0, NULL, 0},
     {0, 1, "Clock and date", "Clock extender", "Keep the date in flash at each start", &sf_clock_extender, CLOCK_EXTENDER_END + 1,
      on_off},
