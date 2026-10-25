@@ -773,10 +773,36 @@ main(int argc, char** argv) {
                         int rim = d > rad - PILL_BORDER;
                         uint32_t c32 = rim ? border[port] : body[port];
                         float a = (float)(c32 >> 24) / 255.0f;
-                        int in_text = x >= (int)(r.x + (r.w - tw) / 2) && x < (int)(r.x + (r.w + tw) / 2) && y >= (int)(r.y + (r.h - 14) / 2) && y < (int)(r.y + (r.h + 14) / 2);
                         for (int c = 0; c < 3; c++) {
                             float v = (float)((c32 >> (16 - 8 * c)) & 255) / 255.0f;
-                            fb[y][x][c] = in_text ? 1.0f : fb[y][x][c] * (1.0f - a) + v * a;
+                            fb[y][x][c] = fb[y][x][c] * (1.0f - a) + v * a;
+                        }
+                    }
+                }
+                /* the text: the BIOS font printed into a surface and shrunk by PAD_LABEL_SCALE (what gfx_text_scaled() puts on the pill) */
+                bsurf* ts = bsurf_get(0x7F00, 256, 32);
+                if (ts) {
+                    bsurf_clear(ts);
+                    ts->colour = 0xFFFF;
+                    bsurf_print(ts, 0, 0, t);
+                    float x0 = r.x + (r.w - tw) / 2.0f, y0 = r.y + (r.h - 26.0f * PAD_LABEL_SCALE) / 2.0f;
+                    for (int y = (int)y0; y < (int)(y0 + 26.0f * PAD_LABEL_SCALE) + 1; y++) {
+                        for (int x = (int)x0; x < (int)(x0 + tw) + 1; x++) {
+                            float cov = 0.0f, n = 0.0f;
+                            for (int sy = 0; sy < 4; sy++) {
+                                for (int sx = 0; sx < 4; sx++) {
+                                    int u = (int)(((float)x + (float)sx / 4.0f - x0) / PAD_LABEL_SCALE);
+                                    int v = (int)(((float)y + (float)sy / 4.0f - y0) / PAD_LABEL_SCALE);
+                                    n += 1.0f;
+                                    if (u >= 0 && u < ts->w && v >= 0 && v < ts->h) {
+                                        cov += (float)((ts->px[v * ts->w + u] >> 12) & 15) / 15.0f;
+                                    }
+                                }
+                            }
+                            cov /= n;
+                            if (x >= 0 && x < W && y >= 0 && y < H && cov > 0.0f) {
+                                for (int c = 0; c < 3; c++) fb[y][x][c] = fb[y][x][c] * (1.0f - cov) + cov;
+                            }
                         }
                     }
                 }

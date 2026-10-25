@@ -17,7 +17,7 @@ typedef struct pad_label_rect {
     float x, y, w, h;
 } pad_label_rect;
 #define PAD_LABEL_SCALE 0.55f /* the text, relative to the menu font */
-#define PAD_LABEL_CENTRED 0 /* 1: the pill is centred on the controller; 0: lower right corner */
+#define PAD_LABEL_CENTRED 1 /* 1: the pill is centred on the controller; 0: its right edge is the controller's right edge */
 #define PILL_BORDER 2.5f    /* the lighter rim of the pill */
 #define PAD_LABEL_MAX_W 90.0f /* the widest pill: a column of the grid is about 100 pixels */
 /* `centred`: the pill is centred on the controller, else its right edge is the controller's right edge. */
