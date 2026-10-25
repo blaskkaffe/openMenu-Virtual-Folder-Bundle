@@ -60,6 +60,11 @@ device_of_setting(void) {
     return sf_serial_vmu[0] == SERIAL_VMU_OFF ? -1 : (int)(sf_serial_vmu[0] - SERIAL_VMU_A1);
 }
 
+int
+svmu_slot(void) {
+    return device_of_setting();
+}
+
 static void
 device_name(int device, char* out, size_t size) {
     snprintf(out, size, "%c%d", 'A' + device / 2, device % 2 + 1);

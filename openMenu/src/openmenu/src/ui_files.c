@@ -11,8 +11,10 @@
 #include <bios_filescr.h>
 #include <bios_surface.h>
 #include <pad_kind.h>
+#include <sd_icon.h>
 
 #include "clock.h"
+#include "serial_vmu.h"
 #include "gfx.h"
 #include "sound.h"
 #include "ui_files.h"
@@ -464,11 +466,27 @@ draw_pad_labels(void) {
     }
 }
 
+/* The VMU slot the Serial VMU uses (Settings > Serial VMU) carries a small SD card at the lower right of its card. */
+static void
+draw_serial_mark(void) {
+    int slot = svmu_slot();
+    float cx, cy;
+    if (slot < 0 || !bfs_card_corner_px(&fs, slot, &cx, &cy)) {
+        return;
+    }
+    sd_rect r[SD_ICON_MAX_RECTS];
+    int n = sd_icon_rects(cx - SD_ICON_W - SD_ICON_INSET_X, cy - SD_ICON_H - SD_ICON_INSET_Y, r);
+    for (int i = 0; i < n; i++) {
+        gfx_rect(r[i].x, r[i].y, r[i].w, r[i].h, 0.5f + 0.001f * (float)i, r[i].argb);
+    }
+}
+
 void
 uif_draw(void) {
     bfs_draw(&fs, gfx_sink());
     if (!left) {
         draw_pad_labels();
+        draw_serial_mark();
     }
 }
 

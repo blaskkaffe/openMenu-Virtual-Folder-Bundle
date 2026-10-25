@@ -223,6 +223,13 @@ files or icons. The areas are checked against the real ROM's render: `BIOS_PREVI
 
 The port letters A to D under the controllers take the colours of the borders of the main menu's four caption pills (read from the ROM: model 5, rim of nodes 1, 3, 2, 4; drawn into model 15 nodes 1..4, unshaded).
 
+Serial VMU mark: the VMU slot that Settings > Serial VMU names carries a small SD card at the lower right of its card, on the
+card grid and on the card beside the file window (`sd_icon.c` makes the rectangles, `ui_files.c` draws them, `bfs_card_corner_px`
+says where the card is). `BIOS_PREVIEW_SD=<slot>` shows it on a PC. It is hidden while the card moves or a popup, picker or message
+is over it.
+
+Input: every controller, mouse and keyboard in every port steers the menu, not only the first one (`input.c`).
+
 Controller labels: on the card grid a pill like the main menu's captions (A as Play, B as File, C as Music, D as Settings; the BIOS font at
 its own size) is centred over the lower part of the controller picture for every device that is not a standard controller: Keyboard, Mouse,
 Lightgun, Fishing, Arcade, Twin, Racing, Maracas, Train, Panther, Dance, Dreameye,
@@ -235,7 +242,6 @@ real devices; `BIOS_PREVIEW_PADLABELS="Keyboard,Mouse"` shows the pills' place o
 
 - Browse and load Serial VMU saves (the saves kept on the SD card by the serial VMU emulation) in the
   File menu, next to the real cards.
-- Show an SD card model or icon on the VMU slot that is allocated for the serial SD.
 - Serial SD settings in the File menu: on/off, slot/controller number, back up now, load backup.
 - Integrate with VM2, VMU Pro, USB4Maple and Pico2Maple: sense which of them is plugged in, and
   control their own features from the File menu: switch between VMU slots (and know which is

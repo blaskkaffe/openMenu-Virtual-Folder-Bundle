@@ -2795,6 +2795,32 @@ bfs_point(bfs* fs, float x, float y) {
     return 1;
 }
 
+/* The lower right corner of the picture of card `slot` as it is on the screen now (the grid, or the card of the file window), for the
+ * small marks that sit on a card. Returns 0 while the card is not shown plainly: moving, or under a popup, a picker or a message. */
+#define GRID_CARD_HW 48.0f /* half size of the card picture in the grid, from its object position */
+#define GRID_CARD_HH 63.0f
+#define WIN_CARD_HW 45.0f /* the same for the card beside the file window */
+#define WIN_CARD_HH 57.0f
+
+int
+bfs_card_corner_px(bfs* fs, int slot, float* x, float* y) {
+    if (slot < 0 || slot >= BFS_SLOTS || fs->fly != 0 || fs->layer != 0 || obj(fs, ID_PICKER) || obj(fs, ID_COPYBOX) ||
+        obj(fs, ID_RESETBOX) || obj(fs, ID_ZOOM) || obj(fs, ID_POPUP)) {
+        return 0;
+    }
+    int in_window = obj(fs, ID_WINDOW) != NULL;
+    for (int k = in_window ? 0 : slot; k < (in_window ? 1 : slot + 1); k++) {
+        bvm_obj* c = obj(fs, ID_CARD(k));
+        float cx, cy;
+        if (c && c->var[0] == slot && obj_px(fs, ID_CARD(k), &cx, &cy)) {
+            *x = cx + (in_window ? WIN_CARD_HW : GRID_CARD_HW);
+            *y = cy + (in_window ? WIN_CARD_HH : GRID_CARD_HH);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int
 bfs_pad_px(bfs* fs, int port, float* x, float* y) {
     if (port < 0 || port > 3 || fs->fly != 0 || fs->layer != 0 || fs->g_state != 2) {

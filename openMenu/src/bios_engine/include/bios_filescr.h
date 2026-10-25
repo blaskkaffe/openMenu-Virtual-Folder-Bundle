@@ -191,6 +191,9 @@ int bfs_hit_rects(bfs* fs, float out[][5], int max);
 /* Where controller port `port` (0..3) is drawn on the card grid: its centre on the 640x480 picture. Returns 0 when the grid
  * with the controller is not showing (another screen, a popup over it, a screen transition). */
 int bfs_pad_px(bfs* fs, int port, float* x, float* y);
+/* The lower right corner of card `slot`'s picture on the screen (the grid, or the card of the file window), for marks that sit on a
+ * card. Returns 0 when the card is not shown plainly (moving, or under a popup, picker or message). */
+int bfs_card_corner_px(bfs* fs, int slot, float* x, float* y);
 /* The command the caller has to carry out, NULL if none. */
 bfs_op* bfs_pending(bfs* fs);
 

@@ -18,18 +18,18 @@ typedef enum {
     BTN_PAGE_DOWN
 } button_t;
 
-/* Poll the controller on port A, a mouse and a keyboard, whichever are plugged in; one logical button
+/* Poll every controller, mouse and keyboard in every port, whichever are plugged in (any of them steers the menu; several mice move the one pointer); one logical button
  * per call. Keyboard: arrows are the d-pad, Enter is A, Escape and Backspace are B, Tab is X, Page
  * Up/Down page the list. Mouse: left button is A, right button is B, the wheel is up/down. D-pad
  * directions repeat while held (0.4 s, then every 5 frames); buttons fire once per press. Call once
  * per frame. */
 button_t input_poll(void);
 
-/* The analog stick of controller port A (-128..127 each, 0 in the middle, small deflections read as 0) and the
+/* The analog stick that is pushed furthest of all controllers (-128..127 each, 0 in the middle, small deflections read as 0) and the
  * triggers (0..255). All 0 without a controller. */
 void input_analog(int* x, int* y, int* ltrig, int* rtrig);
 
-/* Raw button mask of controller port A (CONT_* bits), for debug overlays. */
+/* Raw button mask of all controllers together (CONT_* bits), for debug overlays. */
 uint32_t input_buttons(void);
 
 /* A letter or digit typed on the keyboard since the last call ('A'..'Z', '0'..'9'), 0 if none. Used
