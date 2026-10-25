@@ -784,7 +784,7 @@ news_first(int i) {
 
 static const char*
 news_second(int i) {
-    return news[i].body[0] ? news[i].body : news[i].source;
+    return news[i].when[0] ? news[i].when : news[i].body[0] ? news[i].body : news[i].source;
 }
 
 /* Text cut into lines of `width` characters at spaces. Returns the number of lines, writes the start/length of line `want`. */
@@ -833,8 +833,9 @@ draw_detail(void) {
         body = "";
     } else {
         const news_item_t* n = &news[sel[LIST_NEWS]];
+        snprintf(fact_line, sizeof(fact_line), "%s%s%s", n->when, n->when[0] ? "  " : "", n->source);
         title = n->title;
-        facts = n->source;
+        facts = fact_line;
         body = n->body;
     }
     snprintf(text, sizeof(text), "%s", title);
