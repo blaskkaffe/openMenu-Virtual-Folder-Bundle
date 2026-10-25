@@ -759,8 +759,14 @@ main(int argc, char** argv) {
                 float px, py;
                 if (!bfs_pad_px(&demo_fs, port, &px, &py)) continue;
                 pad_label_rect r;
-                float tw = (float)(btext_width(t) + 3) * PAD_LABEL_SCALE;
+                float ps = getenv("BIOS_PREVIEW_PAD_SCALE") ? (float)atof(getenv("BIOS_PREVIEW_PAD_SCALE")) : PAD_LABEL_SCALE; /* the text size to try */
+                float tw = (float)(btext_width(t) + 3) * ps;
                 pad_label_layout(px, py, tw, getenv("BIOS_PREVIEW_CENTRED") ? 1 : PAD_LABEL_CENTRED, &r);
+                if (ps != PAD_LABEL_SCALE) { /* a taller pill for bigger text, same bottom */
+                    float h = 26.0f * ps + 8.0f;
+                    r.y += r.h - h;
+                    r.h = h;
+                }
                 for (int y = (int)r.y; y < (int)(r.y + r.h); y++) {
                     for (int x = (int)r.x; x < (int)(r.x + r.w); x++) {
                         float rad = r.h / 2.0f;
@@ -785,14 +791,14 @@ main(int argc, char** argv) {
                     bsurf_clear(ts);
                     ts->colour = 0xFFFF;
                     bsurf_print(ts, 0, 0, t);
-                    float x0 = r.x + (r.w - tw) / 2.0f, y0 = r.y + (r.h - 26.0f * PAD_LABEL_SCALE) / 2.0f;
-                    for (int y = (int)y0; y < (int)(y0 + 26.0f * PAD_LABEL_SCALE) + 1; y++) {
+                    float x0 = r.x + (r.w - tw) / 2.0f, y0 = r.y + (r.h - 26.0f * ps) / 2.0f;
+                    for (int y = (int)y0; y < (int)(y0 + 26.0f * ps) + 1; y++) {
                         for (int x = (int)x0; x < (int)(x0 + tw) + 1; x++) {
                             float cov = 0.0f, n = 0.0f;
                             for (int sy = 0; sy < 4; sy++) {
                                 for (int sx = 0; sx < 4; sx++) {
-                                    int u = (int)(((float)x + (float)sx / 4.0f - x0) / PAD_LABEL_SCALE);
-                                    int v = (int)(((float)y + (float)sy / 4.0f - y0) / PAD_LABEL_SCALE);
+                                    int u = (int)(((float)x + (float)sx / 4.0f - x0) / ps);
+                                    int v = (int)(((float)y + (float)sy / 4.0f - y0) / ps);
                                     n += 1.0f;
                                     if (u >= 0 && u < ts->w && v >= 0 && v < ts->h) {
                                         cov += (float)((ts->px[v * ts->w + u] >> 12) & 15) / 15.0f;
