@@ -98,7 +98,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 
 ## 8. Compatibility and regressions
 
-- [ ] Settings saved here read fine by Derek's 1.7.1 (the clock values 3 and 4 reset to 12 hour there; nothing else changes) and the other way round.
+- [ ] Settings saved here read fine by Derek's 1.7.1 with nothing changed (also with the Swatch .beat clock on: that flag is in OPENMENU.FAV / FAVORITES.DAT, not in OPENMENU.SYS) and the other way round. A save from an older build of this menu with Clock format 3 or 4 becomes 12 / 24 hour + .beat at the first start.
 - [ ] Launch: Dreamcast game, multi-disc, PSX disc (Bleem!/Bloom), CodeBreaker, browsers, homebrew; exit from a game back to the menu.
 - [ ] Files screen, Settings, date and time editor, About, debug log page, performance test still work.
 - [ ] Memory and stability: browse 500+ games, open every screen twice, leave it on the Internet screen for an hour online.
