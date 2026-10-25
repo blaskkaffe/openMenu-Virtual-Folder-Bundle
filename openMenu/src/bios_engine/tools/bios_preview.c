@@ -312,6 +312,103 @@ tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
     }
 }
 
+
+/* ---- Labels of the screens, for pictures (BIOS_PREVIEW_LABEL_FILE): the console sets the texts of the icon captions, the Settings rows, the
+ * game list rows and the help box through gfx_set_label(); here a file does. One line each: `0x200|Play` (an icon caption), `0x1407|Language|English`
+ * (a Settings row: label and value), `0x140B|BIOS|Language of the BIOS messages` (the help box: group and help), `0x17C0|Some Game` (a game
+ * list row), and `@x,y,rrggbb|text` for any text at a place of the picture (x < 0: centred on -x). The font is the BIOS's own, at its own size. */
+typedef struct {
+    unsigned id;
+    char a[64], b[64];
+} plabel;
+static plabel plabels[96];
+static int nplabels;
+typedef struct {
+    int x, y;
+    unsigned rgb;
+    char text[64];
+} ptext;
+static ptext ptexts[64];
+static int nptexts;
+
+static void
+load_labels(const char* path) {
+    FILE* f = fopen(path, "r");
+    char line[256];
+    while (f && fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = '\0';
+        if (line[0] == '@' && nptexts < 64) {
+            ptext* t = &ptexts[nptexts];
+            char* bar = strchr(line, '|');
+            unsigned rgb = 0xFFFFFF;
+            if (bar && sscanf(line + 1, "%d,%d,%x", &t->x, &t->y, &rgb) >= 2) {
+                t->rgb = rgb;
+                snprintf(t->text, sizeof(t->text), "%s", bar + 1);
+                nptexts++;
+            }
+        } else if (line[0] && line[0] != '#' && nplabels < 96) {
+            plabel* l = &plabels[nplabels];
+            char* b1 = strchr(line, '|');
+            if (!b1) continue;
+            *b1++ = '\0';
+            l->id = (unsigned)strtoul(line, NULL, 0);
+            char* b2 = strchr(b1, '|');
+            if (b2) *b2++ = '\0';
+            snprintf(l->a, sizeof(l->a), "%s", b1);
+            snprintf(l->b, sizeof(l->b), "%s", b2 ? b2 : "");
+            nplabels++;
+        }
+    }
+    if (f) fclose(f);
+}
+
+static const plabel*
+find_label(unsigned id) {
+    for (int i = 0; i < nplabels; i++) {
+        if (plabels[i].id == id) return &plabels[i];
+    }
+    return NULL;
+}
+
+/* the BIOS font at its own size, with its top left corner at (lx, ly) */
+static void
+blit_text(const char* str, int lx, int ly, unsigned rgb) {
+    static uint16_t canvas[32 * 640];
+    if (!g_rom || !str[0]) return;
+    memset(canvas, 0, sizeof(canvas));
+    btext_draw(canvas, 640, 32, 0, 0, g_rom->data + BTEXT_FONT_OFFSET, str, 0xFFFF);
+    float tint[3] = {(float)((rgb >> 16) & 255) / 255.0f, (float)((rgb >> 8) & 255) / 255.0f, (float)(rgb & 255) / 255.0f};
+    for (int j = 0; j < 28; j++)
+        for (int i = 0; i < 640; i++) {
+            uint16_t c = canvas[j * 640 + i];
+            int px = lx + i, py = ly + j;
+            if (!(c >> 12) || px < 0 || px >= W || py < 0 || py >= H) continue;
+            float a = (float)(c >> 12) / 15.0f;
+            float lum = (float)((c >> 4) & 15) / 15.0f; /* the glyphs carry their own shade: white text, tinted */
+            for (int k = 0; k < 3; k++) fb[py][px][k] = fb[py][px][k] * (1.0f - a) + (lum * tint[k] + (1.0f - lum) * 0.0f) * a;
+        }
+}
+
+static int
+draw_label_text(const bvm_obj* o, float x, float y, int x0, int y0) {
+    const plabel* l = find_label(o->id);
+    if (!l) return 0;
+    if (o->id >= BMENU_ID_ICON(0) && o->id < BMENU_ID_ICON(BMENU_ICONS)) { /* centred on the anchor */
+        blit_text(l->a, (int)(x - (float)btext_width(l->a) / 2.0f), (int)(y - 13.0f), 0xFFFFFF);
+    } else if (o->id >= BPAGE_TEXT_ID(0) && o->id < BPAGE_TEXT_ID(BPAGE_SLOTS)) { /* "label" and the value 250 px further */
+        blit_text(l->a, x0 + 10, y0, 0xFFFFFF);
+        blit_text(l->b, x0 + 250, y0, 0xFFFFFF);
+    } else if (o->id == BPAGE_HELP_ID) { /* two lines, left edge 156 px left of the anchor */
+        blit_text(l->a, (int)(x - 156.0f), y0 + 6, 0xFFFFFF);
+        blit_text(l->b, (int)(x - 156.0f), y0 + 6 + 32, 0xFFFFFF);
+    } else if (o->id >= BLIST_TEXT_ID(0) && o->id < BLIST_TEXT_ID(BLIST_MAX_SLOTS)) { /* a game list row: left aligned */
+        blit_text(l->a, x0, y0, 0xFFFFFF);
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
 static void
 text(void* user, const bvm_obj* o, float x, float y, float invw) {
     (void)user; (void)invw;
@@ -339,6 +436,9 @@ text(void* user, const bvm_obj* o, float x, float y, float invw) {
                 for (int k = 0; k < 3; k++) fb[py][px][k] = fb[py][px][k] * (1.0f - a) + rgb[k] * a;
             }
         }
+        return;
+    }
+    if (nplabels && draw_label_text(o, x, y, x0, y0)) {
         return;
     }
     if (getenv("BIOS_PREVIEW_LABELS") && g_rom) { /* sample labels placed as the console's gfx.c places them */
@@ -524,6 +624,9 @@ main(int argc, char** argv) {
         return 1;
     }
     g_rom = &rom;
+    if (getenv("BIOS_PREVIEW_LABEL_FILE")) {
+        load_labels(getenv("BIOS_PREVIEW_LABEL_FILE"));
+    }
 
     const char* logo_path = getenv("BIOS_PREVIEW_LOGO");
     if (logo_path && *logo_path) {
@@ -954,6 +1057,9 @@ main(int argc, char** argv) {
 
     if (g_autosort) {
         frag_resolve();
+    }
+    for (int i = 0; i < nptexts; i++) {
+        blit_text(ptexts[i].text, ptexts[i].x < 0 ? -ptexts[i].x - btext_width(ptexts[i].text) / 2 : ptexts[i].x, ptexts[i].y, ptexts[i].rgb); /* x < 0: centred on -x */
     }
     FILE* out = fopen(argv[2], "wb");
     if (!out) {

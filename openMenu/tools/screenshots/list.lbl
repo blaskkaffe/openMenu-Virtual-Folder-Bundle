@@ -1,0 +1,16 @@
+# the game list: rows, the panel on the right and the five buttons (sample titles, no real game data)
+0x17C0|Demo Disc A
+0x17C1|Demo Disc B
+0x17C2|Example Racer
+0x17C3|Example Racer 2
+0x17C4|Sample Quest (1/2)
+0x17C5|Sample Quest (2/2)
+0x17C6|Test Fighter
+@438,227,FFFFFF|Example Racer
+@438,287,C0C0C0|T-0000N EU
+@438,315,C0C0C0|1P 15B
+@-185,392,FFFFFF|Recent
+@-274,392,FFFFFF|Favs
+@-364,392,FFFFFF|Folders
+@-454,392,FFFFFF|A-Z
+@-544,392,FFFFFF|Group

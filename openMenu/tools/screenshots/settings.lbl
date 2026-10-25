@@ -1,0 +1,6 @@
+# Settings: four visible rows (label|value) and the help box (group|help)
+0x1407|Game order|A-Z
+0x1408|Multi-disc games|Compact
+0x1409|Serial VMU|On (A1)
+0x140A|Clock format|24 hour + .beat
+0x140B|Game list|Per-game VMU images on the serial SD
