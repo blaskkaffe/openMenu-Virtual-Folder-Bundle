@@ -285,8 +285,8 @@ CD player's five buttons pick the page:
   B closes it.
 - **News**: four items to a page (heading and the start of its text). A opens one (Up/Down scroll the text). Read by `news_fetch.c`
   from dc.dreamcastlive.net/news.html and dc.segaonline.net (plain HTTP), cut into items by `news_parse.c`: every h1-h4 heading
-  starts an item, the text after it is its body. The DreamcastLive page (pasted by the owner) is h1 title, then h3 + p per item ending "- Posted by NAME on DATE", which becomes the date line; the Sega Online page has not been seen. The cloud
-  session (no network): it may need tuning to the real pages.
+  starts an item, the text after it is its body. The DreamcastLive page (pasted by the owner) is h1 title, then h3 + p per item ending "- Posted by NAME on DATE", which becomes the date line; the Sega Online page has not been seen (the cloud
+  session has no network), so it may need tuning.
 - **Settings**: Connection, Interface, ISP settings, Preferred network, DreamPi add-on state, Network test (the ones not built
   yet are dim and say coming soon), and the Internet settings of `ui_settings.c`.
 
