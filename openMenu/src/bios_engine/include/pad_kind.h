@@ -22,3 +22,8 @@ typedef struct pad_label_rect {
 #define PAD_LABEL_MAX_W 140.0f /* the widest pill; a column of the grid is about 100 pixels */
 /* `centred`: the pill is centred on the controller, else its right edge is the controller's right edge. */
 void pad_label_layout(float pad_x, float pad_y, float text_w, int centred, pad_label_rect* out);
+
+/* Where the labels of all ports go: n ports left to right, each with the place of its controller (pad_x, pad_y) and the width of its text
+ * (text_w <= 0: no label). A pill sits at the bottom of its controller; one that would touch the pill of a port before it moves to the top of its
+ * controller instead (and stays at the bottom if the top is taken too). out[i].w is 0 for a port without a label. */
+void pad_label_layout_set(int n, const float* pad_x, const float* pad_y, const float* text_w, int centred, pad_label_rect* out);

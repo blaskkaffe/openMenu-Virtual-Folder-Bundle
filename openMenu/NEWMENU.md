@@ -231,7 +231,8 @@ card's own display. `BIOS_PREVIEW_SD=<slot>` shows it on a PC.
 
 Input: every controller, mouse and keyboard in every port steers the menu, not only the first one (`input.c`).
 
-Controller labels: on the card grid a pill like the main menu's captions (A as Play, B as File, C as Music, D as Settings; the BIOS font at
+Controller labels: a pill that would touch the pill of the port before it moves to the top of its own controller (`pad_label_layout_set`);
+the others stay at the bottom. On the card grid a pill like the main menu's captions (A as Play, B as File, C as Music, D as Settings; the BIOS font at
 its own size) is centred over the lower part of the controller picture for every device that is not a standard controller: Keyboard, Mouse,
 Lightgun, Fishing, Arcade, Twin, Racing, Maracas, Train, Panther, Dance, Dreameye,
 Mic, Karaoke. The name comes from what the device reports (its product name first, then its Maple function bits; `pad_kind.c`, tested
