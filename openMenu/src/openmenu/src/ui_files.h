@@ -31,5 +31,9 @@ void uif_draw(void);
  * (BTN_A) can be told from a click on nothing, which does nothing. */
 int uif_hover(float x, float y);
 
+/* The memory card slot (0 A1 ... 7 D2) the cursor is on while the card grid waits for a choice, with a formatted card in it; -1 at any other
+ * time. X there opens the Serial VMU menu. */
+int uif_grid_slot(void);
+
 /* 1 while the screen has pages the mouse wheel should turn (the file window, the icon picker) instead of moving the cursor. */
 int uif_pages(void);

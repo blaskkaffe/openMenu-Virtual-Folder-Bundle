@@ -19,8 +19,10 @@
 #include "vmu_files.h"
 #endif
 
-#define FAV_FILE "OPENMENU.FAV"        /* the memory card file (12 characters is the most a VMS name can have) */
-#define FAV_SD_FILE "/sd/OPENMENU/FAVORITES.DAT"
+#define FAV_FILE "EXTENDED.SYS"        /* the memory card file (12 characters is the most a VMS name can have) */
+#define FAV_SD_FILE "/sd/OPENMENU/EXTENDED.SYS"
+#define FAV_OLD_FILE "OPENMENU.FAV"    /* the names of earlier builds: read when the new file is not there, never written */
+#define FAV_OLD_SD_FILE "/sd/OPENMENU/FAVORITES.DAT"
 #define FAV_SD_DIR "/sd/OPENMENU"
 #define FAV_VERSION 1
 #define FAV_CARD_BLOCKS 3               /* header 0x80 + icon 512 + data 8 + 4 * FAV_MAX = 1048 bytes */
@@ -31,6 +33,7 @@ static const gd_item* items[FAV_MAX]; /* the hashes that are games of this card 
 static int item_count;
 static int last_save_ok = 1;
 static int card_slot = -1;            /* the memory card that has the file, -1 if none yet */
+static uint8_t fork_flags;            /* the spare byte of the header: settings 1.7.1 has no place for, see favorites.h */
 
 /* ---- The file: "OMFV", version, 0, count (u16), then the hashes, all little endian ---- */
 
@@ -38,7 +41,7 @@ static int
 fav_pack(uint8_t* out) {
     memcpy(out, "OMFV", 4);
     out[4] = FAV_VERSION;
-    out[5] = 0;
+    out[5] = fork_flags;
     out[6] = (uint8_t)(hash_count & 0xFF);
     out[7] = (uint8_t)(hash_count >> 8);
     for (int i = 0; i < hash_count; i++) {
@@ -58,6 +61,7 @@ fav_unpack(const uint8_t* in, int size) {
     if (n > FAV_MAX || 8 + n * 4 > size) {
         return -1;
     }
+    fork_flags = in[5];
     for (int i = 0; i < n; i++) {
         hashes[i] = (uint32_t)in[8 + i * 4] | ((uint32_t)in[9 + i * 4] << 8) | ((uint32_t)in[10 + i * 4] << 16)
                     | ((uint32_t)in[11 + i * 4] << 24);
@@ -96,8 +100,8 @@ vms_wrap(uint8_t* out) {
     uint8_t payload[8 + 4 * FAV_MAX];
     int len = fav_pack(payload);
     memset(out, 0, VMS_DATA);
-    put_text(out + 0x00, 16, "OPENMENU FAVS");
-    put_text(out + 0x10, 32, "openMenu favorite games");
+    put_text(out + 0x00, 16, "OPENMENU EXTEND");
+    put_text(out + 0x10, 32, "openMenu extended settings");
     put_text(out + 0x30, 16, "openMenu");
     out[0x40] = 1; /* one icon, not animated, no eyecatch */
     out[0x48] = (uint8_t)(len & 0xFF);
@@ -145,6 +149,9 @@ sd_load(void) {
     uint8_t buf[8 + 4 * FAV_MAX];
     int fd = open(FAV_SD_FILE, O_RDONLY);
     if (fd < 0) {
+        fd = open(FAV_OLD_SD_FILE, O_RDONLY);
+    }
+    if (fd < 0) {
         return -1;
     }
     ssize_t n = read(fd, buf, sizeof(buf));
@@ -153,11 +160,11 @@ sd_load(void) {
 }
 
 static int
-card_load(void) {
+card_load_named(const char* name) {
     for (int slot = 0; slot < 8; slot++) {
         uint8_t* data = NULL;
         int size = 0;
-        if (vf_read_named(slot, FAV_FILE, &data, &size) == 0 && data) {
+        if (vf_read_named(slot, name, &data, &size) == 0 && data) {
             int rc = vms_unwrap(data, size);
             free(data);
             if (rc == 0) {
@@ -167,6 +174,11 @@ card_load(void) {
         }
     }
     return -1;
+}
+
+static int
+card_load(void) {
+    return card_load_named(FAV_FILE) == 0 ? 0 : card_load_named(FAV_OLD_FILE);
 }
 
 static int
@@ -220,6 +232,7 @@ resolve(void) {
 void
 favorites_init(void) {
     hash_count = 0;
+    fork_flags = 0;
     card_slot = -1;
 #ifdef _arch_dreamcast
     if (sd_load() != 0) {
@@ -299,4 +312,22 @@ favorites_toggle(const gd_item* item) {
 int
 favorites_save_ok(void) {
     return last_save_ok;
+}
+
+unsigned
+favorites_flags(void) {
+    return fork_flags;
+}
+
+void
+favorites_set_flags(unsigned flags) {
+    if ((flags & 0xFF) == fork_flags) {
+        return;
+    }
+    fork_flags = (uint8_t)flags;
+#ifdef _arch_dreamcast
+    int sd = sd_save();
+    int card = card_save();
+    last_save_ok = sd == 0 || card == 0;
+#endif
 }

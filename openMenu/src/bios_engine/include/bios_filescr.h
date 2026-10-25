@@ -66,6 +66,8 @@ void bfs_mono_icon(const uint8_t bits[128], uint16_t fg, uint16_t out[32 * 32]);
 #define BFS_OP_COPY 1    /* files[] of card src to card dst, overwriting files of the same name */
 #define BFS_OP_DELETE 2  /* files[] of card src */
 #define BFS_OP_FORMAT 3  /* memory reset of card src with icon `shape` and colour `colour` (0xAARRGGBB, 0 = none) */
+#define BFS_OP_LOOK 4    /* change only the icon `shape` and colour `colour` of card src: no file is touched */
+#define BFS_OP_EXTEND 5  /* card src uses all of its memory: the blocks the BIOS leaves unused become free space */
 
 typedef struct bfs_op {
     int kind;
@@ -114,7 +116,10 @@ typedef struct bfs_popup_def {
     int count, cancel;
     struct {
         int grey, msg;
-    } item[4];
+        const char* text; /* shown instead of message `msg` when not NULL (the entries the BIOS does not have) */
+    } item[5];
+    const char* const* lines; /* lines of text above the choices (this app's own popups), at (tx, line_y) and `line_h` apart */
+    int nlines, line_x, line_y, line_h;
 } bfs_popup_def;
 
 typedef struct bfs {
@@ -151,6 +156,7 @@ typedef struct bfs {
     const bfs_popup_def* p_def;
     int p_help;
     int m_state, m_result;
+    const char* m_text[4]; /* the lines of a message box with this app's own text (bfs_message_box_ with id -1) */
     /* screen_fly_in / out */
     int fly, fly_alpha;
     bfs_cursor cur[2];
@@ -170,6 +176,7 @@ typedef struct bfs {
 
     /* memory reset (vmu_format_flow): the icon and colour pickers */
     int f_state, f_page, f_icon, f_cursor, f_transparent, f_blink, f_blink_t;
+    int f_look;           /* the flow changes the icon and colour only (no memory reset) */
     uint32_t f_colour;
 
     bfs_op op;

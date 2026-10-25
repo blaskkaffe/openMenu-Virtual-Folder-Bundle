@@ -64,6 +64,7 @@ main(int argc, char* argv[]) {
         list_folder_init();
         list_set_folder_root(); /* folders first; sorted as the Sort setting says */
         favorites_init();
+        uis_clock_migrate(); /* .beat clock of an older build: from the shared save file to this menu's own */
     }
     dbglog_boot("list", (unsigned)timer_ms_gettime64());
 

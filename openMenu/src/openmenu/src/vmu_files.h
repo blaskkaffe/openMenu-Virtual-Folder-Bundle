@@ -112,6 +112,14 @@ int vf_card_look(int slot, int* shape, int* colour_index);
  * files are touched. Returns 0 on success. */
 int vf_set_look(int slot, int shape, int colour_index);
 
+/* The same with the colour as stored in the card (blue, green, red, alpha; custom 0 = the standard colour). */
+int vf_set_look_raw(int slot, int shape, int custom, const unsigned char bgra[4]);
+
+/* Use the whole memory of a card: the blocks above the 200 for files that the BIOS leaves unused (200..240) become free space for
+ * files, by raising the block count of the root block. Nothing else on the card is touched. */
+enum { VF_EXT_OK = 0, VF_EXT_ERROR = -1, VF_EXT_ALREADY = 1 };
+int vf_extend_capacity(int slot);
+
 /* Memory reset: erases every file and rebuilds the card with the given icon and colour. A card that was never
  * formatted gets a new root block. */
 int vf_format(int slot, int shape, int colour_index);

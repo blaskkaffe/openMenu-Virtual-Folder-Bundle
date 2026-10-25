@@ -72,7 +72,7 @@ logo is used. `tools/bios-logo/biologo.py` makes the file: `convert logo.png LOG
 BIOS logo as a starting point. `BIOS_PREVIEW_LOGO=LOGO.PVR bios_preview ...` shows it on a PC.
 A fully transparent picture hides the logo.
 Online modes (not with a `LOGO.PVR` of your own): while connecting the swirl turns (a turn in 72 frames, the wordmark stays; the swirl is
-drawn as its own rotated quad by `gfx_logo_badge`); once connected the swirl stops and the logo changes to the one for the network. Over a modem or the serial cable the swirl keeps turning (up to 6 s) until the DreamPi has said which network it has selected, so the logo does not flip from "Now!" to "DCNET". Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
+drawn as its own rotated quad by `gfx_logo_badge`); once connected the swirl stops and the logo changes to the one for the network. The logo does not wait for the DreamPi add-on: it shows "Now!" at once and changes to "DCNET" only if the add-on reports that network. Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
 (`gfx_logo_badge`); connected through a DreamPi that has DCNET selected the wordmark is replaced by "DCNET" next to the swirl
 (`gfx_set_logo_mode`, a 128x32 picture built from the ROM's logo, so a PAL console keeps its blue swirl). The letters are three small .PVR files (64x32) on the menu disc next to LOGO.PVR: `NOWO.PVR` (orange) and `NOWB.PVR` (blue) "Now!", picked by the swirl's hue, and `CNET.PVR` (grey). The soft edges are baked in (an edge pixel is lighter than the bar, as in the BIOS logo) and they are drawn untinted. They hold
 nothing of the BIOS logo: "Now!" is simply drawn after the logo, and for DCNET the menu crops the ROM's logo to the swirl and its own D while it runs
@@ -116,7 +116,7 @@ browser is opened after start-up. Later: genre filter (needs better genre data),
 Looks like the BIOS Settings screen (`bios_engine/bios_page`): four rows with a 3D icon, a pill and a
 text line, and a help box below showing the group and a help line. The list scrolls, so it can hold
 any number of rows. Icons are the digit models 0-9 until real ones exist. Rows with more than two
-values open a popup list; two-value rows toggle. Rows are defined in `ui_settings.c`
+values open a popup list; two-value rows toggle. Groups in order: BIOS (language, sound, auto start), Clock and date (date and time, clock format, memory card clock, clock extender, VMU time sync, Online time sync), Display (aspect ratio, background colour, dark mode), Game list, Starting games, System, Internet (Online features; the refresh, VMU status and Online time sync rows are also on the Internet screen's Settings page), Other. The help box's first line is the group and the row number. Rows are defined in `ui_settings.c`
 (label, group, help, save-file variable, choice names). Text column positions
 (`PAGE_TEXT_PAD`, `PAGE_VALUE_X` in `gfx.c`) are guesses to be tuned on hardware.
 Preview without hardware: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.
@@ -153,7 +153,7 @@ sit where they do in the CD player (X or Right from BACK reaches them, B goes on
 Recent (the recently played popup), button 2 Favorites (the starred games in a popup like Recent's: A starts, Y removes, B closes;
 a game is starred with the Favorite row of its X popup, and a starred title starts with "* " in the list; the list is
 `favorites.c`, newest first, up to 100, kept in its own file because OPENMENU.SYS is shared with 1.7.1 and has no
-favorites: `/sd/OPENMENU/FAVORITES.DAT` when an SD card is mounted and the VMS file `OPENMENU.FAV` on a memory card, 3 blocks
+favorites: `/sd/OPENMENU/EXTENDED.SYS` when an SD card is mounted and the VMS file `EXTENDED.SYS` on a memory card, 3 blocks
 with a gold icon; at start the SD copy wins, else the first card that has the file; games are found again by their
 identity hash, so a different SD order does not matter), button 3 Folders (A goes to the top of the folder
 tree and back to the list), button 4 Sort (A cycles A-Z, Release year, SD card order and shows the active one; it is
@@ -231,7 +231,8 @@ card's own display. `BIOS_PREVIEW_SD=<slot>` shows it on a PC.
 
 Input: every controller, mouse and keyboard in every port steers the menu, not only the first one (`input.c`).
 
-Controller labels: on the card grid a pill like the main menu's captions (A as Play, B as File, C as Music, D as Settings; the BIOS font at
+Controller labels: a pill that would touch the pill of the port before it moves to the top of its own controller (`pad_label_layout_set`);
+the others stay at the bottom. On the card grid a pill like the main menu's captions (A as Play, B as File, C as Music, D as Settings; the BIOS font at
 its own size) is centred over the lower part of the controller picture for every device that is not a standard controller: Keyboard, Mouse,
 Lightgun, Fishing, Arcade, Twin, Racing, Maracas, Train, Panther, Dance, Dreameye,
 Mic, Karaoke. The name comes from what the device reports (its product name first, then its Maple function bits; `pad_kind.c`, tested
@@ -239,27 +240,57 @@ in `bios_engine_test`); a controller whose name is none of the known ones shows 
 what they report in each mode: if a mode reports "Dreamcast Controller" it gets no label. Check the strings of each mode on the
 real devices; `BIOS_PREVIEW_PADLABELS="Keyboard,Mouse"` shows the pills' place on a PC.
 
-## Todo: File menu, devices, DreamPi (from the plan, later)
+## Todo: File menu, devices (from the plan, later)
 
-- Browse and load Serial VMU saves (the saves kept on the SD card by the serial VMU emulation) in the
-  File menu, next to the real cards.
-- Serial SD settings in the File menu: on/off, slot/controller number, back up now, load backup.
-- Integrate with VM2, VMU Pro, USB4Maple and Pico2Maple: sense which of them is plugged in, and
-  control their own features from the File menu: switch between VMU slots (and know which is
-  connected), enable/disable GameID and show its status, battery level of VM2 and VMU Pro, and more.
-- Much later: integrate with DreamPi so that the DreamPi script can load, download and upload saves
-  and VMU backups.
+- Serial VMU saves (the per-game images on the SD card): decision needed, see "Serial VMU saves" below. Leaning: keep loading a game's VMU
+  from the games picker as in Derek's fork, so both menus behave the same, and not browse them in the File menu.
+- Serial VMU on/off moves from Settings to the File menu later; back up now / load backup.
+- Integrate with VM2, VMU Pro, USB4Maple and Pico2Maple: sense which of them is plugged in, and control their own features from the
+  File menu: switch between VMU slots (and know which is connected), enable/disable GameID and show its status (a small slot number and
+  GameID box over the lower right of the VMU graphic), battery level of VM2 and VMU Pro, and more. Depends on each device's firmware.
+
+### Done in the File menu
+
+- X on a VMU of the card grid: a menu in the style of the Play screen's X menu, with "Set as Serial VMU" and "Serial VMU Off" (it writes
+  Settings > Serial VMU, "On (B1)" and so on, and saves). The slot carries the SD card mark.
+- Card popup (A on the card in the file window): Copy all, Delete all (memory reset), Change Color and Logo, Use full size, Cancel.
+  Change Color and Logo runs the BIOS icon and colour pickers, then writes only the root block's icon and colour, the hidden area where the BIOS keeps them
+  (`BFS_OP_LOOK`, `vf_set_look_raw`): no file is touched or made (an `ICONDATA_VMS` that an earlier build of this menu wrote is removed). Use full size opens a popup with what it means and Cancel / Extend capacity
+  (`BFS_OP_EXTEND`, `vf_extend_capacity`): the block count of the root block goes from 200 to 241 (the blocks 200..240 that the BIOS leaves
+  unused become free space). Untested on hardware: do it on a spare card first. A memory reset keeps the extended size (the root block is
+  kept), a card that already uses it says so.
+
+## Serial VMU saves (decision needed)
+
+Leaning (not decided): loading a game's VMU stays in the games picker, as in Derek's fork (compatible, easy to use); the File menu does not
+browse the per-game images.
+
+How 1.7.1 / Derek's fork keeps them (`serial_vmu.c`, README "Serial VMU Feature"): on the serial SD card, `OPENMENU/SAVES/<serial>/` has one
+folder per game with `SLOT1.VMU` (Multi-Slot: up to `SLOT5.VMU`), `TITLE.TXT` and optional `SLOTn.TXT` labels; each file is a whole 128 KB VMU
+image. The menu only copies a whole image to the VMU of the Serial VMU slot before a game starts and back at the next start. There is no
+browsing of single saves inside the menu: to move a single save one uses the BIOS File screen to copy files between VMUs, or a PC tool
+(VMU Explorer) on the `.VMU` files.
 
 ## Internet screen layout (ui_internet.c)
 
-One large panel (as the game list's box) with the connection status on top, a page below and a footer line; the CD player's
-five buttons pick the page: Online (players on the left, games being played on the right; Y moves the cursor between the
-columns, A on a game that is on the card starts it through the same start as the game list, A on a player refreshes), Play
-(the browser discs on the card, then a row for the online game catalogue, which needs data from the DreamPi: coming soon),
-Events (upcoming events, refreshed with A), News (placeholder until the DreamPi companion sends news) and Settings (Connection:
-connect or hang up, Interface, ISP settings, Preferred network, DreamPi add-on state, Network test; the ones not built yet are
-dim and say coming soon). X connects or hangs up from any page, B or BACK leaves. The empty player list shows what the fetch is
-doing or why it failed.
+One large panel (as the game list's box) with a heading line, eight list rows and a footer line; the connection status
+("Online via network adapter  X: hang up", the failure reason, ...) is drawn above the panel, right-aligned, not inside it. The
+CD player's five buttons pick the page:
+
+- **Players**: only the players online (name, the game they are in, network). A refreshes the list.
+- **Games**: the games on the card that have online play (META.DAT `network`) or are being played online now, one row per game
+  (not per disc), then the browser discs. Games being played come first, tinted, with the player count in front of the title.
+  A starts the game or browser through the same start as the game list.
+- **Events**: four events to a page, two lines each (title; time and source). A opens one: the whole title wrapped, time, source;
+  B closes it.
+- **News**: four items to a page (heading and the start of its text). A opens one (Up/Down scroll the text). Read by `news_fetch.c`
+  from dc.dreamcastlive.net/news.html and dc.segaonline.net (plain HTTP), cut into items by `news_parse.c`: every h1-h4 heading
+  starts an item, the text after it is its body. This is generic because the pages' markup has not been seen from the cloud
+  session (no network): it may need tuning to the real pages.
+- **Settings**: Connection, Interface, ISP settings, Preferred network, DreamPi add-on state, Network test (the ones not built
+  yet are dim and say coming soon), and the Internet settings of `ui_settings.c`.
+
+X connects or hangs up from any page, B or BACK leaves. The empty player list shows what the fetch is doing or why it failed.
 
 ## Todo: Online menu item (blue, takes the place of Music)
 

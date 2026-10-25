@@ -312,6 +312,103 @@ tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
     }
 }
 
+
+/* ---- Labels of the screens, for pictures (BIOS_PREVIEW_LABEL_FILE): the console sets the texts of the icon captions, the Settings rows, the
+ * game list rows and the help box through gfx_set_label(); here a file does. One line each: `0x200|Play` (an icon caption), `0x1407|Language|English`
+ * (a Settings row: label and value), `0x140B|BIOS|Language of the BIOS messages` (the help box: group and help), `0x17C0|Some Game` (a game
+ * list row), and `@x,y,rrggbb|text` for any text at a place of the picture (x < 0: centred on -x). The font is the BIOS's own, at its own size. */
+typedef struct {
+    unsigned id;
+    char a[64], b[64];
+} plabel;
+static plabel plabels[96];
+static int nplabels;
+typedef struct {
+    int x, y;
+    unsigned rgb;
+    char text[64];
+} ptext;
+static ptext ptexts[64];
+static int nptexts;
+
+static void
+load_labels(const char* path) {
+    FILE* f = fopen(path, "r");
+    char line[256];
+    while (f && fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = '\0';
+        if (line[0] == '@' && nptexts < 64) {
+            ptext* t = &ptexts[nptexts];
+            char* bar = strchr(line, '|');
+            unsigned rgb = 0xFFFFFF;
+            if (bar && sscanf(line + 1, "%d,%d,%x", &t->x, &t->y, &rgb) >= 2) {
+                t->rgb = rgb;
+                snprintf(t->text, sizeof(t->text), "%s", bar + 1);
+                nptexts++;
+            }
+        } else if (line[0] && line[0] != '#' && nplabels < 96) {
+            plabel* l = &plabels[nplabels];
+            char* b1 = strchr(line, '|');
+            if (!b1) continue;
+            *b1++ = '\0';
+            l->id = (unsigned)strtoul(line, NULL, 0);
+            char* b2 = strchr(b1, '|');
+            if (b2) *b2++ = '\0';
+            snprintf(l->a, sizeof(l->a), "%s", b1);
+            snprintf(l->b, sizeof(l->b), "%s", b2 ? b2 : "");
+            nplabels++;
+        }
+    }
+    if (f) fclose(f);
+}
+
+static const plabel*
+find_label(unsigned id) {
+    for (int i = 0; i < nplabels; i++) {
+        if (plabels[i].id == id) return &plabels[i];
+    }
+    return NULL;
+}
+
+/* the BIOS font at its own size, with its top left corner at (lx, ly) */
+static void
+blit_text(const char* str, int lx, int ly, unsigned rgb) {
+    static uint16_t canvas[32 * 640];
+    if (!g_rom || !str[0]) return;
+    memset(canvas, 0, sizeof(canvas));
+    btext_draw(canvas, 640, 32, 0, 0, g_rom->data + BTEXT_FONT_OFFSET, str, 0xFFFF);
+    float tint[3] = {(float)((rgb >> 16) & 255) / 255.0f, (float)((rgb >> 8) & 255) / 255.0f, (float)(rgb & 255) / 255.0f};
+    for (int j = 0; j < 28; j++)
+        for (int i = 0; i < 640; i++) {
+            uint16_t c = canvas[j * 640 + i];
+            int px = lx + i, py = ly + j;
+            if (!(c >> 12) || px < 0 || px >= W || py < 0 || py >= H) continue;
+            float a = (float)(c >> 12) / 15.0f;
+            float lum = (float)((c >> 4) & 15) / 15.0f; /* the glyphs carry their own shade: white text, tinted */
+            for (int k = 0; k < 3; k++) fb[py][px][k] = fb[py][px][k] * (1.0f - a) + (lum * tint[k] + (1.0f - lum) * 0.0f) * a;
+        }
+}
+
+static int
+draw_label_text(const bvm_obj* o, float x, float y, int x0, int y0) {
+    const plabel* l = find_label(o->id);
+    if (!l) return 0;
+    if (o->id >= BMENU_ID_ICON(0) && o->id < BMENU_ID_ICON(BMENU_ICONS)) { /* centred on the anchor */
+        blit_text(l->a, (int)(x - (float)btext_width(l->a) / 2.0f), (int)(y - 13.0f), 0xFFFFFF);
+    } else if (o->id >= BPAGE_TEXT_ID(0) && o->id < BPAGE_TEXT_ID(BPAGE_SLOTS)) { /* "label" and the value 250 px further */
+        blit_text(l->a, x0 + 10, y0, 0xFFFFFF);
+        blit_text(l->b, x0 + 250, y0, 0xFFFFFF);
+    } else if (o->id == BPAGE_HELP_ID) { /* two lines, left edge 156 px left of the anchor */
+        blit_text(l->a, (int)(x - 156.0f), y0 + 6, 0xFFFFFF);
+        blit_text(l->b, (int)(x - 156.0f), y0 + 6 + 32, 0xFFFFFF);
+    } else if (o->id >= BLIST_TEXT_ID(0) && o->id < BLIST_TEXT_ID(BLIST_MAX_SLOTS)) { /* a game list row: left aligned */
+        blit_text(l->a, x0, y0, 0xFFFFFF);
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
 static void
 text(void* user, const bvm_obj* o, float x, float y, float invw) {
     (void)user; (void)invw;
@@ -339,6 +436,9 @@ text(void* user, const bvm_obj* o, float x, float y, float invw) {
                 for (int k = 0; k < 3; k++) fb[py][px][k] = fb[py][px][k] * (1.0f - a) + rgb[k] * a;
             }
         }
+        return;
+    }
+    if (nplabels && draw_label_text(o, x, y, x0, y0)) {
         return;
     }
     if (getenv("BIOS_PREVIEW_LABELS") && g_rom) { /* sample labels placed as the console's gfx.c places them */
@@ -524,6 +624,9 @@ main(int argc, char** argv) {
         return 1;
     }
     g_rom = &rom;
+    if (getenv("BIOS_PREVIEW_LABEL_FILE")) {
+        load_labels(getenv("BIOS_PREVIEW_LABEL_FILE"));
+    }
 
     const char* logo_path = getenv("BIOS_PREVIEW_LOGO");
     if (logo_path && *logo_path) {
@@ -751,35 +854,40 @@ main(int argc, char** argv) {
         bscene_draw_background(&menu.bg, &sink);
         bfs_set_serial_slot(&demo_fs, getenv("BIOS_PREVIEW_SD") ? atoi(getenv("BIOS_PREVIEW_SD")) : -1); /* the SD card mark */
         bfs_draw(&demo_fs, &sink);
-        if (getenv("BIOS_PREVIEW_PADLABELS")) { /* "Keyboard,Mouse,...": the pills over ports A, B, ... (text drawn as a white bar of its width) */
+        if (getenv("BIOS_PREVIEW_PADLABELS")) { /* "Keyboard,Mouse,...": the pills of ports A, B, ... as ui_files.c lays them out (an empty name: no label) */
             uint32_t body[4], border[4];
             for (int i = 0; i < 4; i++) bmenu_pill_colours(&menu, i, &body[i], &border[i]);
             char list[256];
+            char* names[4] = {NULL, NULL, NULL, NULL};
             snprintf(list, sizeof(list), "%s", getenv("BIOS_PREVIEW_PADLABELS"));
-            int port = 0;
-            for (char* t = strtok(list, ","); t && port < 4; t = strtok(NULL, ","), port++) {
-                float px, py;
-                if (!bfs_pad_px(&demo_fs, port, &px, &py)) continue;
-                pad_label_rect r;
-                float ps = getenv("BIOS_PREVIEW_PAD_SCALE") ? (float)atof(getenv("BIOS_PREVIEW_PAD_SCALE")) : PAD_LABEL_SCALE; /* the text size to try */
-                float tw = (float)(btext_width(t) + 3) * ps;
-                pad_label_layout(px, py, tw, getenv("BIOS_PREVIEW_CENTRED") ? 1 : PAD_LABEL_CENTRED, &r);
-                if (ps != PAD_LABEL_SCALE) { /* a taller pill for bigger text, same bottom */
-                    float h = 26.0f * ps + 8.0f;
-                    r.y += r.h - h;
-                    r.h = h;
+            char* cur = list;
+            for (int port = 0; port < 4 && cur; port++) {
+                char* comma = strchr(cur, ',');
+                if (comma) *comma = '\0';
+                names[port] = cur[0] ? cur : NULL;
+                cur = comma ? comma + 1 : NULL;
+            }
+            float px[4] = {0}, py[4] = {0}, tw[4] = {0};
+            pad_label_rect rr[4];
+            for (int port = 0; port < 4; port++) {
+                if (names[port] && bfs_pad_px(&demo_fs, port, &px[port], &py[port])) {
+                    tw[port] = (float)(btext_width(names[port]) + 3);
                 }
+            }
+            pad_label_layout_set(4, px, py, tw, getenv("BIOS_PREVIEW_CENTRED") ? 1 : PAD_LABEL_CENTRED, rr);
+            for (int port = 0; port < 4; port++) {
+                pad_label_rect r = rr[port];
+                if (tw[port] <= 0.0f) continue;
+                const char* t = names[port];
                 for (int y = (int)r.y; y < (int)(r.y + r.h); y++) {
                     for (int x = (int)r.x; x < (int)(r.x + r.w); x++) {
                         float rad = r.h / 2.0f;
-                        float d = 0; /* distance outside the pill's straight part */
                         float cx = (float)x + 0.5f, cy = (float)y + 0.5f;
                         float lx = r.x + rad, rx = r.x + r.w - rad, my = r.y + rad;
                         float ex = cx < lx ? lx - cx : (cx > rx ? cx - rx : 0.0f), ey = cy - my;
-                        d = sqrtf(ex * ex + ey * ey);
+                        float d = sqrtf(ex * ex + ey * ey);
                         if (d > rad) continue;
-                        int rim = d > rad - PILL_BORDER;
-                        uint32_t c32 = rim ? border[port] : body[port];
+                        uint32_t c32 = d > rad - PILL_BORDER ? border[port] : body[port];
                         float a = (float)(c32 >> 24) / 255.0f;
                         for (int c = 0; c < 3; c++) {
                             float v = (float)((c32 >> (16 - 8 * c)) & 255) / 255.0f;
@@ -787,33 +895,7 @@ main(int argc, char** argv) {
                         }
                     }
                 }
-                /* the text: the BIOS font printed into a surface and shrunk by PAD_LABEL_SCALE (what gfx_text_scaled() puts on the pill) */
-                bsurf* ts = bsurf_get(0x7F00, 256, 32);
-                if (ts) {
-                    bsurf_clear(ts);
-                    ts->colour = 0xFFFF;
-                    bsurf_print(ts, 0, 0, t);
-                    float x0 = r.x + (r.w - tw) / 2.0f, y0 = r.y + (r.h - 26.0f * ps) / 2.0f;
-                    for (int y = (int)y0; y < (int)(y0 + 26.0f * ps) + 1; y++) {
-                        for (int x = (int)x0; x < (int)(x0 + tw) + 1; x++) {
-                            float cov = 0.0f, n = 0.0f;
-                            for (int sy = 0; sy < 4; sy++) {
-                                for (int sx = 0; sx < 4; sx++) {
-                                    int u = (int)(((float)x + (float)sx / 4.0f - x0) / ps);
-                                    int v = (int)(((float)y + (float)sy / 4.0f - y0) / ps);
-                                    n += 1.0f;
-                                    if (u >= 0 && u < ts->w && v >= 0 && v < ts->h) {
-                                        cov += (float)((ts->px[v * ts->w + u] >> 12) & 15) / 15.0f;
-                                    }
-                                }
-                            }
-                            cov /= n;
-                            if (x >= 0 && x < W && y >= 0 && y < H && cov > 0.0f) {
-                                for (int c = 0; c < 3; c++) fb[y][x][c] = fb[y][x][c] * (1.0f - cov) + cov;
-                            }
-                        }
-                    }
-                }
+                blit_text(t, (int)(r.x + (r.w - tw[port]) / 2.0f), (int)(r.y + (r.h - 26.0f) / 2.0f), 0xFFFFFF); /* the BIOS font, at its own size */
             }
         }
         if (getenv("BIOS_PREVIEW_HITS")) { /* BIOS_PREVIEW_HITS=1: the areas the mouse pointer answers to, in red; the cursor's in green */
@@ -954,6 +1036,9 @@ main(int argc, char** argv) {
 
     if (g_autosort) {
         frag_resolve();
+    }
+    for (int i = 0; i < nptexts; i++) {
+        blit_text(ptexts[i].text, ptexts[i].x < 0 ? -ptexts[i].x - btext_width(ptexts[i].text) / 2 : ptexts[i].x, ptexts[i].y, ptexts[i].rgb); /* x < 0: centred on -x */
     }
     FILE* out = fopen(argv[2], "wb");
     if (!out) {

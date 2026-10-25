@@ -313,14 +313,25 @@ poll_cards(void) {
 /* The command the screen asked for, a file a frame. */
 static void
 run_op(bfs_op* op) {
-    if (op->kind == BFS_OP_FORMAT) {
+    if (op->kind == BFS_OP_EXTEND) {
+        op->failed = vf_extend_capacity(op->src) == VF_EXT_ERROR;
+        queue_card_read(op->src);
+        op->progress = 1000;
+        op->done = 1;
+        return;
+    }
+    if (op->kind == BFS_OP_FORMAT || op->kind == BFS_OP_LOOK) {
         vf_card_info info;
         vf_card_info_read(op->src, &info);
         int shape = op->shape >= 0 ? op->shape : (info.status == VF_CARD_READY ? info.shape : 0);
         unsigned int c = op->shape >= 0 ? op->colour : (info.status == VF_CARD_READY ? info.colour : 0xFFFFFFFFu);
         int custom = c != 0xFFFFFFFFu && c != 0;
         unsigned char bgra[4] = {(unsigned char)c, (unsigned char)(c >> 8), (unsigned char)(c >> 16), (unsigned char)(c >> 24)};
-        op->failed = vf_format_raw(op->src, shape, custom, bgra) != 0;
+        if (op->kind == BFS_OP_LOOK) { /* only the icon and the colour: the files stay */
+            op->failed = vf_set_look_raw(op->src, shape, custom, bgra) != 0;
+        } else {
+            op->failed = vf_format_raw(op->src, shape, custom, bgra) != 0;
+        }
         queue_card_read(op->src);
         op->progress = 1000;
         op->done = 1;
@@ -434,34 +445,42 @@ uif_sync(void) {
  * File, C as Music, D as Settings). */
 static void
 draw_pad_labels(void) {
+    char kind[4][PAD_KIND_MAX];
+    float px[4], py[4], tw[4];
+    pad_label_rect r[4];
     for (int p = 0; p < 4; p++) {
         maple_device_t* dev = maple_enum_dev(p, 0);
-        float px, py;
-        if (!dev || !dev->valid || !bfs_pad_px(&fs, p, &px, &py)) {
+        char product[sizeof(dev->info.product_name) + 1];
+        tw[p] = 0.0f;
+        if (!dev || !dev->valid || !bfs_pad_px(&fs, p, &px[p], &py[p])) {
             continue;
         }
-        char product[sizeof(dev->info.product_name) + 1], name[PAD_KIND_MAX];
         memcpy(product, dev->info.product_name, sizeof(dev->info.product_name));
         product[sizeof(dev->info.product_name)] = '\0';
-        const char* kind = pad_kind_name(dev->info.functions, product, name);
-        if (!kind) {
+        if (!pad_kind_name(dev->info.functions, product, kind[p])) {
             continue;
         }
-        pad_label_rect r;
-        char fit[PAD_KIND_MAX];
-        snprintf(fit, sizeof(fit), "%s", kind);
-        while (strlen(fit) > 3 && (float)(gfx_text_width(fit) + 3) + 16.0f > PAD_LABEL_MAX_W) {
-            fit[strlen(fit) - 1] = '\0'; /* a long name of its own (a controller we do not know) is cut to the column */
+        for (;;) { /* a long name of its own (a controller we do not know) is cut to fit the column */
+            pad_label_rect probe;
+            pad_label_layout(0.0f, 0.0f, (float)(gfx_text_width(kind[p]) + 3), PAD_LABEL_CENTRED, &probe);
+            if (strlen(kind[p]) <= 3 || probe.w <= PAD_LABEL_MAX_W) {
+                break;
+            }
+            kind[p][strlen(kind[p]) - 1] = '\0';
         }
-        kind = fit;
-        float tw = (float)(gfx_text_width(kind) + 3); /* what gfx_text() draws */
-        pad_label_layout(px, py, tw, PAD_LABEL_CENTRED, &r);
+        tw[p] = (float)(gfx_text_width(kind[p]) + 3); /* what gfx_text() draws */
+    }
+    pad_label_layout_set(4, px, py, tw, PAD_LABEL_CENTRED, r); /* a pill that would touch the one before it goes to the top of its controller */
+    for (int p = 0; p < 4; p++) {
+        if (tw[p] <= 0.0f) {
+            continue;
+        }
         uint32_t body, border;
         bmenu_pill_colours(fs.m, p, &body, &border);
-        gfx_rrect(r.x, r.y, r.w, r.h, r.h / 2.0f, 0.5f, border);
-        gfx_rrect(r.x + PILL_BORDER, r.y + PILL_BORDER, r.w - 2.0f * PILL_BORDER, r.h - 2.0f * PILL_BORDER,
-                  r.h / 2.0f - PILL_BORDER, 0.505f, (body & 0x00FFFFFFu) | 0xE0000000u);
-        gfx_text(kind, r.x + (r.w - tw) / 2.0f, r.y + (r.h - 26.0f) / 2.0f, 0.51f, 0xFFFFFFFFu, 1); /* the font at its own size, like every other label */
+        gfx_rrect(r[p].x, r[p].y, r[p].w, r[p].h, r[p].h / 2.0f, 0.5f, border);
+        gfx_rrect(r[p].x + PILL_BORDER, r[p].y + PILL_BORDER, r[p].w - 2.0f * PILL_BORDER, r[p].h - 2.0f * PILL_BORDER,
+                  r[p].h / 2.0f - PILL_BORDER, 0.505f, (body & 0x00FFFFFFu) | 0xE0000000u);
+        gfx_text(kind[p], r[p].x + (r[p].w - tw[p]) / 2.0f, r[p].y + (r[p].h - 26.0f) / 2.0f, 0.51f, 0xFFFFFFFFu, 1);
     }
 }
 
@@ -477,6 +496,15 @@ uif_draw(void) {
 int
 uif_hover(float x, float y) {
     return left ? 0 : bfs_point(&fs, x, y);
+}
+
+int
+uif_grid_slot(void) {
+    if (left || fs.state != 1 || fs.g_state != 2 || fs.layer != 0 || fs.p_state != 0 || fs.m_state != 0 || fs.changed > 0) {
+        return -1;
+    }
+    int c = fs.g_cursor;
+    return c >= 0 && c < BFS_SLOTS && cards[c].status == BFS_CARD_READY ? c : -1;
 }
 
 int
