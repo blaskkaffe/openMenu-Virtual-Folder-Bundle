@@ -298,7 +298,7 @@ vf_card_look(int slot, int* shape, int* colour_index) {
  * then the 32x32 1 bit icon and the colour icon (16 palette entries, then 32x32 at 4 bits a pixel). The BIOS
  * reads the offsets at 0x10 and 0x14 (vmu_decode_file_header 0x8C023B40). */
 static int
-write_icondata(maple_device_t* dev, int shape, int colour_index) {
+write_icondata(maple_device_t* dev, int shape, int custom, const unsigned char bgra[4]) {
     uint8_t file[0xA0 + 32 + 512];
     memset(file, 0, sizeof(file));
     memcpy(file, "MEMORY CARD     ", 16);
@@ -306,8 +306,7 @@ write_icondata(maple_device_t* dev, int shape, int colour_index) {
     file[0x14] = 0xA0;
     const uint8_t* g = ICON_TABLE + (shape + 5) * 128;
     memcpy(file + 0x20, g, 128);
-    const vf_colour* c = vf_colour_get(colour_index);
-    uint16_t back = c->custom ? (uint16_t)(0xF000 | ((c->bgra[2] >> 4) << 8) | ((c->bgra[1] >> 4) << 4) | (c->bgra[0] >> 4)) : 0xFAAA;
+    uint16_t back = custom ? (uint16_t)(0xF000 | ((bgra[2] >> 4) << 8) | ((bgra[1] >> 4) << 4) | (bgra[0] >> 4)) : 0xFAAA;
     uint16_t pal[2] = {back, 0xF000}; /* 0: the card colour, 1: black */
     for (int i = 0; i < 2; i++) {
         file[0xA0 + i * 2] = (uint8_t)(pal[i] & 0xFF);
@@ -324,15 +323,14 @@ write_icondata(maple_device_t* dev, int shape, int colour_index) {
 }
 
 static int
-write_root_look(maple_device_t* dev, int shape, int colour_index) {
+write_root_look(maple_device_t* dev, int shape, int custom, const unsigned char bgra[4]) {
     vmu_root_t root;
     vmufs_mutex_lock();
     int rc = vmufs_root_read(dev, &root);
     if (rc == 0) {
-        const vf_colour* c = vf_colour_get(colour_index);
         root.icon_shape = (uint16_t)shape;
-        root.use_custom = (uint8_t)c->custom;
-        memcpy(root.custom_color, c->bgra, 4);
+        root.use_custom = (uint8_t)(custom != 0);
+        memcpy(root.custom_color, bgra, 4);
         rc = vmufs_root_write(dev, &root);
     }
     vmufs_mutex_unlock();
@@ -340,16 +338,22 @@ write_root_look(maple_device_t* dev, int shape, int colour_index) {
 }
 
 int
-vf_set_look(int slot, int shape, int colour_index) {
+vf_set_look_raw(int slot, int shape, int custom, const unsigned char bgra[4]) {
     maple_device_t* dev = card(slot);
     if (!dev) {
         return -1;
     }
     shape = shape < 0 || shape >= VF_ICON_SHAPES ? 0 : shape;
-    if (write_root_look(dev, shape, colour_index) != 0) {
+    if (write_root_look(dev, shape, custom, bgra) != 0) {
         return -1;
     }
-    return write_icondata(dev, shape, colour_index); /* the card keeps working even if this file cannot be written */
+    return write_icondata(dev, shape, custom, bgra); /* the card keeps working even if this file cannot be written */
+}
+
+int
+vf_set_look(int slot, int shape, int colour_index) {
+    const vf_colour* c = vf_colour_get(colour_index);
+    return vf_set_look_raw(slot, shape, c->custom, c->bgra);
 }
 
 static int
@@ -450,6 +454,48 @@ vf_format_raw(int slot, int shape, int custom, const unsigned char bgra[4]) {
     }
     vmufs_mutex_unlock();
     return rc;
+}
+
+/* The blocks of a standard card: 0..199 are for files, 200..240 are never used by the BIOS, 241..253 hold the directory, 254 the FAT, 255 the
+ * root block. The root block says how many blocks are for files (blk_cnt); the BIOS and the games read it as the size of the card. */
+int
+vf_extend_capacity(int slot) {
+    maple_device_t* dev = card(slot);
+    vmu_root_t root;
+    if (!dev) {
+        return VF_EXT_ERROR;
+    }
+    vmufs_mutex_lock();
+    int rc = vmufs_root_read(dev, &root);
+    if (rc != 0 || !root_valid(&root)) {
+        vmufs_mutex_unlock();
+        return VF_EXT_ERROR;
+    }
+    /* files may use everything below the directory and the FAT */
+    int top = (int)root.dir_loc - (int)root.dir_size + 1;
+    if ((int)root.fat_loc < top) {
+        top = root.fat_loc;
+    }
+    int now = root.blk_cnt ? root.blk_cnt : 200;
+    if (top <= now) {
+        vmufs_mutex_unlock();
+        return VF_EXT_ALREADY;
+    }
+    uint16_t fat[256];
+    if (vmufs_fat_read(dev, &root, fat) != 0) {
+        vmufs_mutex_unlock();
+        return VF_EXT_ERROR;
+    }
+    for (int i = now; i < top; i++) {
+        fat[i] = 0xFFFC; /* free: nothing of a card with 200 blocks lives there */
+    }
+    rc = vmufs_fat_write(dev, &root, fat);
+    if (rc == 0) {
+        root.blk_cnt = (uint16_t)top;
+        rc = vmufs_root_write(dev, &root);
+    }
+    vmufs_mutex_unlock();
+    return rc == 0 ? VF_EXT_OK : VF_EXT_ERROR;
 }
 
 /* ---- The File screen's view of a card ------------------------------------------------------------------- */

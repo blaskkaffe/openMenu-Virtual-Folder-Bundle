@@ -59,14 +59,30 @@ static const signed char browser_table[26][4] = { /* 0x8C0389B8: 0 the card (all
     {16, 24, 23, 25}, {17, 25, 24, 1},
 };
 static const signed char single_table[1][4] = {{0, 0, 0, 0}};
-static signed char popup_table[4][4];
+static signed char popup_table[5][4];
 
 /* Popups (DAT_8C038EC4 ...): panel w h, text surface w h, text x y, button offset, spacing, position * 256 */
 #define POPUP_Z (-85000)
-static const bfs_popup_def pop_card_all = {490, 212, 512, 256, 92, 115, 0, 0, 212, -500, 0, POPUP_Z, 3, 2,
-                                           {{0, 0x265}, {0, 0x266}, {0, 0x25F}}};
-static const bfs_popup_def pop_card_nocopy = {490, 212, 512, 256, 92, 115, 0, 0, 212, -500, 0, POPUP_Z, 3, 2,
-                                              {{1, 0x265}, {0, 0x266}, {0, 0x25F}}};
+/* The card's popup (A on the card in the file window): the BIOS's Copy all, Delete all (memory reset) and Cancel, with this app's
+ * Change Color and Logo and Use full size between them and Cancel. */
+#define CARD_POPUP_ITEMS(copy_grey)                                                                                     \
+    {{copy_grey, 0x265}, {0, 0x266}, {0, 0, "Change Color and Logo"}, {0, 0, "Use full size"}, {0, 0x25F}}
+static const bfs_popup_def pop_card_all = {490, 282, 512, 256, 92, 115, 0, 0, 242, -500, 0, POPUP_Z, 5, 4, CARD_POPUP_ITEMS(0)};
+static const bfs_popup_def pop_card_nocopy = {490, 282, 512, 256, 92, 115, 0, 0, 242, -500, 0, POPUP_Z, 5, 4, CARD_POPUP_ITEMS(1)};
+
+/* "Use full size": what it does and what to think about, then Cancel / Extend capacity at the bottom. */
+static const char* const extend_lines[] = {
+    "Use all 241 blocks of this VMU?",
+    "",
+    "A VMU keeps 200 blocks for saves. The",
+    "other 41 are normally left unused.",
+    "Extending adds them to the free space.",
+    "Some games and tools may not expect",
+    "this. Back up the card first.",
+};
+static const bfs_popup_def pop_extend = {500, 330, 512, 320, 82, 262, 0, -2414, 131, 0, 0, POPUP_Z, 2, 0,
+                                         {{0, 0, "Cancel"}, {0, 0, "Extend capacity"}},
+                                         extend_lines, 7, 26, 14, 26};
 static const bfs_popup_def pop_files = {256, 212, 256, 256, 72, 115, 0, 0, 212, 0, 0, POPUP_Z, 3, 2,
                                         {{0, 0x25D}, {0, 0x25E}, {0, 0x25F}}};
 static const bfs_popup_def pop_files_nocopy = {460, 212, 512, 256, 106, 115, 0, 0, 212, 0, 0, POPUP_Z, 3, 2,
@@ -822,7 +838,13 @@ popup(bfs* fs, const bfs_popup_def* d, int init) {
                 if (s) {
                     s->colour = d->item[i].grey ? 0xF777 : 0xFCCC;
                     int y = d->ty + (i * step_text - ((n - 1) * step_text) / 2) / 0x15;
-                    bsurf_print(s, d->tx, y, msg(fs, d->item[i].msg, 0));
+                    bsurf_print(s, d->tx, y, d->item[i].text ? d->item[i].text : msg(fs, d->item[i].msg, 0));
+                }
+            }
+            if (s && d->lines) {
+                s->colour = 0xFCCC;
+                for (int l = 0; l < d->nlines; l++) {
+                    bsurf_print(s, d->line_x, d->line_y + l * d->line_h, d->lines[l]);
                 }
             }
             cursor_install(fs, 1, (const signed char(*)[4])popup_table, n, init, popup_cb);
@@ -883,7 +905,7 @@ bfs_message_box_(bfs* fs, int id) {
             if (s) {
                 bsurf_clear(s);
                 for (int l = 0; l < 4; l++) {
-                    bsurf_print(s, -256, 1 + l * 25, msg(fs, id, l));
+                    bsurf_print(s, -256, 1 + l * 25, id < 0 ? (fs->m_text[l] ? fs->m_text[l] : "") : msg(fs, id, l));
                 }
             }
             bvm_obj* b = create(fs, 4, ID_POPBTN(0), 0x5000);
@@ -1769,19 +1791,29 @@ bfs_update(bfs* fs) {
         case 0xC: {
             static const bfs_popup_def* const defs[5] = {&pop_card_all, &pop_card_nocopy, &pop_card_nocopy, &pop_files,
                                                          &pop_files_nocopy};
-            static const int init[5] = {0, 2, 2, 0, 2};
+            static const int init[5] = {0, 4, 4, 0, 2}; /* the cards: Copy all, or Cancel when nothing can be copied */
             int k = fs->state - 8;
             r = popup(fs, defs[k], init[k]);
             if (r == -1) {
                 break;
             }
-            if (fs->state == 8 && r == 0) {
-                fs->state = 0x2D; /* copy all */
+            if (fs->state <= 10) { /* the card's popup: Copy all, Delete all, Change Color and Logo, Use full size, Cancel */
+                if (fs->state == 8 && r == 0) {
+                    fs->state = 0x2D; /* copy all */
+                } else if (r == 1) {
+                    fs->f_look = 0;
+                    fs->state = 0x30; /* memory reset */
+                    sfx(fs, 3);
+                } else if (r == 2) {
+                    fs->f_look = 1;
+                    fs->state = 0x30; /* the same pickers, but nothing is erased */
+                } else if (r == 3) {
+                    fs->state = 0x44; /* use the whole memory */
+                } else if (r == 4) {
+                    fs->state = fs->state == 10 ? 6 : 5;
+                }
             } else if ((fs->state == 0xB) && r == 0) {
                 fs->state = 0xD; /* copy */
-            } else if (r == 1 && fs->state <= 10) {
-                fs->state = 0x30; /* memory reset */
-                sfx(fs, 3);
             } else if (r == 1) {
                 fs->state = 0x32; /* delete */
                 sfx(fs, 3);
@@ -1983,9 +2015,9 @@ bfs_update(bfs* fs) {
                 fs->state = 0xF;
             }
             break;
-        case 0x30: /* memory reset */
+        case 0x30: /* memory reset, or (f_look) the icon and colour only */
             fs->mode = 2;
-            fs->f_state = 0;
+            fs->f_state = fs->f_look ? 1 : 0; /* no "are you sure" for a change that erases nothing */
             fs->state = 0x31;
             break;
         case 0x31: {
@@ -1998,6 +2030,47 @@ bfs_update(bfs* fs) {
             }
             break;
         }
+        case 0x44: /* use full size */
+            if (fs->card[fs->src].status == BFS_CARD_READY && fs->card[fs->src].total_blocks >= 241) {
+                fs->m_text[0] = "This VMU already uses";
+                fs->m_text[1] = "all of its memory.";
+                fs->m_text[2] = fs->m_text[3] = NULL;
+                fs->state = 0x47;
+            } else {
+                fs->state = 0x45;
+            }
+            break;
+        case 0x45:
+            r = popup(fs, &pop_extend, 0);
+            if (r == 1) {
+                start_op(fs, BFS_OP_EXTEND, fs->src, -1);
+                fs->state = 0x46;
+            } else if (r == 0) {
+                fs->state = 5;
+                fs->b_state = 4;
+            }
+            break;
+        case 0x46:
+            if (fs->op.done) {
+                fs->op.kind = BFS_OP_NONE;
+                sfx(fs, fs->op.failed ? 4 : 1);
+                if (fs->op.failed) {
+                    fs->m_text[0] = "The capacity could not";
+                    fs->m_text[1] = "be extended.";
+                } else {
+                    fs->m_text[0] = "This VMU now uses all of";
+                    fs->m_text[1] = "its memory: 241 blocks.";
+                }
+                fs->m_text[2] = fs->m_text[3] = NULL;
+                fs->state = 0x47;
+            }
+            break;
+        case 0x47:
+            if (bfs_message_box_(fs, -1) != -1) {
+                fs->state = fs->card[fs->src].status == BFS_CARD_UNFORMATTED ? 6 : 5;
+                fs->b_state = 4;
+            }
+            break;
         case 0x32:
             fs->mode = 0;
             list_marked(fs, 1);
@@ -2500,6 +2573,10 @@ bfs_format_flow_(bfs* fs) {
         case 0xC:
             reset_cleanup(fs);
             cursor_off(fs);
+            if (fs->f_look) { /* nothing is erased: no "Deleting all..." box, the change is made at once */
+                fs->f_state = 0xE;
+                break;
+            }
             create(fs, 0x42, ID_RESETBOX, 0x1010);
             create(fs, 0x43, ID_RESETBAR, PRIO);
             {
@@ -2517,9 +2594,11 @@ bfs_format_flow_(bfs* fs) {
             }
             break;
         case 0xE:
-            reset_help(fs, 4);
+            if (!fs->f_look) {
+                reset_help(fs, 4);
+            }
             memset(&fs->op, 0, sizeof(fs->op));
-            fs->op.kind = BFS_OP_FORMAT;
+            fs->op.kind = fs->f_look ? BFS_OP_LOOK : BFS_OP_FORMAT;
             fs->op.src = fs->src;
             fs->op.shape = fs->f_icon;
             fs->op.colour = fs->f_colour;
@@ -2545,7 +2624,12 @@ bfs_format_flow_(bfs* fs) {
         }
         case 0x10:
         case 0x11:
-            if (bfs_message_box_(fs, fs->f_state == 0x10 ? 0x6B : 0xD6) != -1) {
+            if (fs->f_look) {
+                fs->m_text[0] = fs->f_state == 0x10 ? "The icon and colour of" : "The icon and colour could";
+                fs->m_text[1] = fs->f_state == 0x10 ? "the VMU were changed." : "not be changed.";
+                fs->m_text[2] = fs->m_text[3] = NULL;
+            }
+            if (bfs_message_box_(fs, fs->f_look ? -1 : (fs->f_state == 0x10 ? 0x6B : 0xD6)) != -1) {
                 fs->f_state = 0;
                 return -1;
             }
@@ -2681,19 +2765,19 @@ collect_browser(bfs* fs, hit* h) {
 static int
 collect_popup(bfs* fs, hit* h) {
     const bfs_popup_def* d = fs->p_def;
-    float x[4], y[4], cx;
-    int n = 0, have[4] = {0, 0, 0, 0};
+    float x[5], y[5], cx;
+    int n = 0, have[5] = {0, 0, 0, 0, 0};
     if (!d || fs->p_state != 2 || !obj_px(fs, ID_POPUP, &cx, &y[0])) {
         return 0;
     }
-    for (int i = 0; i < d->count && i < 4; i++) {
+    for (int i = 0; i < d->count && i < 5; i++) {
         have[i] = obj_px(fs, ID_POPBTN(i), &x[i], &y[i]);
     }
     float half = 20.0f; /* half the distance between two choices */
     if (d->count > 1 && have[0] && have[1]) {
         half = (y[0] > y[1] ? y[0] - y[1] : y[1] - y[0]) / 2.0f;
     }
-    for (int i = 0; i < d->count && i < 4; i++) {
+    for (int i = 0; i < d->count && i < 5; i++) {
         if (have[i] && d->item[i].grey != 1) { /* the choice's marker sits at the left of the panel: the row is as wide as the panel */
             h[n++] = (hit){cx, y[i], (float)d->w / 2.0f, half, i};
         }

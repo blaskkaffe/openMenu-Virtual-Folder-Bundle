@@ -313,14 +313,25 @@ poll_cards(void) {
 /* The command the screen asked for, a file a frame. */
 static void
 run_op(bfs_op* op) {
-    if (op->kind == BFS_OP_FORMAT) {
+    if (op->kind == BFS_OP_EXTEND) {
+        op->failed = vf_extend_capacity(op->src) == VF_EXT_ERROR;
+        queue_card_read(op->src);
+        op->progress = 1000;
+        op->done = 1;
+        return;
+    }
+    if (op->kind == BFS_OP_FORMAT || op->kind == BFS_OP_LOOK) {
         vf_card_info info;
         vf_card_info_read(op->src, &info);
         int shape = op->shape >= 0 ? op->shape : (info.status == VF_CARD_READY ? info.shape : 0);
         unsigned int c = op->shape >= 0 ? op->colour : (info.status == VF_CARD_READY ? info.colour : 0xFFFFFFFFu);
         int custom = c != 0xFFFFFFFFu && c != 0;
         unsigned char bgra[4] = {(unsigned char)c, (unsigned char)(c >> 8), (unsigned char)(c >> 16), (unsigned char)(c >> 24)};
-        op->failed = vf_format_raw(op->src, shape, custom, bgra) != 0;
+        if (op->kind == BFS_OP_LOOK) { /* only the icon and the colour: the files stay */
+            op->failed = vf_set_look_raw(op->src, shape, custom, bgra) != 0;
+        } else {
+            op->failed = vf_format_raw(op->src, shape, custom, bgra) != 0;
+        }
         queue_card_read(op->src);
         op->progress = 1000;
         op->done = 1;
@@ -477,6 +488,15 @@ uif_draw(void) {
 int
 uif_hover(float x, float y) {
     return left ? 0 : bfs_point(&fs, x, y);
+}
+
+int
+uif_grid_slot(void) {
+    if (left || fs.state != 1 || fs.g_state != 2 || fs.layer != 0 || fs.p_state != 0 || fs.m_state != 0 || fs.changed > 0) {
+        return -1;
+    }
+    int c = fs.g_cursor;
+    return c >= 0 && c < BFS_SLOTS && cards[c].status == BFS_CARD_READY ? c : -1;
 }
 
 int

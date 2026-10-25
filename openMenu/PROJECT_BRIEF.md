@@ -120,11 +120,11 @@ Preserves the layout and visual identity of the original BIOS file manager while
 
 ### 5.1 Serial VMU
 
-A Serial VMU submenu: Enable, Disable, Set slot, Load backup, Save backup. These manage the serial VMU feature and its backup files.
+Turning the Serial VMU on and off stays in Settings for now (it is meant to move to the File menu later). Which VMU is used is chosen in the File menu: select a VMU on the card grid and press X for a small menu in the style of the X menu of the Play screen, with "Set as Serial VMU" and "Serial VMU Off". Back up now / load backup: still open.
 
 ### 5.2 VMU appearance and storage
 
-Set the VMU icon; set the VMU color; expand storage usage to the full available VMU capacity; change the VMU logo displayed in OpenMenu. The full-storage option and any changes to existing VMU data must respect the actual storage capabilities and limitations of the underlying implementation.
+The card popup of the File menu (A on the card in the file window) has: Copy all, Delete all (memory reset, which is the format), Change Color and Logo (the BIOS's icon and colour pickers, but nothing is erased), Use full size and Cancel. Use full size opens a second popup with a warning and what it means for the VMU, and Cancel / Extend capacity at the bottom. The full-storage option and any changes to existing VMU data must respect the actual storage capabilities and limitations of the underlying implementation. (Setting a VMU colour or a logo for openMenu itself is not planned.)
 
 ### 5.3 VMU slot selection
 

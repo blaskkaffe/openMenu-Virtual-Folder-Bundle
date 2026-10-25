@@ -231,6 +231,7 @@ show_notice(const char* text) {
 }
 
 static int svmu_active(void); /* the Serial VMU popup, further down */
+static void draw_vmu_menu(void);
 static void draw_svmu(void);
 
 /* ---- Game list -------------------------------------------------------------------------- */
@@ -953,6 +954,84 @@ recent_name(int index) {
     return g ? g->name : "?";
 }
 
+/* ---- The VMU menu of the File screen (X on a memory card of the grid): what can be chosen for that card. The wording follows the Serial VMU
+ * row of Settings: Off, or On with the port and socket. ---- */
+static int vmu_menu_open;
+static int vmu_menu_slot;
+static int vmu_menu_row;
+
+static void
+vmu_slot_name(int slot, char out[3]) {
+    out[0] = (char)('A' + slot / 2);
+    out[1] = (char)('1' + slot % 2);
+    out[2] = '\0';
+}
+
+static const char*
+vmu_menu_name(int index) {
+    return index == 0 ? "Set as Serial VMU" : "Serial VMU Off";
+}
+
+static int
+vmu_menu_dim(int index) {
+    int on = svmu_slot();
+    return index == 0 ? on == vmu_menu_slot : on < 0; /* already so */
+}
+
+static void
+draw_vmu_menu(void) {
+    char slot[3], title[32];
+    vmu_slot_name(vmu_menu_slot, slot);
+    snprintf(title, sizeof(title), "VMU %s%s", slot, svmu_slot() == vmu_menu_slot ? "  (Serial VMU)" : "");
+    draw_popup(title, "A: select   B: back", 2, vmu_menu_row, vmu_menu_name, vmu_menu_dim);
+}
+
+static void
+handle_vmu_menu(button_t b) {
+    switch (b) {
+        case BTN_UP:
+        case BTN_DOWN: {
+            int row = b == BTN_UP ? 0 : 1;
+            if (row != vmu_menu_row) {
+                vmu_menu_row = row;
+                sound_sfx(BAUDIO_SFX_CURSOR);
+            }
+            break;
+        }
+        case BTN_A:
+        case BTN_START: {
+            char slot[3], text[32];
+            if (vmu_menu_dim(vmu_menu_row)) {
+                sound_sfx(BAUDIO_SFX_ERROR);
+                break;
+            }
+            if (vmu_menu_row == 0) {
+                sf_serial_vmu[0] = (uint8_t)(SERIAL_VMU_A1 + vmu_menu_slot);
+                vmu_slot_name(vmu_menu_slot, slot);
+                snprintf(text, sizeof(text), "Serial VMU: On (%s)", slot);
+            } else {
+                sf_serial_vmu[0] = SERIAL_VMU_OFF;
+                snprintf(text, sizeof(text), "Serial VMU: Off");
+            }
+            if (uis_commit() != 0) {
+                sound_sfx(BAUDIO_SFX_ERROR);
+                show_notice("Could not save settings");
+            } else {
+                sound_sfx(BAUDIO_SFX_CONFIRM);
+                show_notice(text);
+            }
+            vmu_menu_open = 0;
+            break;
+        }
+        case BTN_B:
+        case BTN_X:
+            sound_sfx(BAUDIO_SFX_CANCEL);
+            vmu_menu_open = 0;
+            break;
+        default: break;
+    }
+}
+
 static const char*
 settings_choice_name(int index) {
     return uis_choice_name(page.cursor, index);
@@ -1256,6 +1335,9 @@ draw_frame(void) {
     } else if (screen == SCREEN_FILE) {
         bscene_draw_background(&menu.bg, gfx_sink());
         uif_draw();
+        if (vmu_menu_open) {
+            draw_vmu_menu();
+        }
     } else if (screen == SCREEN_MUSIC) {
         bscene_draw_background(&menu.bg, gfx_sink());
         bcd_draw(&cdp, gfx_sink());
@@ -1391,6 +1473,7 @@ handle_main(button_t b) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 uif_open(&menu);
                 uif_set_pal(console_is_pal());
+                vmu_menu_open = 0;
                 screen = SCREEN_FILE;
             } else if (menu.selected == ICON_SETTINGS) {
                 sound_sfx(BAUDIO_SFX_ENTER);
@@ -2066,7 +2149,7 @@ bench_apply(const bench_cmd* c) {
         char line[64];
         snprintf(line, sizeof(line), "forced back to the main menu from %s", log_label());
         serial_log_block("bench", line);
-        recent_open = options_open = viewer_open = settings_popup = about_open = report_page = 0;
+        recent_open = options_open = viewer_open = settings_popup = about_open = report_page = vmu_menu_open = 0;
         if (screen == SCREEN_SETTINGS || screen == SCREEN_DATETIME) {
             uis_commit();
         }
@@ -2185,6 +2268,9 @@ apply_hover(void) {
     } else if (settings_popup) {
         popup_rows = uis_choice_count(page.cursor);
         popup_cur = &settings_popup_sel;
+    } else if (vmu_menu_open && screen == SCREEN_FILE) {
+        popup_rows = 2;
+        popup_cur = &vmu_menu_row;
     }
     if (popup_cur) {
         int sel = *popup_cur;
@@ -2195,6 +2281,7 @@ apply_hover(void) {
             popup_sel = first + (int)((uy - rows_y) / GFX_LINE_H);
             *popup_cur = popup_sel;
         }
+        files_over = popup_sel >= 0; /* for the VMU menu: a click outside its rows does nothing */
         return;
     }
     if (about_open) {
@@ -2391,10 +2478,19 @@ ui_bios_run(const bios_rom* rom) {
             if (b == BTN_A && pointer.clicked && !files_over) {
                 b = BTN_NONE; /* a click on nothing does nothing */
             }
-            if (pointer.wheel && uif_pages() && (b == BTN_UP || b == BTN_DOWN)) {
-                b = b == BTN_UP ? BTN_PAGE_UP : BTN_PAGE_DOWN; /* the wheel turns the pages */
+            if (vmu_menu_open) {
+                handle_vmu_menu(b);
+            } else if (b == BTN_X && uif_grid_slot() >= 0) {
+                vmu_menu_slot = uif_grid_slot();
+                vmu_menu_row = svmu_slot() == vmu_menu_slot ? 1 : 0;
+                vmu_menu_open = 1;
+                sound_sfx(BAUDIO_SFX_ENTER);
+            } else {
+                if (pointer.wheel && uif_pages() && (b == BTN_UP || b == BTN_DOWN)) {
+                    b = b == BTN_UP ? BTN_PAGE_UP : BTN_PAGE_DOWN; /* the wheel turns the pages */
+                }
+                uif_handle(b);
             }
-            uif_handle(b);
         } else if (screen == SCREEN_MUSIC) {
             handle_music(b);
         } else if (screen == SCREEN_INTERNET) {

@@ -239,16 +239,33 @@ in `bios_engine_test`); a controller whose name is none of the known ones shows 
 what they report in each mode: if a mode reports "Dreamcast Controller" it gets no label. Check the strings of each mode on the
 real devices; `BIOS_PREVIEW_PADLABELS="Keyboard,Mouse"` shows the pills' place on a PC.
 
-## Todo: File menu, devices, DreamPi (from the plan, later)
+## Todo: File menu, devices (from the plan, later)
 
-- Browse and load Serial VMU saves (the saves kept on the SD card by the serial VMU emulation) in the
-  File menu, next to the real cards.
-- Serial SD settings in the File menu: on/off, slot/controller number, back up now, load backup.
-- Integrate with VM2, VMU Pro, USB4Maple and Pico2Maple: sense which of them is plugged in, and
-  control their own features from the File menu: switch between VMU slots (and know which is
-  connected), enable/disable GameID and show its status, battery level of VM2 and VMU Pro, and more.
-- Much later: integrate with DreamPi so that the DreamPi script can load, download and upload saves
-  and VMU backups.
+- Browse and load Serial VMU saves (the per-game images kept on the SD card by the serial VMU emulation) in the File menu, next to the
+  real cards. Needs a decision, see "Serial VMU saves" below.
+- Serial VMU on/off moves from Settings to the File menu later; back up now / load backup.
+- Integrate with VM2, VMU Pro, USB4Maple and Pico2Maple: sense which of them is plugged in, and control their own features from the
+  File menu: switch between VMU slots (and know which is connected), enable/disable GameID and show its status (a small slot number and
+  GameID box over the lower right of the VMU graphic), battery level of VM2 and VMU Pro, and more. Depends on each device's firmware.
+
+### Done in the File menu
+
+- X on a VMU of the card grid: a menu in the style of the Play screen's X menu, with "Set as Serial VMU" and "Serial VMU Off" (it writes
+  Settings > Serial VMU, "On (B1)" and so on, and saves). The slot carries the SD card mark.
+- Card popup (A on the card in the file window): Copy all, Delete all (memory reset), Change Color and Logo, Use full size, Cancel.
+  Change Color and Logo runs the BIOS icon and colour pickers, then writes only the root block's icon and colour and ICONDATA_VMS
+  (`BFS_OP_LOOK`, `vf_set_look_raw`): no file is touched. Use full size opens a popup with what it means and Cancel / Extend capacity
+  (`BFS_OP_EXTEND`, `vf_extend_capacity`): the block count of the root block goes from 200 to 241 (the blocks 200..240 that the BIOS leaves
+  unused become free space). Untested on hardware: do it on a spare card first. A memory reset keeps the extended size (the root block is
+  kept), a card that already uses it says so.
+
+## Serial VMU saves (decision needed)
+
+How 1.7.1 / Derek's fork keeps them (`serial_vmu.c`, README "Serial VMU Feature"): on the serial SD card, `OPENMENU/SAVES/<serial>/` has one
+folder per game with `SLOT1.VMU` (Multi-Slot: up to `SLOT5.VMU`), `TITLE.TXT` and optional `SLOTn.TXT` labels; each file is a whole 128 KB VMU
+image. The menu only copies a whole image to the VMU of the Serial VMU slot before a game starts and back at the next start. There is no
+browsing of single saves inside the menu: to move a single save one uses the BIOS File screen to copy files between VMUs, or a PC tool
+(VMU Explorer) on the `.VMU` files.
 
 ## Internet screen layout (ui_internet.c)
 
