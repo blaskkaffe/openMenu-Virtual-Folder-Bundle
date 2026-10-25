@@ -95,7 +95,7 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 |---|---|---|
 | Sections | Done (layout) | buttons: Online (players and games side by side, Y switches column, A on a game starts it if it is on the card), Play (browsers; the online game catalogue row says coming soon), Events, News (placeholder: needs the DreamPi companion), Settings (connection, interface, ISP / preferred network / test as coming soon rows). Untested: written without a console build |
 | Players online | Done | Pi `/players` first, fallbacks; DCNow!/DCNET counts |
-| Games being played | Partial | listed; A refreshes instead of launching the game. Launch by Pi queue works (`dreampi_link.c`) |
+| Games being played | Partial | listed; A starts the game when it is on the card (through the game list's start, Serial VMU first; untested on a console), otherwise says so; A on the player column refreshes. Launch by Pi queue works (`dreampi_link.c`) |
 | Star player/game/event + notifications | Missing | needs Pi-side storage or a save-file list, plus the banner (see main menu) |
 | Online game catalogue (features, connection methods, network) | Missing | needs a data source (DreamcastLive / Flycast DCNet lists), best prepared on the Pi |
 | Events (DC99) | Partial | upcoming only; no current/upcoming split, no detail view |
@@ -123,7 +123,7 @@ Checked against the earlier tables above; only what is new or sharper:
 
 - **Group control list** is longer: Developer, Publisher, Local multiplayer, Online multiplayer, Online features, Modem, Serial, W5500, Broadband (besides Folder, Favorites, Genre, Homebrew, Tools, Browsers). Developer/Publisher need decision 4; Modem/BBA come from META.DAT `network`; Serial/W5500 need version tags (decision 5). Nothing new is built yet.
 - **Sort and group are separate, independently configurable controls**, and the active sort shows in the bottom row (Missing, see the Play menu table).
-- **Internet > Play** also reaches a web browser; **Internet > Online** A joins/launches a game (Partial: A refreshes today).
+- **Internet > Play** also reaches a web browser; **Internet > Online** A joins/launches a game (Partial: A starts a game that is on the card; no join through the Pi queue yet).
 - **Version picker** in the X popup appears only when several variants are installed; labels must be region + patch type, not filenames.
 - **Optional, later:** opening the case and showing the disc on the Y screen.
 - **Hardware items stay conditional**: pico2maple, BlueRetro, iBlueControlMod, VM2, VMU Pro need firmware first (Blocked rows above).
