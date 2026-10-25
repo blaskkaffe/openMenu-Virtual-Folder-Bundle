@@ -97,6 +97,8 @@ typedef struct bfs_host {
 #define BFS_KEY_B 6
 #define BFS_KEY_X 7
 #define BFS_KEY_Y 8
+#define BFS_KEY_PGUP 9   /* a page back in the file window, up in the icon picker */
+#define BFS_KEY_PGDN 10
 
 struct bfs;
 
@@ -154,6 +156,7 @@ typedef struct bfs {
     bfs_cursor cur[2];
     int layer;
     int key;
+    int warp;             /* 1 + the cursor position the pointer asked for, 0 none (bfs_point) */
     /* tables from the ROM */
     const uint8_t* grid_search;  /* 0x8C036FE0 */
     const uint8_t* arrow_tab;    /* 0x8C037124 */
@@ -179,6 +182,15 @@ void bfs_key(bfs* fs, int key);
 /* One frame, after bmenu_update(). Returns 1 when the screen has been left. */
 int bfs_update(bfs* fs);
 void bfs_draw(bfs* fs, const bscene_sink* sink);
+/* The mouse pointer at (x, y) on the 640x480 picture: whatever the cursor can be on under it (a card, BACK, a file tile, a popup
+ * choice, an icon or colour, a button) gets the cursor on the next bfs_update(), as a direction key would. Returns 1 if the pointer
+ * is over such a thing, so a click (bfs_key BFS_KEY_A) there can be told from one on nothing. */
+int bfs_point(bfs* fs, float x, float y);
+/* The areas bfs_point() answers to, for the preview and tests: out[i] = {centre x, centre y, half width, half height, cursor position}. */
+int bfs_hit_rects(bfs* fs, float out[][5], int max);
+/* Where controller port `port` (0..3) is drawn on the card grid: its centre on the 640x480 picture. Returns 0 when the grid
+ * with the controller is not showing (another screen, a popup over it, a screen transition). */
+int bfs_pad_px(bfs* fs, int port, float* x, float* y);
 /* The command the caller has to carry out, NULL if none. */
 bfs_op* bfs_pending(bfs* fs);
 

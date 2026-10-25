@@ -10,6 +10,7 @@
 #include <bios_audio.h>
 #include <bios_filescr.h>
 #include <bios_surface.h>
+#include <pad_kind.h>
 
 #include "clock.h"
 #include "gfx.h"
@@ -386,6 +387,9 @@ uif_handle(button_t b) {
         case BTN_START: bfs_key(&fs, BFS_KEY_A); break;
         case BTN_B: bfs_key(&fs, BFS_KEY_B); break;
         case BTN_X: bfs_key(&fs, BFS_KEY_X); break;
+        case BTN_Y: bfs_key(&fs, BFS_KEY_Y); break;
+        case BTN_PAGE_UP: bfs_key(&fs, BFS_KEY_PGUP); break;
+        case BTN_PAGE_DOWN: bfs_key(&fs, BFS_KEY_PGDN); break;
         default: break;
     }
     return 0;
@@ -424,13 +428,47 @@ uif_sync(void) {
     }
 }
 
-void
-uif_draw(void) {
-    bfs_draw(&fs, gfx_sink());
+/* The Files screen's card grid shows a pill over each controller that is not a standard one: keyboard, mouse, light gun, fishing
+ * rod, arcade stick and so on, in the colour of its port (the main menu's four pill colours: A orange, B green, C blue, D magenta). */
+static void
+draw_pad_labels(void) {
+    static const uint32_t port_colour[4] = {BMENU_ACCENT_GAME, BMENU_ACCENT_FILES, BMENU_ACCENT_MUSIC, BMENU_ACCENT_SETTINGS};
+    for (int p = 0; p < 4; p++) {
+        maple_device_t* dev = maple_enum_dev(p, 0);
+        float px, py;
+        if (!dev || !dev->valid || !bfs_pad_px(&fs, p, &px, &py)) {
+            continue;
+        }
+        char product[sizeof(dev->info.product_name) + 1], name[PAD_KIND_MAX];
+        memcpy(product, dev->info.product_name, sizeof(dev->info.product_name));
+        product[sizeof(dev->info.product_name)] = '\0';
+        const char* kind = pad_kind_name(dev->info.functions, product, name);
+        if (!kind) {
+            continue;
+        }
+        pad_label_rect r;
+        float tw = (float)(gfx_text_width(kind) + 3) * PAD_LABEL_SCALE; /* what gfx_text_scaled() draws */
+        pad_label_layout(px, py, tw, &r);
+        gfx_rrect(r.x, r.y, r.w, r.h, r.h / 2.0f, 0.5f, 0xD0000000u | (port_colour[p] & 0x00FFFFFFu));
+        gfx_text_scaled(kind, r.x + (r.w - tw) / 2.0f, r.y + (r.h - 26.0f * PAD_LABEL_SCALE) / 2.0f, 0.51f, 0xFFFFFFFFu,
+                        PAD_LABEL_SCALE);
+    }
 }
 
 void
+uif_draw(void) {
+    bfs_draw(&fs, gfx_sink());
+    if (!left) {
+        draw_pad_labels();
+    }
+}
+
+int
 uif_hover(float x, float y) {
-    (void)x;
-    (void)y;
+    return left ? 0 : bfs_point(&fs, x, y);
+}
+
+int
+uif_pages(void) {
+    return !left && ((fs.state == 5 && fs.b_state == 2 && fs.layer == 0) || fs.f_state == 3);
 }

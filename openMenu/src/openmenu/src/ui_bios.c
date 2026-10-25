@@ -133,6 +133,7 @@ static int about_open;                /* the About box over the settings */
 static int saved_page_cursor, saved_page_top;
 static const bios_rom* g_rom;
 static mouse_t pointer;
+static int files_over; /* the pointer is over something of the Files screen that a click can pick */
 
 /* x of the pointer on the 640 px picture (16:9 squeezes the picture: undo that) */
 static float
@@ -2231,7 +2232,7 @@ apply_hover(void) {
             }
             break;
         }
-        case SCREEN_FILES: uif_hover(ux, uy); break;
+        case SCREEN_FILES: files_over = uif_hover(ux, uy); break;
         case SCREEN_INTERNET: uin_hover(ux, uy); break;
         case SCREEN_MUSIC: {
             int i = bcd_item_at_px(ux, uy);
@@ -2383,6 +2384,12 @@ ui_bios_run(const bios_rom* rom) {
         } else if (screen == SCREEN_DATETIME) {
             handle_datetime(b);
         } else if (screen == SCREEN_FILES) {
+            if (b == BTN_A && pointer.clicked && !files_over) {
+                b = BTN_NONE; /* a click on nothing does nothing */
+            }
+            if (pointer.wheel && uif_pages() && (b == BTN_UP || b == BTN_DOWN)) {
+                b = b == BTN_UP ? BTN_PAGE_UP : BTN_PAGE_DOWN; /* the wheel turns the pages */
+            }
             uif_handle(b);
         } else if (screen == SCREEN_MUSIC) {
             handle_music(b);

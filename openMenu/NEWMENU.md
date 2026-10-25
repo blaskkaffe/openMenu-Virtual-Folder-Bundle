@@ -212,7 +212,22 @@ and the commands are the caller's (`ui_files.c` with `vmu_files.c`, KOS vmufs): 
 frame (a card, a file header, or one file of a copy / delete), so the screen keeps running.
 Preview: `bios_preview dc_boot.bin out.ppm <frames> 0 -14` with `BIOS_PREVIEW_KEYS="40:A,90:R,..."` (keys
 UDLRABXY at frame numbers) on a demo set of cards.
-Not yet: mouse hover. Untested on hardware: copying and resetting real cards; back up first.
+Untested on hardware: copying and resetting real cards; back up first.
+
+Mouse and keyboard: the pointer puts the cursor on what is under it (`bfs_point`: cards, BACK, the "ALL" ring, file tiles,
+popup choices, the icon and colour pickers, Select / Cancel / Yes / No), a left click is A on it (a click on nothing does
+nothing), a right click is B, the wheel moves the cursor, or turns the pages of the file window and the icon picker.
+Keyboard: arrows, Enter = A, Esc / Backspace = B, Tab = X and Space = Y (all files of the same game), Page Up / Down = a page of
+files or icons. The areas are checked against the real ROM's render: `BIOS_PREVIEW_HITS=1 bios_preview dc_boot.bin out.ppm
+200 0 -14` outlines them (the cursor's in green); `BIOS_PREVIEW_KEYS` also takes P / N (page up / down).
+
+Controller labels: on the card grid a small pill in the port's colour (A orange, B green, C blue, D magenta, the main menu's pill
+colours) sits over the lower right of the controller picture for every device that is not a standard controller: Keyboard, Mouse,
+Light Gun, Fishing Rod, Arcade Stick, Twin Stick, Racing Wheel, Maracas, Train Controller, Panther, Dance Mat, Dreameye,
+Microphone. The name comes from what the device reports (its product name first, then its Maple function bits; `pad_kind.c`, tested
+in `bios_engine_test`); a controller whose name is none of the known ones shows its own name. Pico2Maple and BlueRetro are shown by
+what they report in each mode: if a mode reports "Dreamcast Controller" it gets no label. Check the strings of each mode on the
+real devices; `BIOS_PREVIEW_PADLABELS="Keyboard,Mouse"` shows the pills' place on a PC.
 
 ## Todo: Files, devices, DreamPi (from the plan, later)
 

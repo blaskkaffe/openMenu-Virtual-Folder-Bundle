@@ -44,6 +44,7 @@ typedef struct {
     int moved;   /* moved since the last call */
     int left;    /* the left button is held (dragging) */
     int clicked; /* this frame's button event came from a mouse click (where: x, y) */
+    int wheel;   /* this frame's button event came from the wheel: -1 turned away from the user (up), 1 towards (down) */
 } mouse_t;
 
 void input_mouse(mouse_t* out);

@@ -12,7 +12,8 @@
 void uif_open(bmenu* menu);
 void uif_set_pal(int pal); /* PAL console: the BACK arrow colour; call after uif_open() */
 
-/* One button (taken by the screen on its next step). Returns 0. */
+/* One button (taken by the screen on its next step). Returns 0. Besides the controller's buttons: Y (same game, as X), Page Up / Down
+ * (a page of files, a page of icons). */
 int uif_handle(button_t b);
 
 /* One 60 Hz step of the screen, after bmenu_update(). Returns 1 once the screen has been left. */
@@ -25,5 +26,10 @@ void uif_sync(void);
 /* Everything of the screen (the caller has drawn the background). */
 void uif_draw(void);
 
-/* The mouse at (x, y) pixels: select what is under it. */
-void uif_hover(float x, float y);
+/* The mouse at (x, y) pixels on the 640x480 picture: the cursor goes to what is under it (a card, BACK, a file, a popup choice,
+ * an icon, a colour, a button), as a direction key would. Returns 1 if the pointer is over such a thing, so a click on it
+ * (BTN_A) can be told from a click on nothing, which does nothing. */
+int uif_hover(float x, float y);
+
+/* 1 while the screen has pages the mouse wheel should turn (the file window, the icon picker) instead of moving the cursor. */
+int uif_pages(void);

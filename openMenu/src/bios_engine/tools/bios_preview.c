@@ -26,6 +26,7 @@
 #include "bios_list.h"
 #include "bios_datetime.h"
 #include "bios_files.h"
+#include "pad_kind.h"
 #include "tex_decode.h"
 #include "bios_models.h"
 #include "bios_case.h"
@@ -623,7 +624,7 @@ main(int argc, char** argv) {
                     const char* c = strchr(p, ':');
                     if (!c) break;
                     if (f == i) {
-                        const char* map = "UDLRABXY";
+                        const char* map = "UDLRABXYPN"; /* P, N: page up / down */
                         const char* k = strchr(map, c[1]);
                         if (k) bfs_key(&demo_fs, (int)(k - map) + 1);
                     }
@@ -748,6 +749,62 @@ main(int argc, char** argv) {
     if (script == -14) {
         bscene_draw_background(&menu.bg, &sink);
         bfs_draw(&demo_fs, &sink);
+        if (getenv("BIOS_PREVIEW_PADLABELS")) { /* "Keyboard,Mouse,...": the pills over ports A, B, ... (text drawn as a white bar of its width) */
+            static const uint32_t col[4] = {0xE07000u, 0x00E070u, 0x0070E0u, 0xE00070u};
+            char list[256];
+            snprintf(list, sizeof(list), "%s", getenv("BIOS_PREVIEW_PADLABELS"));
+            int port = 0;
+            for (char* t = strtok(list, ","); t && port < 4; t = strtok(NULL, ","), port++) {
+                float px, py;
+                if (!bfs_pad_px(&demo_fs, port, &px, &py)) continue;
+                pad_label_rect r;
+                float tw = (float)strlen(t) * 11.0f * PAD_LABEL_SCALE;
+                pad_label_layout(px, py, tw, &r);
+                for (int y = (int)r.y; y < (int)(r.y + r.h); y++) {
+                    for (int x = (int)r.x; x < (int)(r.x + r.w); x++) {
+                        float dx = 0, dy = 0, rad = r.h / 2.0f;
+                        if (x < r.x + rad) dx = r.x + rad - x - 0.5f; else if (x > r.x + r.w - rad) dx = x + 0.5f - (r.x + r.w - rad);
+                        dy = (float)y + 0.5f - (r.y + rad);
+                        if (dx * dx + dy * dy > rad * rad) continue;
+                        int in_text = x >= (int)(r.x + (r.w - tw) / 2) && x < (int)(r.x + (r.w + tw) / 2) && y >= (int)(r.y + (r.h - 14) / 2) && y < (int)(r.y + (r.h + 14) / 2);
+                        for (int c = 0; c < 3; c++) {
+                            float v = (float)((col[port] >> (16 - 8 * c)) & 255) / 255.0f;
+                            fb[y][x][c] = in_text ? 1.0f : fb[y][x][c] * 0.18f + v * 0.82f;
+                        }
+                    }
+                }
+            }
+        }
+        if (getenv("BIOS_PREVIEW_HITS")) { /* BIOS_PREVIEW_HITS=1: the areas the mouse pointer answers to, in red; the cursor's in green */
+            float r[40][5];
+            int n = bfs_hit_rects(&demo_fs, r, 40);
+            for (int i = 0; i < n; i++) {
+                int cur = (int)r[i][4] == demo_fs.cur[demo_fs.layer].pos;
+                for (int x = (int)(r[i][0] - r[i][2]); x <= (int)(r[i][0] + r[i][2]); x++) {
+                    for (int k = 0; k < 2; k++) {
+                        int y = (int)(r[i][1] + (k ? r[i][3] : -r[i][3]));
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = cur ? 0 : 1; fb[y][x][1] = cur ? 1 : 0; fb[y][x][2] = 0; }
+                    }
+                }
+                for (int y = (int)(r[i][1] - r[i][3]); y <= (int)(r[i][1] + r[i][3]); y++) {
+                    for (int k = 0; k < 2; k++) {
+                        int x = (int)(r[i][0] + (k ? r[i][2] : -r[i][2]));
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = cur ? 0 : 1; fb[y][x][1] = cur ? 1 : 0; fb[y][x][2] = 0; }
+                    }
+                }
+            }
+            for (int p = 0; p < 4; p++) {
+                float px, py;
+                if (bfs_pad_px(&demo_fs, p, &px, &py)) {
+                    for (int d = -6; d <= 6; d++) {
+                        int x = (int)px + d, y = (int)py;
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = 1; fb[y][x][1] = 1; fb[y][x][2] = 0; }
+                        x = (int)px; y = (int)py + d;
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = 1; fb[y][x][1] = 1; fb[y][x][2] = 0; }
+                    }
+                }
+            }
+        }
     } else if (script == -9) {
         bscene_draw_background(&menu.bg, &sink);
         bmenu_draw_objects(&menu, &sink);

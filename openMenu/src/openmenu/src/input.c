@@ -31,7 +31,7 @@
 #define POINTER_HIDE_FRAMES 600 /* the pointer disappears after about ten seconds without moving */
 
 static int typed_char;
-static mouse_t mouse = {0, 0, 320, 240, 0, 0, 0};
+static mouse_t mouse = {0, 0, 320, 240, 0, 0, 0, 0};
 static int mouse_idle;
 static uint32_t mouse_prev_buttons;
 
@@ -86,6 +86,7 @@ mouse_poll(void) {
     mouse.present = st != NULL;
     mouse.moved = 0;
     mouse.clicked = 0;
+    mouse.wheel = 0;
     if (!st) {
         mouse.visible = 0;
         mouse.left = 0;
@@ -114,8 +115,10 @@ mouse_poll(void) {
         mouse.clicked = 1;
     } else if (st->dz < 0) {
         out = BTN_UP; /* the wheel turned away from the user */
+        mouse.wheel = -1;
     } else if (st->dz > 0) {
         out = BTN_DOWN;
+        mouse.wheel = 1;
     }
     if (out != BTN_NONE) {
         mouse.visible = 1;
@@ -166,6 +169,7 @@ input_poll(void) {
         out = m;
     } else {
         mouse.clicked = 0; /* the event is the controller's */
+        mouse.wheel = 0;
     }
     if (out == BTN_NONE) {
         out = keyboard_poll();
