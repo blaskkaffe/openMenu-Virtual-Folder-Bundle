@@ -1,8 +1,9 @@
 /*
- * favorites: the games the player has starred. openMenu 1.7.1 has no such list, and OPENMENU.SYS is shared with that
- * menu (it must not grow), so this has a file of its own: the games' identity hashes (gd_item_recent_hash, so a game
+ * favorites / extended settings: the games the player has starred and the settings of this menu that 1.7.1 does not have.
+ * openMenu 1.7.1 has no such things, and OPENMENU.SYS is shared with that menu (it must not grow), so they have a file of
+ * their own, EXTENDED.SYS (earlier builds called it FAVORITES.DAT / OPENMENU.FAV: still read when the new one is missing). The favorites are: the games' identity hashes (gd_item_recent_hash, so a game
  * is still found when the SD card order changes), newest first, at most FAV_MAX. It is kept on the SD card
- * (/sd/OPENMENU/FAVORITES.DAT) when one is mounted, and on a memory card as the VMS file OPENMENU.FAV (3 blocks, a gold
+ * (/sd/OPENMENU/EXTENDED.SYS) when one is mounted, and on a memory card as the VMS file EXTENDED.SYS (3 blocks, a gold
  * icon) so it also survives on a GDEMU console. On start the SD copy wins, else the first card that has the file.
  */
 #pragma once

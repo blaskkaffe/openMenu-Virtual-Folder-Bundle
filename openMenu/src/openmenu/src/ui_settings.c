@@ -73,13 +73,17 @@ static const row_def rows[] = {
     /* the BIOS settings come first, as in the BIOS menu; the bytes live in the BIOS's RAM copy of the system settings and
      * are written to the flash with the clock */
     {0, 0, "BIOS", "Language", "Language of the BIOS messages", NULL, 6, languages, 5},
-    {UIS_ACTION_DATETIME, 1, "BIOS", "Date and time", "Set the clock of the console", NULL, 0, NULL, 0},
     {0, 2, "BIOS", "Sound", "Stereo or mono output", NULL, 2, sound_modes, 6},
     {0, 3, "BIOS", "Auto start", "Start the disc in the drive at power on", NULL, 2, autostart_modes, 7},
-    {UIS_ACTION_VMUCLOCK, 1, "BIOS", "Memory card clock", "Set the clock of the memory cards", NULL, 0, NULL, 0},
-    {0, 1, "BIOS", "Clock extender", "Keep the date in flash at each start", &sf_clock_extender, CLOCK_EXTENDER_END + 1,
+    /* everything about the clock and the date, one group: the BIOS clock, the header clock, and the three ways to keep it right */
+    {UIS_ACTION_DATETIME, 1, "Clock and date", "Date and time", "Set the clock of the console", NULL, 0, NULL, 0},
+    {0, 1, "Clock and date", "Clock format", ".beat uses the Online time sync zone", &sf_clock, 5, clock_modes},
+    {UIS_ACTION_VMUCLOCK, 1, "Clock and date", "Memory card clock", "Set the clock of the memory cards", NULL, 0, NULL, 0},
+    {0, 1, "Clock and date", "Clock extender", "Keep the date in flash at each start", &sf_clock_extender, CLOCK_EXTENDER_END + 1,
      on_off},
-    {0, -1, "Display", "Clock format", ".beat uses the Internet time sync zone", &sf_clock, 5, clock_modes},
+    {0, 1, "Clock and date", "VMU time sync", "Set the clock from a VMU at start", &sf_vmu_time_sync, VMU_TIME_SYNC_END + 1, on_off},
+    {0, 1, "Clock and date", "Online time sync", "Set the clock from the internet", &sf_online_time_sync, ONLINE_TIME_SYNC_END + 1,
+     time_sync_modes},
     {0, -1, "Display", "Aspect ratio", "16:9 is squeezed for wide TVs", &sf_aspect, ASPECT_END + 1, aspect_modes},
     {0, -1, "Display", "Background", "Colour of the menu background", &bg_var, BG_PALETTE_COUNT, bg_modes},
     {0, -1, "Display", "Dark mode", "Dim the background", &dark_var, 2, on_off},
@@ -96,7 +100,7 @@ static const row_def rows[] = {
      serial_vmu_modes},
     {0, -1, "Starting games", "Boot animation", "What the BIOS shows before a game", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
     {0, -1, "Starting games", "Exit to BIOS", "How other discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
-    {0, -1, "System", "VMU time sync", "Set the clock from a VMU at start", &sf_vmu_time_sync, VMU_TIME_SYNC_END + 1, on_off},
+    {0, -1, "System", "VMU beep on save", "The VMU beeps when a save is written", &sf_beep, BEEP_END + 1, on_off},
     {0, -1, "System", "VM2 game ID", "Tell VM2, VMU Pro and co. the game", &sf_vm2_send_all, VM2_SEND_END + 1, vm2_modes},
     /* the main branch's online (DC Now) setting, same values: Off, On, Auto-connect. While it is on, the third main
      * menu icon is "Internet" instead of "Music". It stays here: the Internet screen only exists once it is on. */

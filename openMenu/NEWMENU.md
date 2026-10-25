@@ -72,7 +72,7 @@ logo is used. `tools/bios-logo/biologo.py` makes the file: `convert logo.png LOG
 BIOS logo as a starting point. `BIOS_PREVIEW_LOGO=LOGO.PVR bios_preview ...` shows it on a PC.
 A fully transparent picture hides the logo.
 Online modes (not with a `LOGO.PVR` of your own): while connecting the swirl turns (a turn in 72 frames, the wordmark stays; the swirl is
-drawn as its own rotated quad by `gfx_logo_badge`); once connected the swirl stops and the logo changes to the one for the network. Over a modem or the serial cable the swirl keeps turning (up to 6 s) until the DreamPi has said which network it has selected, so the logo does not flip from "Now!" to "DCNET". Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
+drawn as its own rotated quad by `gfx_logo_badge`); once connected the swirl stops and the logo changes to the one for the network. The logo does not wait for the DreamPi add-on: it shows "Now!" at once and changes to "DCNET" only if the add-on reports that network. Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
 (`gfx_logo_badge`); connected through a DreamPi that has DCNET selected the wordmark is replaced by "DCNET" next to the swirl
 (`gfx_set_logo_mode`, a 128x32 picture built from the ROM's logo, so a PAL console keeps its blue swirl). The letters are three small .PVR files (64x32) on the menu disc next to LOGO.PVR: `NOWO.PVR` (orange) and `NOWB.PVR` (blue) "Now!", picked by the swirl's hue, and `CNET.PVR` (grey). The soft edges are baked in (an edge pixel is lighter than the bar, as in the BIOS logo) and they are drawn untinted. They hold
 nothing of the BIOS logo: "Now!" is simply drawn after the logo, and for DCNET the menu crops the ROM's logo to the swirl and its own D while it runs
@@ -116,7 +116,7 @@ browser is opened after start-up. Later: genre filter (needs better genre data),
 Looks like the BIOS Settings screen (`bios_engine/bios_page`): four rows with a 3D icon, a pill and a
 text line, and a help box below showing the group and a help line. The list scrolls, so it can hold
 any number of rows. Icons are the digit models 0-9 until real ones exist. Rows with more than two
-values open a popup list; two-value rows toggle. Groups in order: BIOS, Display (clock format, aspect ratio, background colour, dark mode), Game list, Starting games, System, Internet (Online features only; the refresh, VMU status and time sync rows are on the Internet screen's Settings page), Other. The help box's first line is the group and the row number. Rows are defined in `ui_settings.c`
+values open a popup list; two-value rows toggle. Groups in order: BIOS (language, sound, auto start), Clock and date (date and time, clock format, memory card clock, clock extender, VMU time sync, Online time sync), Display (aspect ratio, background colour, dark mode), Game list, Starting games, System, Internet (Online features; the refresh, VMU status and Online time sync rows are also on the Internet screen's Settings page), Other. The help box's first line is the group and the row number. Rows are defined in `ui_settings.c`
 (label, group, help, save-file variable, choice names). Text column positions
 (`PAGE_TEXT_PAD`, `PAGE_VALUE_X` in `gfx.c`) are guesses to be tuned on hardware.
 Preview without hardware: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.
@@ -153,7 +153,7 @@ sit where they do in the CD player (X or Right from BACK reaches them, B goes on
 Recent (the recently played popup), button 2 Favorites (the starred games in a popup like Recent's: A starts, Y removes, B closes;
 a game is starred with the Favorite row of its X popup, and a starred title starts with "* " in the list; the list is
 `favorites.c`, newest first, up to 100, kept in its own file because OPENMENU.SYS is shared with 1.7.1 and has no
-favorites: `/sd/OPENMENU/FAVORITES.DAT` when an SD card is mounted and the VMS file `OPENMENU.FAV` on a memory card, 3 blocks
+favorites: `/sd/OPENMENU/EXTENDED.SYS` when an SD card is mounted and the VMS file `EXTENDED.SYS` on a memory card, 3 blocks
 with a gold icon; at start the SD copy wins, else the first card that has the file; games are found again by their
 identity hash, so a different SD order does not matter), button 3 Folders (A goes to the top of the folder
 tree and back to the list), button 4 Sort (A cycles A-Z, Release year, SD card order and shows the active one; it is
