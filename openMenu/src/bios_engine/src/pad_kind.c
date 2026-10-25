@@ -32,6 +32,8 @@ static const struct {
     {"densha", "Train"},
     {"train", "Train"},
     {"panther", "Panther"},
+    {"pop'n", "Pop'n Music"},
+    {"popn", "Pop'n Music"},
     {"dance", "Dance"},
     {"dreameye", "Dreameye"},
     {"camera", "Dreameye"},
@@ -130,4 +132,40 @@ pad_label_layout(float pad_x, float pad_y, float text_w, int centred, pad_label_
     out->h = PILL_H;
     out->x = centred ? pad_x - out->w / 2.0f : pad_x + PAD_RIGHT - out->w;
     out->y = pad_y + PAD_BOTTOM - out->h;
+}
+
+#define PAD_TOP 42.0f /* the pill of a port that has to give way: its top edge this far above the controller's position, so it clears the bottom row */
+#define PILL_GAP 2.0f /* pills closer than this count as touching */
+
+static int
+touches(const pad_label_rect* a, const pad_label_rect* b) {
+    return b->w > 0.0f && a->x < b->x + b->w + PILL_GAP && b->x < a->x + a->w + PILL_GAP && a->y < b->y + b->h + PILL_GAP &&
+           b->y < a->y + a->h + PILL_GAP;
+}
+
+void
+pad_label_layout_set(int n, const float* pad_x, const float* pad_y, const float* text_w, int centred, pad_label_rect* out) {
+    for (int i = 0; i < n; i++) {
+        out[i] = (pad_label_rect){0.0f, 0.0f, 0.0f, 0.0f};
+        if (text_w[i] <= 0.0f) {
+            continue;
+        }
+        pad_label_layout(pad_x[i], pad_y[i], text_w[i], centred, &out[i]); /* the bottom */
+        int hit = 0;
+        for (int j = 0; j < i; j++) {
+            hit |= touches(&out[i], &out[j]);
+        }
+        if (!hit) {
+            continue;
+        }
+        pad_label_rect top = out[i];
+        top.y = pad_y[i] - PAD_TOP;
+        int top_hit = 0;
+        for (int j = 0; j < i; j++) {
+            top_hit |= touches(&top, &out[j]);
+        }
+        if (!top_hit) {
+            out[i] = top;
+        }
+    }
 }

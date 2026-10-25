@@ -1,8 +1,9 @@
 /*
- * favorites: the games the player has starred. openMenu 1.7.1 has no such list, and OPENMENU.SYS is shared with that
- * menu (it must not grow), so this has a file of its own: the games' identity hashes (gd_item_recent_hash, so a game
+ * favorites / extended settings: the games the player has starred and the settings of this menu that 1.7.1 does not have.
+ * openMenu 1.7.1 has no such things, and OPENMENU.SYS is shared with that menu (it must not grow), so they have a file of
+ * their own, EXTENDED.SYS (earlier builds called it FAVORITES.DAT / OPENMENU.FAV: still read when the new one is missing). The favorites are: the games' identity hashes (gd_item_recent_hash, so a game
  * is still found when the SD card order changes), newest first, at most FAV_MAX. It is kept on the SD card
- * (/sd/OPENMENU/FAVORITES.DAT) when one is mounted, and on a memory card as the VMS file OPENMENU.FAV (3 blocks, a gold
+ * (/sd/OPENMENU/EXTENDED.SYS) when one is mounted, and on a memory card as the VMS file EXTENDED.SYS (3 blocks, a gold
  * icon) so it also survives on a GDEMU console. On start the SD copy wins, else the first card that has the file.
  */
 #pragma once
@@ -25,7 +26,10 @@ int favorites_toggle(const gd_item* item);
 int favorites_save_ok(void);
 
 /* Settings of this menu that 1.7.1 does not have, kept in the same file (its header has a spare byte) because OPENMENU.SYS is shared with
- * 1.7.1 and must not hold anything it does not know: bit 0 is the Swatch .beat clock. Valid after favorites_init(). Setting saves at once. */
+ * 1.7.1 and must not hold anything it does not know: bit 0 is the Swatch .beat clock, bits 1-3 the background colour (bg_palette.h), bit 4 dark mode. Valid after favorites_init(). Setting saves at once. */
 #define FORK_FLAG_BEAT 1
+#define FORK_BG_SHIFT 1
+#define FORK_BG_MASK 0x0E
+#define FORK_FLAG_DARK 0x10
 unsigned favorites_flags(void);
 void favorites_set_flags(unsigned flags);

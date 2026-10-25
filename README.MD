@@ -66,7 +66,7 @@ The old interface and its themes are not part of this fork, so their settings ar
 The BIOS File screen, ported from the ROM with the same objects, positions, messages and behaviour, running inside the menu:
 
 - **Card grid** of the eight memory card sockets A1 to D2 with free blocks, the used-space gauge, the selected card animating and the controllers in their ports.
-- **Controller labels**: a pill in the style of the main menu's captions sits on every controller that is not a standard one: Keyboard, Mouse, Lightgun, Fishing, Arcade, Twin, Racing, Maracas, Train, Panther, Dance, Dreameye, Mic, Karaoke, in the colours of the Play, File, Music and Settings pills. The name comes from what the device reports.
+- **Controller labels**: a pill in the style of the main menu's captions sits on every controller that is not a standard one: Keyboard, Mouse, Lightgun, Fishing, Arcade, Twin, Racing, Maracas, Train, Panther, Dance, Dreameye, Mic, Karaoke, in the colours of the Play, File, Music and Settings pills. The name comes from what the device reports. Pills stay at the bottom of their controller; one that would touch its neighbour moves to the top of its own controller.
 - **Serial VMU mark**: the VMU that the Serial VMU uses carries a small SD card at the lower right of its card. Press **X** on a VMU in the grid to open a small menu, **Set as Serial VMU** or **Serial VMU Off**.
 - **File window**: 24 tiles a page with the files' animated icons and block counts, copy-protected files in red, VMU games in green, file information, select all (the card) and select every file of the same game (X or Y).
 - **Copy and delete** with the BIOS's own questions and messages, and a copy box with a progress bar.
@@ -123,7 +123,7 @@ A click on nothing does nothing.
 This menu is meant to be swapped with the original on the same card without damaging anything.
 
 - **`OPENMENU.SYS` and the SD copy `OPENMENU/OPENMENU.CFG`** have the same version and the same variables as the original's, in the same order, and this menu only writes values the original knows. Nothing is added to them.
-- **Things only this menu has** are stored beside them: the favorites and the Swatch .beat clock flag in `OPENMENU.FAV` on a memory card and `/sd/OPENMENU/FAVORITES.DAT` on the SD card. The original does not read these files.
+- **Things only this menu has** are stored beside them: the favorites and the Swatch .beat clock flag in `EXTENDED.SYS` on a memory card and `/sd/OPENMENU/EXTENDED.SYS` on the SD card. The original does not read these files.
 - **Serial VMU** uses the original's layout (`OPENMENU/SAVES/<serial>/SLOT1.VMU`, `TITLE.TXT`, `OPENMENU/LASTDISC.TXT`), so both menus restore and back up the same images. **Serial VMU Slots** (five images per game) are not supported yet: with it on, a game starts without Serial VMU and no file is touched.
 - The **Card Manager** needs no change: the card it writes (`OPENMENU.INI`, `ICON.DAT`, `BOX.DAT`, `META.DAT`, `DISC.DAT`, folders) is what this menu reads. The only additions are three small logo pictures (`NOWO.PVR`, `NOWB.PVR`, `CNET.PVR`) in its `tools/openMenu/menu_data` folder, which the original menu ignores.
 - The BIOS settings rows and the Clock extender write the console's flash, as the BIOS and the original do.

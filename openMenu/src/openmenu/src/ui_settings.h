@@ -9,8 +9,13 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 
+/* uis_count rows are the Settings list. The Internet screen's Settings page shows uis_net_count rows from uis_net_first on, with the
+ * same calls (label, value, uis_change, uis_commit). */
 int uis_count(void);
+int uis_net_first(void);
+int uis_net_count(void);
 
 const char* uis_label(int row);
 const char* uis_group(int row);
@@ -53,3 +58,6 @@ void uis_clock_migrate(void);
 /* Settings from the [BIOSMENU] section of /cd/DEFAULTS.INI when "Card defaults" is on (see ui_settings.c). Call once at
  * start, after the save file was read. Returns how many were taken. */
 int uis_apply_card_defaults(void);
+
+/* The menu background: the BIOS gradient (top and bottom, ARGB) changed by the Background and Dark mode rows. */
+void uis_background(uint32_t* top, uint32_t* bottom);

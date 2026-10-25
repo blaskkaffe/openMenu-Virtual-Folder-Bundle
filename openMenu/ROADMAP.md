@@ -50,7 +50,7 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 | Blue swirl logo for PAL, custom LOGO.PVR | Done | header logo; the checklist notes the logo setting only affects game launch |
 | Online player count in the taskbar | Partial | drawn into the header's text surface in the row above the clock, in the clock's font: a connection lamp and "DCNow! n DCNet n" while online (`update_clock` in ui_bios.c; the letters were drawn to match the ROM digits: `tools/gen_clock_letters.py`). `online.c` reads the list once a link is up. Rendered with the real engine code on the preview, untested on a console |
 | Notifications (starred player/game/event) | Missing | `dreampi_link_event_banner()` exists but nothing draws it |
-| Connectivity status, keyboard/mouse indicator, extra clock settings in the header | Partial | connectivity: the lamp (grey off, yellow connecting, green online, red failed). Clock: Settings > Display > Clock format (12 hour with AM/PM, 24 hour, date only, each also with Swatch .beat; .beat needs Online time sync for the time zone and the .beat flag is kept in this menu's own favorites file, not in OPENMENU.SYS, so 1.7.1 never sees it). Keyboard/mouse indicator goes on the File screen's icons (next) |
+| Connectivity status, keyboard/mouse indicator, extra clock settings in the header | Partial | connectivity: the text "DCNow! n DCNet n" while online (no lamp). Clock: Settings > Display > Clock format (12 hour with AM/PM, 24 hour, date only, each also with Swatch .beat; .beat needs Online time sync for the time zone and the .beat flag is kept in this menu's own favorites file, not in OPENMENU.SYS, so 1.7.1 never sees it). Keyboard/mouse indicator goes on the File screen's icons (next) |
 | 60 fps | Partial | OPEN item 2: still below 60 on hardware; DMA vertex path is in |
 
 ## 4. Play menu
@@ -61,7 +61,7 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 | Spinning GD-ROM disc with the game's label | Done | DISC.DAT from the Card Manager, fallbacks to ICON.DAT / region disc |
 | 3D jewel case with front art | Done | back art slot exists (`BMODEL_TEX_BACK`) but nothing fills it |
 | Info beside the art | Partial | product, region, players, VMU blocks, disc count on the bottom buttons; no genre, no description. The brief also wants the favourite star and genre on the list itself |
-| Favourite / star | Partial | 1.7.1 has no favorites, so this branch has its own (`favorites.c`): X popup > Favorite toggles, a "* " starts the title in the list, the Favorites bottom button opens the list (Y removes). Stored in its own file (SD `/sd/OPENMENU/FAVORITES.DAT`, memory card `OPENMENU.FAV`), not in OPENMENU.SYS. Written without a console build: untested. Not yet: the star in the viewer, a real star glyph, Favorites as a Group |
+| Favourite / star | Partial | 1.7.1 has no favorites, so this branch has its own (`favorites.c`): X popup > Favorite toggles, a "* " starts the title in the list, the Favorites bottom button opens the list (Y removes). Stored in its own file (SD `/sd/OPENMENU/EXTENDED.SYS`, memory card `EXTENDED.SYS`), not in OPENMENU.SYS. Written without a console build: untested. Not yet: the star in the viewer, a real star glyph, Favorites as a Group |
 | Disc number on multi-disc | Done | 3D digits at the bottom right of the spinning CD (selected row only, no total); Compact mode, Left/Right pick the disc |
 | Sort A-Z / SD order | Done | Settings > Game order, and the Sort button on the bottom row |
 | Sort by release year | Partial | by the disc's IP.BIN build date (decision 4, option b): oldest first, no date last. Real release years need META2.DAT |
@@ -95,7 +95,7 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 |---|---|---|
 | Sections | Done (layout) | buttons: Online (players and games side by side, Y switches column, A on a game starts it if it is on the card), Play (browsers; the online game catalogue row says coming soon), Events, News (placeholder: needs the DreamPi companion), Settings (connection, interface, ISP / preferred network / test as coming soon rows). Untested: written without a console build |
 | Players online | Done | Pi `/players` first, fallbacks; DCNow!/DCNET counts |
-| Games being played | Partial | listed; A refreshes instead of launching the game. Launch by Pi queue works (`dreampi_link.c`) |
+| Games being played | Partial | listed; A starts the game when it is on the card (through the game list's start, Serial VMU first; untested on a console), otherwise says so; A on the player column refreshes. Launch by Pi queue works (`dreampi_link.c`) |
 | Star player/game/event + notifications | Missing | needs Pi-side storage or a save-file list, plus the banner (see main menu) |
 | Online game catalogue (features, connection methods, network) | Missing | needs a data source (DreamcastLive / Flycast DCNet lists), best prepared on the Pi |
 | Events (DC99) | Partial | upcoming only; no current/upcoming split, no detail view |
@@ -113,8 +113,9 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 |---|---|---|
 | Scrollable list, 4 rows, 3D icon, help box | Done | rows beyond the BIOS use digit icons until real icons exist |
 | BIOS settings (language, clock, sound, auto start) | Done | written to flash as the BIOS does |
-| Background colour choice, dark mode | Missing | `dcbg` takes the gradient from the ROM; needs a small palette table |
-| Online rows that belong in the Internet menu | To move | brief: keep Internet settings in the Internet menu |
+| Background colour choice, dark mode | Done in code | Settings > Display > Background (BIOS blue, Green, Orange, Purple, Red, Grey) and Dark mode; `bg_palette.c` (host-tested) changes the gradient in `draw_frame`, the swirl and water layers keep their look. Kept in this menu's favorites file flags, not OPENMENU.SYS. Not compiled; colours are guesses to judge on a screen |
+| Online rows that belong in the Internet menu | Done in code | Player list refresh, VMU online status and Online time sync are on the Internet screen's Settings page (A cycles the value). Online features stays in Settings: the Internet screen only exists once it is on |
+| Settings list order and position | Done in code | groups BIOS, Display, Game list, Starting games, System, Internet, Other; the help box shows the row number (n/total) |
 | Flash partition 2 compaction | Missing | OPEN item 4; risk grows with every flash write (clock, ISP editor) |
 
 ## Added by the consolidated brief (PROJECT_BRIEF.md)
@@ -123,7 +124,7 @@ Checked against the earlier tables above; only what is new or sharper:
 
 - **Group control list** is longer: Developer, Publisher, Local multiplayer, Online multiplayer, Online features, Modem, Serial, W5500, Broadband (besides Folder, Favorites, Genre, Homebrew, Tools, Browsers). Developer/Publisher need decision 4; Modem/BBA come from META.DAT `network`; Serial/W5500 need version tags (decision 5). Nothing new is built yet.
 - **Sort and group are separate, independently configurable controls**, and the active sort shows in the bottom row (Missing, see the Play menu table).
-- **Internet > Play** also reaches a web browser; **Internet > Online** A joins/launches a game (Partial: A refreshes today).
+- **Internet > Play** also reaches a web browser; **Internet > Online** A joins/launches a game (Partial: A starts a game that is on the card; no join through the Pi queue yet).
 - **Version picker** in the X popup appears only when several variants are installed; labels must be region + patch type, not filenames.
 - **Optional, later:** opening the case and showing the disc on the Y screen.
 - **Hardware items stay conditional**: pico2maple, BlueRetro, iBlueControlMod, VM2, VMU Pro need firmware first (Blocked rows above).

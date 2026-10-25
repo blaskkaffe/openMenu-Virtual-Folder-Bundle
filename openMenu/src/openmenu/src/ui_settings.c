@@ -14,6 +14,7 @@
 #include <dc/maple.h>
 #include <dc/maple/vmu.h>
 
+#include "bg_palette.h"
 #include "clock.h"
 #include "favorites.h"
 #include "serial_log.h"
@@ -59,17 +60,33 @@ static const char* const languages[] = {"Japanese", "English", "German", "French
 static const char* const sound_modes[] = {"Stereo", "Mono"};
 static const char* const autostart_modes[] = {"On", "Off"};
 
-/* To add a setting, add a row here (and the choice names above). */
+/* This menu's own settings: the choice is bits of favorites_flags() (favorites.h), not OPENMENU.SYS. The bytes only give the rows a
+ * variable to point at (so the card defaults can name them); uis_get / uis_set read and write the flags. */
+static const char* const bg_modes[] = {"BIOS blue", "Green", "Orange", "Purple", "Red", "Grey"}; /* bg_palette.c */
+static uint8_t bg_byte[1], dark_byte[1];
+static uint8_t* bg_var = bg_byte;
+static uint8_t* dark_var = dark_byte;
+
+/* To add a setting, add a row here (and the choice names above). The rows run in the order of the Settings list; the last NET_ROWS rows
+ * are not in it, the Internet screen shows them (uis_net_first). */
 static const row_def rows[] = {
     /* the BIOS settings come first, as in the BIOS menu; the bytes live in the BIOS's RAM copy of the system settings and
      * are written to the flash with the clock */
     {0, 0, "BIOS", "Language", "Language of the BIOS messages", NULL, 6, languages, 5},
-    {UIS_ACTION_DATETIME, 1, "BIOS", "Date and time", "Set the clock of the console", NULL, 0, NULL, 0},
     {0, 2, "BIOS", "Sound", "Stereo or mono output", NULL, 2, sound_modes, 6},
     {0, 3, "BIOS", "Auto start", "Start the disc in the drive at power on", NULL, 2, autostart_modes, 7},
-    {UIS_ACTION_VMUCLOCK, 1, "BIOS", "Memory card clock", "Set the clock of the memory cards", NULL, 0, NULL, 0},
-    {0, 1, "BIOS", "Clock extender", "Keep the date in flash at each start", &sf_clock_extender, CLOCK_EXTENDER_END + 1,
+    /* everything about the clock and the date, one group: the BIOS clock, the header clock, and the three ways to keep it right */
+    {UIS_ACTION_DATETIME, 1, "Clock and date", "Date and time", "Set the clock of the console", NULL, 0, NULL, 0},
+    {0, 1, "Clock and date", "Clock format", ".beat uses the Online time sync zone", &sf_clock, 5, clock_modes},
+    {UIS_ACTION_VMUCLOCK, 1, "Clock and date", "Memory card clock", "Set the clock of the memory cards", NULL, 0, NULL, 0},
+    {0, 1, "Clock and date", "Clock extender", "Keep the date in flash at each start", &sf_clock_extender, CLOCK_EXTENDER_END + 1,
      on_off},
+    {0, 1, "Clock and date", "VMU time sync", "Set the clock from a VMU at start", &sf_vmu_time_sync, VMU_TIME_SYNC_END + 1, on_off},
+    {0, 1, "Clock and date", "Online time sync", "Set the clock from the internet", &sf_online_time_sync, ONLINE_TIME_SYNC_END + 1,
+     time_sync_modes},
+    {0, -1, "Display", "Aspect ratio", "16:9 is squeezed for wide TVs", &sf_aspect, ASPECT_END + 1, aspect_modes},
+    {0, -1, "Display", "Background", "Colour of the menu background", &bg_var, BG_PALETTE_COUNT, bg_modes},
+    {0, -1, "Display", "Dark mode", "Dim the background", &dark_var, 2, on_off},
     {0, -1, "Game list", "Game order", "Order of the games", &sf_sort, 3, sort_modes},
     {0, -1, "Game list", "Multi-disc games", "List every disc or one entry per set", &sf_multidisc, MULTIDISC_END + 1,
      multidisc_modes},
@@ -81,33 +98,43 @@ static const row_def rows[] = {
      REMEMBER_LAST_GAME_END + 1, on_off},
     {0, -1, "Game list", "Serial VMU", "Each game's VMU image kept on the serial SD card", &sf_serial_vmu, SERIAL_VMU_END + 1,
      serial_vmu_modes},
-    {0, -1, "Display", "Clock format", ".beat needs Online time sync (the time zone)", &sf_clock, 5, clock_modes},
-    {0, -1, "Display", "Aspect ratio", "16:9 is squeezed for wide TVs", &sf_aspect, ASPECT_END + 1, aspect_modes},
-    /* the main branch's online (DC Now) setting, same values: Off, On, Auto-connect. While it is on, the third main
-     * menu icon is "Internet" instead of "Music" */
-    {0, -1, "Online", "Online features", "On: the Music icon becomes Internet", &sf_dcnow, DCNOW_END + 1, online_modes},
-    {0, -1, "Online", "Player list refresh", "How often the online lists update", &sf_dcnow_refresh, DCNOW_REFRESH_END + 1,
-     refresh_modes},
-    {0, -1, "Online", "VMU online status", "Online status on the VMU screen", &sf_dcnow_vmu, DCNOW_VMU_END + 1, on_off},
-    {0, -1, "Online", "Online time sync", "Set the clock from the internet", &sf_online_time_sync, ONLINE_TIME_SYNC_END + 1,
-     time_sync_modes},
-    {0, -1, "System", "VMU time sync", "Set the clock from a VMU at start", &sf_vmu_time_sync, VMU_TIME_SYNC_END + 1, on_off},
-    {0, -1, "System", "VM2 game ID", "Tell VM2, VMU Pro and co. the game", &sf_vm2_send_all, VM2_SEND_END + 1, vm2_modes},
     {0, -1, "Starting games", "Boot animation", "What the BIOS shows before a game", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
     {0, -1, "Starting games", "Exit to BIOS", "How other discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
+    {0, -1, "System", "VMU beep on save", "The VMU beeps when a save is written", &sf_beep, BEEP_END + 1, on_off},
+    {0, -1, "System", "VM2 game ID", "Tell VM2, VMU Pro and co. the game", &sf_vm2_send_all, VM2_SEND_END + 1, vm2_modes},
+    /* the main branch's online (DC Now) setting, same values: Off, On, Auto-connect. While it is on, the third main
+     * menu icon is "Internet" instead of "Music". It stays here: the Internet screen only exists once it is on. */
+    {0, -1, "Internet", "Online features", "On: the Music icon becomes Internet", &sf_dcnow, DCNOW_END + 1, online_modes},
     {0, -1, "Other", "Card defaults", "Use DEFAULTS.INI [BIOSMENU] at start", &sf_honor_defaults, HONOR_DEFAULTS_END + 1,
      on_off},
     {UIS_ACTION_BENCH, -1, "Other", "Performance test", "Scripted run, results on serial port", NULL, 0, NULL},
     {UIS_ACTION_ABOUT, 3, "Other", "About", "Version and credits", NULL, 0, NULL},
+    /* shown on the Internet screen's Settings page */
+    {0, -1, "Internet", "Player list refresh", "How often the online lists update", &sf_dcnow_refresh, DCNOW_REFRESH_END + 1,
+     refresh_modes},
+    {0, -1, "Internet", "VMU online status", "Online status on the VMU screen", &sf_dcnow_vmu, DCNOW_VMU_END + 1, on_off},
+    {0, -1, "Internet", "Online time sync", "Set the clock from the internet", &sf_online_time_sync, ONLINE_TIME_SYNC_END + 1,
+     time_sync_modes},
 };
 
+#define NET_ROWS 3
 #define NUM_ROWS ((int)(sizeof(rows) / sizeof(rows[0])))
 
 #define VALID(r) ((r) >= 0 && (r) < NUM_ROWS)
 
 int
 uis_count(void) {
-    return NUM_ROWS;
+    return NUM_ROWS - NET_ROWS;
+}
+
+int
+uis_net_first(void) {
+    return NUM_ROWS - NET_ROWS;
+}
+
+int
+uis_net_count(void) {
+    return NET_ROWS;
 }
 
 const char*
@@ -174,6 +201,13 @@ uis_get(int row) {
     if (VALID(row) && rows[row].var == &sf_clock) {
         return uis_clock_mode();
     }
+    if (VALID(row) && rows[row].var == &bg_var) {
+        int v = (int)((favorites_flags() & FORK_BG_MASK) >> FORK_BG_SHIFT);
+        return v < BG_PALETTE_COUNT ? v : 0;
+    }
+    if (VALID(row) && rows[row].var == &dark_var) {
+        return (favorites_flags() & FORK_FLAG_DARK) != 0;
+    }
     return VALID(row) && rows[row].var ? (*rows[row].var)[0] : 0;
 }
 
@@ -191,9 +225,23 @@ uis_set(int row, int choice) {
         clock_mode_set(choice);
         return;
     }
+    if (VALID(row) && rows[row].var == &bg_var && choice >= 0 && choice < rows[row].count) {
+        favorites_set_flags((favorites_flags() & ~(unsigned)FORK_BG_MASK) | ((unsigned)choice << FORK_BG_SHIFT));
+        return;
+    }
+    if (VALID(row) && rows[row].var == &dark_var && choice >= 0 && choice < rows[row].count) {
+        favorites_set_flags(choice ? favorites_flags() | FORK_FLAG_DARK : favorites_flags() & ~(unsigned)FORK_FLAG_DARK);
+        return;
+    }
     if (VALID(row) && rows[row].var && choice >= 0 && choice < rows[row].count) {
         (*rows[row].var)[0] = (uint8_t)choice;
     }
+}
+
+void
+uis_background(uint32_t* top, uint32_t* bottom) {
+    unsigned f = favorites_flags();
+    bg_palette_apply((int)((f & FORK_BG_MASK) >> FORK_BG_SHIFT), (f & FORK_FLAG_DARK) != 0, top, bottom);
 }
 
 const char*
@@ -325,7 +373,8 @@ cfg_handler(void* user, const char* section, const char* name, const char* value
     cfg_norm(name, key, sizeof(key));
     cfg_norm(value, want, sizeof(want));
     for (int r = 0; r < NUM_ROWS; r++) {
-        if (!rows[r].var || rows[r].sysoff || rows[r].var == &sf_honor_defaults) {
+        if (!rows[r].var || rows[r].sysoff || rows[r].var == &sf_honor_defaults || rows[r].var == &bg_var ||
+            rows[r].var == &dark_var) { /* those two live in the favorites file, which is read after this */
             continue;
         }
         cfg_norm(rows[r].label, have, sizeof(have));

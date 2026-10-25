@@ -73,16 +73,15 @@ static const bfs_popup_def pop_card_nocopy = {490, 282, 512, 256, 92, 115, 0, 0,
 /* "Use full size": what it does and what to think about, then Cancel / Extend capacity at the bottom. */
 static const char* const extend_lines[] = {
     "Use all 241 blocks of this VMU?",
-    "",
     "A VMU keeps 200 blocks for saves. The",
     "other 41 are normally left unused.",
     "Extending adds them to the free space.",
     "Some games and tools may not expect",
     "this. Back up the card first.",
 };
-static const bfs_popup_def pop_extend = {500, 330, 512, 320, 82, 262, 0, -2414, 131, 0, 0, POPUP_Z, 2, 0,
+static const bfs_popup_def pop_extend = {500, 280, 512, 256, 82, 200, 0, -1782, 116, 0, 0, POPUP_Z, 2, 0,
                                          {{0, 0, "Cancel"}, {0, 0, "Extend capacity"}},
-                                         extend_lines, 7, 26, 14, 26};
+                                         extend_lines, 6, 26, 6, 24};
 static const bfs_popup_def pop_files = {256, 212, 256, 256, 72, 115, 0, 0, 212, 0, 0, POPUP_Z, 3, 2,
                                         {{0, 0x25D}, {0, 0x25E}, {0, 0x25F}}};
 static const bfs_popup_def pop_files_nocopy = {460, 212, 512, 256, 106, 115, 0, 0, 212, 0, 0, POPUP_Z, 3, 2,

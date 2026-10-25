@@ -116,7 +116,7 @@ browser is opened after start-up. Later: genre filter (needs better genre data),
 Looks like the BIOS Settings screen (`bios_engine/bios_page`): four rows with a 3D icon, a pill and a
 text line, and a help box below showing the group and a help line. The list scrolls, so it can hold
 any number of rows. Icons are the digit models 0-9 until real ones exist. Rows with more than two
-values open a popup list; two-value rows toggle. Rows are defined in `ui_settings.c`
+values open a popup list; two-value rows toggle. Groups in order: BIOS (language, sound, auto start), Clock and date (date and time, clock format, memory card clock, clock extender, VMU time sync, Online time sync), Display (aspect ratio, background colour, dark mode), Game list, Starting games, System, Internet (Online features; the refresh, VMU status and Online time sync rows are also on the Internet screen's Settings page), Other. The help box's first line is the group and the row number. Rows are defined in `ui_settings.c`
 (label, group, help, save-file variable, choice names). Text column positions
 (`PAGE_TEXT_PAD`, `PAGE_VALUE_X` in `gfx.c`) are guesses to be tuned on hardware.
 Preview without hardware: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.
@@ -153,7 +153,7 @@ sit where they do in the CD player (X or Right from BACK reaches them, B goes on
 Recent (the recently played popup), button 2 Favorites (the starred games in a popup like Recent's: A starts, Y removes, B closes;
 a game is starred with the Favorite row of its X popup, and a starred title starts with "* " in the list; the list is
 `favorites.c`, newest first, up to 100, kept in its own file because OPENMENU.SYS is shared with 1.7.1 and has no
-favorites: `/sd/OPENMENU/FAVORITES.DAT` when an SD card is mounted and the VMS file `OPENMENU.FAV` on a memory card, 3 blocks
+favorites: `/sd/OPENMENU/EXTENDED.SYS` when an SD card is mounted and the VMS file `EXTENDED.SYS` on a memory card, 3 blocks
 with a gold icon; at start the SD copy wins, else the first card that has the file; games are found again by their
 identity hash, so a different SD order does not matter), button 3 Folders (A goes to the top of the folder
 tree and back to the list), button 4 Sort (A cycles A-Z, Release year, SD card order and shows the active one; it is
@@ -231,7 +231,8 @@ card's own display. `BIOS_PREVIEW_SD=<slot>` shows it on a PC.
 
 Input: every controller, mouse and keyboard in every port steers the menu, not only the first one (`input.c`).
 
-Controller labels: on the card grid a pill like the main menu's captions (A as Play, B as File, C as Music, D as Settings; the BIOS font at
+Controller labels: a pill that would touch the pill of the port before it moves to the top of its own controller (`pad_label_layout_set`);
+the others stay at the bottom. On the card grid a pill like the main menu's captions (A as Play, B as File, C as Music, D as Settings; the BIOS font at
 its own size) is centred over the lower part of the controller picture for every device that is not a standard controller: Keyboard, Mouse,
 Lightgun, Fishing, Arcade, Twin, Racing, Maracas, Train, Panther, Dance, Dreameye,
 Mic, Karaoke. The name comes from what the device reports (its product name first, then its Maple function bits; `pad_kind.c`, tested
@@ -253,8 +254,8 @@ real devices; `BIOS_PREVIEW_PADLABELS="Keyboard,Mouse"` shows the pills' place o
 - X on a VMU of the card grid: a menu in the style of the Play screen's X menu, with "Set as Serial VMU" and "Serial VMU Off" (it writes
   Settings > Serial VMU, "On (B1)" and so on, and saves). The slot carries the SD card mark.
 - Card popup (A on the card in the file window): Copy all, Delete all (memory reset), Change Color and Logo, Use full size, Cancel.
-  Change Color and Logo runs the BIOS icon and colour pickers, then writes only the root block's icon and colour and ICONDATA_VMS
-  (`BFS_OP_LOOK`, `vf_set_look_raw`): no file is touched. Use full size opens a popup with what it means and Cancel / Extend capacity
+  Change Color and Logo runs the BIOS icon and colour pickers, then writes only the root block's icon and colour, the hidden area where the BIOS keeps them
+  (`BFS_OP_LOOK`, `vf_set_look_raw`): no file is touched or made (an `ICONDATA_VMS` that an earlier build of this menu wrote is removed). Use full size opens a popup with what it means and Cancel / Extend capacity
   (`BFS_OP_EXTEND`, `vf_extend_capacity`): the block count of the root block goes from 200 to 241 (the blocks 200..240 that the BIOS leaves
   unused become free space). Untested on hardware: do it on a spare card first. A memory reset keeps the extended size (the root block is
   kept), a card that already uses it says so.

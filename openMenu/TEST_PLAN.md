@@ -19,8 +19,8 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
       `META.DAT`, `ICON.DAT`, `BOX.DAT`, `DISC.DAT`.
 - [ ] A card with: a folder tree, 10+ games, at least one multi-disc game (Compact mode), one PSX disc, a game without art, a browser disc,
       homebrew (type "other").
-- [ ] Settings used below: Game list > Game order / Serial VMU / Recently played; Online > Online features On or Auto-connect,
-      Online time sync (a zone), Player list refresh; Display > Clock format.
+- [ ] Settings used below: Game list > Game order / Serial VMU / Recently played; Settings > Internet > Online features On or Auto-connect,
+      Internet screen > Settings > Online time sync (a zone), Player list refresh; Display > Clock format.
 - [ ] Test on an NTSC-U console (orange swirl) and, if you can, a PAL one (blue swirl, region byte 2). Note the console and BIOS version.
 
 ## 2. Game list (the single box)
@@ -50,8 +50,8 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 
 - [ ] X on a game > Favorite toggles On/Off (click sound); the title gets "* " in the list (check the BIOS font has the star character).
 - [ ] Favorites button lists the starred games, newest first; A starts one; Y removes one; B closes; empty list says so.
-- [ ] Restart: the stars are still there. Test: VMU only (no SD), SD only, both. `OPENMENU.FAV` shows in the BIOS File screen as 3 blocks with a
-      gold icon, `/sd/OPENMENU/FAVORITES.DAT` exists with an SD card.
+- [ ] Restart: the stars are still there. Test: VMU only (no SD), SD only, both. `EXTENDED.SYS` shows in the BIOS File screen as 3 blocks with a
+      gold icon, `/sd/OPENMENU/EXTENDED.SYS` exists with an SD card.
 - [ ] No card and no SD: it still works until power off and says "Could not save favorites"; 101st star says the list is full.
 - [ ] Swap to Derek's 1.7.1 menu and back: nothing else on the VMU is damaged, settings kept.
 
@@ -98,8 +98,9 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 
 ## 8. Compatibility and regressions
 
-- [ ] Settings saved here read fine by Derek's 1.7.1 with nothing changed (also with the Swatch .beat clock on: that flag is in OPENMENU.FAV / FAVORITES.DAT, not in OPENMENU.SYS) and the other way round. A save from an older build of this menu with Clock format 3 or 4 becomes 12 / 24 hour + .beat at the first start.
+- [ ] Settings saved here read fine by Derek's 1.7.1 with nothing changed (also with the Swatch .beat clock on: that flag is in EXTENDED.SYS, not in OPENMENU.SYS) and the other way round. A save from an older build of this menu with Clock format 3 or 4 becomes 12 / 24 hour + .beat at the first start.
 - [ ] Launch: Dreamcast game, multi-disc, PSX disc (Bleem!/Bloom), CodeBreaker, browsers, homebrew; exit from a game back to the menu.
+- [ ] Settings: groups in order BIOS, Clock and date, Display, Game list, Starting games, System, Internet, Other; help box shows group and n/total; Display > Background changes the gradient (6 choices, BIOS blue = as before), Dark mode dims it, both survive a restart and a swap to 1.7.1 and back; judge the colours on a CRT/TV. Internet screen > Settings: the three rows cycle with A and persist.
 - [ ] Files screen, Settings, date and time editor, About, debug log page, performance test still work.
 - [ ] Memory and stability: browse 500+ games, open every screen twice, leave it on the Internet screen for an hour online.
 
