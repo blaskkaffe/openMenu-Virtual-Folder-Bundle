@@ -24,6 +24,7 @@ uint8_t* sf_mouse_scroll_speed;
 uint8_t* sf_clock_extender;
 uint8_t* sf_disc_details;
 uint8_t* sf_clock;
+uint8_t sf_clock_legacy;
 uint8_t* sf_vm2_send_all;
 uint8_t* sf_boot_mode;
 uint8_t* sf_vmu_time_sync;
@@ -134,6 +135,10 @@ settings_sanitize() {
         sf_disc_details[0] = DISC_DETAILS_SHOW;
     }
 
+    if (sf_clock[0] == CLOCK_LEGACY_12HOUR_BEAT || sf_clock[0] == CLOCK_LEGACY_24HOUR_BEAT) {
+        sf_clock_legacy = sf_clock[0]; /* an older build of this menu: keep the 12 / 24 hour part, the .beat part moves to its own file */
+        sf_clock[0] = sf_clock[0] == CLOCK_LEGACY_24HOUR_BEAT ? CLOCK_24HOUR : CLOCK_12HOUR;
+    }
     if ((sf_clock[0] < CLOCK_START) || (sf_clock[0] > CLOCK_END)) {
         sf_clock[0] = CLOCK_12HOUR;
     }

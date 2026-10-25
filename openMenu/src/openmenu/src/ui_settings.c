@@ -15,6 +15,7 @@
 #include <dc/maple/vmu.h>
 
 #include "clock.h"
+#include "favorites.h"
 #include "serial_log.h"
 #include "sound.h"
 #include "ui_settings.h"
@@ -80,7 +81,7 @@ static const row_def rows[] = {
      REMEMBER_LAST_GAME_END + 1, on_off},
     {0, -1, "Game list", "Serial VMU", "Each game's VMU image kept on the serial SD card", &sf_serial_vmu, SERIAL_VMU_END + 1,
      serial_vmu_modes},
-    {0, -1, "Display", "Clock format", ".beat needs Online time sync (the time zone)", &sf_clock, CLOCK_END + 1, clock_modes},
+    {0, -1, "Display", "Clock format", ".beat needs Online time sync (the time zone)", &sf_clock, 5, clock_modes},
     {0, -1, "Display", "Aspect ratio", "16:9 is squeezed for wide TVs", &sf_aspect, ASPECT_END + 1, aspect_modes},
     /* the main branch's online (DC Now) setting, same values: Off, On, Auto-connect. While it is on, the third main
      * menu icon is "Internet" instead of "Music" */
@@ -139,11 +140,39 @@ uis_choice_name(int row, int choice) {
 static int sys_dirty;
 static char vmu_result[24] = "";
 
+/* Clock format: the 12 / 24 hour / date only choice is the save file's sf_clock (as 1.7.1), the .beat part is a flag of this menu's own file
+ * (favorites.h), so OPENMENU.SYS only ever holds what 1.7.1 knows. 0 12 hour, 1 24 hour, 2 date only, 3 12 hour + .beat, 4 24 hour + .beat. */
+int
+uis_clock_mode(void) {
+    int base = sf_clock[0];
+    return (favorites_flags() & FORK_FLAG_BEAT) && base < 2 ? base + 3 : base;
+}
+
+static void
+clock_mode_set(int mode) {
+    sf_clock[0] = (uint8_t)(mode >= 3 ? mode - 3 : mode);
+    unsigned flags = favorites_flags() & ~(unsigned)FORK_FLAG_BEAT;
+    favorites_set_flags(mode >= 3 ? flags | FORK_FLAG_BEAT : flags);
+}
+
+/* An older build of this menu saved the .beat choices as sf_clock 3 and 4 (the loader turned them into 12 / 24 hour and noted it): move
+ * that to the flag. Call once the favorites file is read. */
+void
+uis_clock_migrate(void) {
+    if (sf_clock_legacy) {
+        favorites_set_flags(favorites_flags() | FORK_FLAG_BEAT);
+        sf_clock_legacy = 0;
+    }
+}
+
 int
 uis_get(int row) {
     if (VALID(row) && rows[row].sysoff) {
         int v = SYS(row);
         return v < rows[row].count ? v : 0;
+    }
+    if (VALID(row) && rows[row].var == &sf_clock) {
+        return uis_clock_mode();
     }
     return VALID(row) && rows[row].var ? (*rows[row].var)[0] : 0;
 }
@@ -156,6 +185,10 @@ uis_set(int row, int choice) {
         if (rows[row].sysoff == 6) {
             sound_stereo(choice);
         }
+        return;
+    }
+    if (VALID(row) && rows[row].var == &sf_clock && choice >= 0 && choice < rows[row].count) {
+        clock_mode_set(choice);
         return;
     }
     if (VALID(row) && rows[row].var && choice >= 0 && choice < rows[row].count) {

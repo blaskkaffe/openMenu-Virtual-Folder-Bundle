@@ -23,3 +23,9 @@ int favorites_is(const gd_item* item);
  * saved at once; favorites_save_ok() says whether that worked (it stays in memory either way). */
 int favorites_toggle(const gd_item* item);
 int favorites_save_ok(void);
+
+/* Settings of this menu that 1.7.1 does not have, kept in the same file (its header has a spare byte) because OPENMENU.SYS is shared with
+ * 1.7.1 and must not hold anything it does not know: bit 0 is the Swatch .beat clock. Valid after favorites_init(). Setting saves at once. */
+#define FORK_FLAG_BEAT 1
+unsigned favorites_flags(void);
+void favorites_set_flags(unsigned flags);

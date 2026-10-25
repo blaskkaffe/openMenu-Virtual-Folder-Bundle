@@ -45,6 +45,11 @@ void uis_change(int row, int delta);
 /* Write the changes to the save file. Returns 0 on success. */
 int uis_commit(void);
 
+/* The clock format as the Settings row shows it (0 12 hour, 1 24 hour, 2 date only, 3 12 hour + .beat, 4 24 hour + .beat), and the move of an
+ * older build's .beat choice out of the shared save file. */
+int uis_clock_mode(void);
+void uis_clock_migrate(void);
+
 /* Settings from the [BIOSMENU] section of /cd/DEFAULTS.INI when "Card defaults" is on (see ui_settings.c). Call once at
  * start, after the save file was read. Returns how many were taken. */
 int uis_apply_card_defaults(void);

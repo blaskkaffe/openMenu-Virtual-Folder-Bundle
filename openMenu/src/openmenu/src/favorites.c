@@ -31,6 +31,7 @@ static const gd_item* items[FAV_MAX]; /* the hashes that are games of this card 
 static int item_count;
 static int last_save_ok = 1;
 static int card_slot = -1;            /* the memory card that has the file, -1 if none yet */
+static uint8_t fork_flags;            /* the spare byte of the header: settings 1.7.1 has no place for, see favorites.h */
 
 /* ---- The file: "OMFV", version, 0, count (u16), then the hashes, all little endian ---- */
 
@@ -38,7 +39,7 @@ static int
 fav_pack(uint8_t* out) {
     memcpy(out, "OMFV", 4);
     out[4] = FAV_VERSION;
-    out[5] = 0;
+    out[5] = fork_flags;
     out[6] = (uint8_t)(hash_count & 0xFF);
     out[7] = (uint8_t)(hash_count >> 8);
     for (int i = 0; i < hash_count; i++) {
@@ -58,6 +59,7 @@ fav_unpack(const uint8_t* in, int size) {
     if (n > FAV_MAX || 8 + n * 4 > size) {
         return -1;
     }
+    fork_flags = in[5];
     for (int i = 0; i < n; i++) {
         hashes[i] = (uint32_t)in[8 + i * 4] | ((uint32_t)in[9 + i * 4] << 8) | ((uint32_t)in[10 + i * 4] << 16)
                     | ((uint32_t)in[11 + i * 4] << 24);
@@ -220,6 +222,7 @@ resolve(void) {
 void
 favorites_init(void) {
     hash_count = 0;
+    fork_flags = 0;
     card_slot = -1;
 #ifdef _arch_dreamcast
     if (sd_load() != 0) {
@@ -299,4 +302,22 @@ favorites_toggle(const gd_item* item) {
 int
 favorites_save_ok(void) {
     return last_save_ok;
+}
+
+unsigned
+favorites_flags(void) {
+    return fork_flags;
+}
+
+void
+favorites_set_flags(unsigned flags) {
+    if ((flags & 0xFF) == fork_flags) {
+        return;
+    }
+    fork_flags = (uint8_t)flags;
+#ifdef _arch_dreamcast
+    int sd = sd_save();
+    int card = card_save();
+    last_save_ok = sd == 0 || card == 0;
+#endif
 }

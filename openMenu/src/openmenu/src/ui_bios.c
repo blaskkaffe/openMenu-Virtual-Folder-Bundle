@@ -189,7 +189,7 @@ update_clock(void) {
     int y, mo, d, h, mi;
     clock_get(&y, &mo, &d, &h, &mi);
     /* Clock format setting; the time zone for .beat comes from Online time sync (Off: not known, no beats) */
-    clock_header_text(text, sizeof(text), clock_date_order(), sf_clock[0], y, mo, d, h, mi,
+    clock_header_text(text, sizeof(text), clock_date_order(), uis_clock_mode(), y, mo, d, h, mi,
                       online_time_sync_minutes(sf_online_time_sync[0]), sf_online_time_sync[0] != ONLINE_TIME_SYNC_OFF);
     /* The row above the clock (same font): a lamp for the connection and the players per network while online */
     online_header oh;

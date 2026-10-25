@@ -432,12 +432,14 @@ typedef enum CFG_CLOCK {
     CLOCK_12HOUR = CLOCK_START,
     CLOCK_24HOUR,
     CLOCK_OFF,
-    /* this branch: the main menu's clock with Swatch Internet Time (.beat) added. 1.7.1 does not know these two and puts the
-     * setting back to 12 hour when it reads them. */
-    CLOCK_12HOUR_BEAT,
-    CLOCK_24HOUR_BEAT,
-    CLOCK_END = CLOCK_24HOUR_BEAT
+    CLOCK_END = CLOCK_OFF
 } CFG_CLOCK;
+
+/* Builds of this menu from before the .beat flag moved out of the shared save file stored 3 (12 hour + .beat) and 4 (24 hour + .beat) here, which
+ * openMenu 1.7.1 does not know and resets. They are still read (see sf_clock_legacy) and not written any more. */
+#define CLOCK_LEGACY_12HOUR_BEAT 3
+#define CLOCK_LEGACY_24HOUR_BEAT 4
+extern uint8_t sf_clock_legacy; /* 0, or CLOCK_LEGACY_* when the loaded save had one */
 
 typedef enum CFG_CLOCK_EXTENDER {
     CLOCK_EXTENDER_START = 0,
