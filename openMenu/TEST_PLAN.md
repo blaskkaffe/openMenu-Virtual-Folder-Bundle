@@ -100,7 +100,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 
 - [ ] Settings saved here read fine by Derek's 1.7.1 with nothing changed (also with the Swatch .beat clock on: that flag is in EXTENDED.SYS, not in OPENMENU.SYS) and the other way round. A save from an older build of this menu with Clock format 3 or 4 becomes 12 / 24 hour + .beat at the first start.
 - [ ] Launch: Dreamcast game, multi-disc, PSX disc (Bleem!/Bloom), CodeBreaker, browsers, homebrew; exit from a game back to the menu.
-- [ ] Settings: groups in order BIOS, Display, Game list, Starting games, System, Internet, Other; help box shows group and n/total; Display > Background changes the gradient (6 choices, BIOS blue = as before), Dark mode dims it, both survive a restart and a swap to 1.7.1 and back; judge the colours on a CRT/TV. Internet screen > Settings: the three rows cycle with A and persist.
+- [ ] Settings: groups in order BIOS, Clock and date, Display, Game list, Starting games, System, Internet, Other; help box shows group and n/total; Display > Background changes the gradient (6 choices, BIOS blue = as before), Dark mode dims it, both survive a restart and a swap to 1.7.1 and back; judge the colours on a CRT/TV. Internet screen > Settings: the three rows cycle with A and persist.
 - [ ] Files screen, Settings, date and time editor, About, debug log page, performance test still work.
 - [ ] Memory and stability: browse 500+ games, open every screen twice, leave it on the Internet screen for an hour online.
 

@@ -123,3 +123,8 @@ Proposal for sorting, to react to (not decided): a first sort by *when you touch
 ## 6. Decisions needed
 1. Which rows stay in the main box and which get a second level (decide from the list in section 4)?
 2. Should the time rows (6-9) be one group, or stay with their neighbours?
+
+## 7. Decided so far
+- Two levels, but some settings may stay in the main box (to be seen).
+- **Clock and date** is one group: Date and time, Clock format, Memory card clock, Clock extender, VMU time sync, Online time sync (built in the
+  current list; Online time sync is also on the Internet screen, the same setting shown in two places).
