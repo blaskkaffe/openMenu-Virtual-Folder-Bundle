@@ -6,6 +6,7 @@
 
 #include "bios_surface.h"
 #include "nj_model.h"
+#include "sd_icon.h"
 #include "bios_text.h"
 
 /* ---- object ids (all as in the BIOS) ---------------------------------------------------------------------- */
@@ -2795,30 +2796,50 @@ bfs_point(bfs* fs, float x, float y) {
     return 1;
 }
 
-/* The lower right corner of the picture of card `slot` as it is on the screen now (the grid, or the card of the file window), for the
- * small marks that sit on a card. Returns 0 while the card is not shown plainly: moving, or under a popup, a picker or a message. */
+/* ---- the Serial VMU's SD card mark ------------------------------------------------------------------------
+ * A small SD card at the lower right of the card of the slot that Settings > Serial VMU names. It is drawn by bfs_draw() right after the
+ * card object, so it moves with the card (also in the zoom between the grid and the file window), fades with the screen transitions and
+ * lies under the popups and pickers, which are nearer. It sits below the card's own display. */
 #define GRID_CARD_HW 48.0f /* half size of the card picture in the grid, from its object position */
 #define GRID_CARD_HH 63.0f
 #define WIN_CARD_HW 45.0f /* the same for the card beside the file window */
 #define WIN_CARD_HH 57.0f
 
-int
-bfs_card_corner_px(bfs* fs, int slot, float* x, float* y) {
-    if (slot < 0 || slot >= BFS_SLOTS || fs->fly != 0 || fs->layer != 0 || obj(fs, ID_PICKER) || obj(fs, ID_COPYBOX) ||
-        obj(fs, ID_RESETBOX) || obj(fs, ID_ZOOM) || obj(fs, ID_POPUP)) {
-        return 0;
+void
+bfs_set_serial_slot(bfs* fs, int slot) {
+    fs->serial_mark = slot >= 0 && slot < BFS_SLOTS ? slot + 1 : 0;
+}
+
+static void
+draw_serial_mark(bfs* fs, const bscene_sink* sink, const bvm_obj* o) {
+    if (!fs->serial_mark || !o->active || (o->flags & BVM_F_HIDE)) {
+        return;
     }
-    int in_window = obj(fs, ID_WINDOW) != NULL;
-    for (int k = in_window ? 0 : slot; k < (in_window ? 1 : slot + 1); k++) {
-        bvm_obj* c = obj(fs, ID_CARD(k));
-        float cx, cy;
-        if (c && c->var[0] == slot && obj_px(fs, ID_CARD(k), &cx, &cy)) {
-            *x = cx + (in_window ? WIN_CARD_HW : GRID_CARD_HW);
-            *y = cy + (in_window ? WIN_CARD_HH : GRID_CARD_HH);
-            return 1;
+    int slot = -1;
+    float hw = GRID_CARD_HW, hh = GRID_CARD_HH;
+    if (o->id >= ID_CARD(0) && o->id <= ID_CARD(7)) {
+        slot = o->var[0];
+        if (obj(fs, ID_WINDOW)) { /* the card beside the file window */
+            hw = WIN_CARD_HW;
+            hh = WIN_CARD_HH;
         }
+    } else if (o->id == ID_ZOOM) { /* the card flying from the grid to the file window grows and shrinks on the way */
+        slot = fs->src;
+        float dx = (float)(o->var[2] - o->var[0]) / 256.0f, dy = (float)(o->var[3] - o->var[1]) / 256.0f;
+        float t = (dx > 0.5f || dx < -0.5f) ? (o->pos[0] - (float)o->var[0] / 256.0f) / dx : ((dy > 0.5f || dy < -0.5f) ? (o->pos[1] - (float)o->var[1] / 256.0f) / dy : 1.0f);
+        t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+        hw = GRID_CARD_HW + (WIN_CARD_HW - GRID_CARD_HW) * t;
+        hh = GRID_CARD_HH + (WIN_CARD_HH - GRID_CARD_HH) * t;
     }
-    return 0;
+    if (slot != fs->serial_mark - 1) {
+        return;
+    }
+    float cx, cy, iw;
+    if (!bscene_project((nj_vec3){o->pos[0], o->pos[1], o->pos[2]}, &cx, &cy, &iw)) {
+        return;
+    }
+    float alpha = (o->flags & BVM_F_FLAG17) ? 1.0f - fs->m->scene.fade : 1.0f;
+    sd_icon_draw(sink, cx + hw - SD_ICON_W - SD_ICON_INSET_X, cy + hh - SD_ICON_H - SD_ICON_INSET_Y, iw + 0.00004f, alpha);
 }
 
 int
@@ -2901,6 +2922,9 @@ bfs_draw(bfs* fs, const bscene_sink* sink) {
             for (int k = i; k < j; k++) {
                 bscene_draw_object(&m->scene, &m->vm.objs[idx[k]], sink);
             }
+        }
+        for (int k = i; k < j; k++) {
+            draw_serial_mark(fs, sink, &m->vm.objs[idx[k]]);
         }
         i = j;
     }
