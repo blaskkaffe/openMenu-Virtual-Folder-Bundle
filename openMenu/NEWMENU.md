@@ -116,7 +116,7 @@ browser is opened after start-up. Later: genre filter (needs better genre data),
 Looks like the BIOS Settings screen (`bios_engine/bios_page`): four rows with a 3D icon, a pill and a
 text line, and a help box below showing the group and a help line. The list scrolls, so it can hold
 any number of rows. Icons are the digit models 0-9 until real ones exist. Rows with more than two
-values open a popup list; two-value rows toggle. Rows are defined in `ui_settings.c`
+values open a popup list; two-value rows toggle. Groups in order: BIOS, Display (clock format, aspect ratio, background colour, dark mode), Game list, Starting games, System, Internet (Online features only; the refresh, VMU status and time sync rows are on the Internet screen's Settings page), Other. The help box's first line is the group and the row number. Rows are defined in `ui_settings.c`
 (label, group, help, save-file variable, choice names). Text column positions
 (`PAGE_TEXT_PAD`, `PAGE_VALUE_X` in `gfx.c`) are guesses to be tuned on hardware.
 Preview without hardware: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.
