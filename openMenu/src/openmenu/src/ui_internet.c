@@ -477,8 +477,14 @@ uin_handle(button_t b) {
                 detail = 0;
                 break;
             }
-            events_fetch_abort();
-            news_fetch_abort();
+            {
+                uint64_t t0 = timer_ms_gettime64();
+                printf("OM B: Internet screen leaves, stopping the fetches\n");
+                events_fetch_abort();
+                uint64_t t1 = timer_ms_gettime64();
+                news_fetch_abort();
+                printf("OM B: events stopped in %u ms, news in %u ms\n", (unsigned)(t1 - t0), (unsigned)(timer_ms_gettime64() - t1));
+            }
             return 1;
         default: break;
     }
