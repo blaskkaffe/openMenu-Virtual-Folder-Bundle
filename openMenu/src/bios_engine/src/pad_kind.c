@@ -20,24 +20,24 @@ static const struct {
     const char* word;
     const char* name;
 } known[] = {
-    {"fish", "Fishing Rod"},
+    {"fish", "Fishing"},
     {"maraca", "Maracas"},
     {"samba", "Maracas"},
-    {"twin stick", "Twin Stick"},
-    {"twin-stick", "Twin Stick"},
-    {"arcade", "Arcade Stick"},
-    {"fighting stick", "Arcade Stick"},
-    {"racing", "Racing Wheel"},
-    {"wheel", "Racing Wheel"},
+    {"twin stick", "Twin"},
+    {"twin-stick", "Twin"},
+    {"arcade", "Arcade"},
+    {"fighting stick", "Arcade"},
+    {"racing", "Racing"},
+    {"wheel", "Racing"},
     {"densha", "Train"},
     {"train", "Train"},
     {"panther", "Panther"},
-    {"dance", "Dance Mat"},
+    {"dance", "Dance"},
     {"dreameye", "Dreameye"},
     {"camera", "Dreameye"},
-    {"karaoke", "Karaoke Mic"},
-    {"microphone", "Microphone"},
-    {"gun", "Light Gun"},
+    {"karaoke", "Karaoke"},
+    {"microphone", "Mic"},
+    {"gun", "Lightgun"},
     {"keyboard", "Keyboard"},
     {"mouse", "Mouse"},
 };
@@ -82,7 +82,7 @@ const char* pad_kind_name(uint32_t functions, const char* product_name, char out
     }
     /* nothing in the name: the functions say what it is */
     if (functions & FN_KEYBOARD) {
-        snprintf(out, PAD_KIND_MAX, "%s", (functions & FN_MOUSE) ? "Kbd + Mouse" : "Keyboard");
+        snprintf(out, PAD_KIND_MAX, "%s", (functions & FN_MOUSE) ? "Kbd+Mse" : "Keyboard");
         return out;
     }
     if (functions & FN_MOUSE) {
@@ -90,7 +90,7 @@ const char* pad_kind_name(uint32_t functions, const char* product_name, char out
         return out;
     }
     if (functions & (FN_LIGHTGUN | FN_ARGUN)) {
-        snprintf(out, PAD_KIND_MAX, "Light Gun");
+        snprintf(out, PAD_KIND_MAX, "Lightgun");
         return out;
     }
     if (functions & FN_CAMERA) {
@@ -98,7 +98,7 @@ const char* pad_kind_name(uint32_t functions, const char* product_name, char out
         return out;
     }
     if (functions & FN_MICROPHONE && !(functions & FN_CONTROLLER)) {
-        snprintf(out, PAD_KIND_MAX, "Microphone");
+        snprintf(out, PAD_KIND_MAX, "Mic");
         return out;
     }
     if (functions & FN_CONTROLLER) {
@@ -121,7 +121,7 @@ const char* pad_kind_name(uint32_t functions, const char* product_name, char out
 /* The controller picture of the grid is about 66 x 62 pixels around the position of its object (measured on the BIOS's grid). */
 #define PAD_RIGHT 35.0f  /* its right edge, from the position */
 #define PAD_BOTTOM 28.0f /* its bottom edge */
-#define PILL_H 20.0f
+#define PILL_H (26.0f * PAD_LABEL_SCALE + 8.0f) /* a line of the font (26 px) and 4 px above and below */
 #define PILL_PAD 8.0f /* left and right of the text */
 
 void

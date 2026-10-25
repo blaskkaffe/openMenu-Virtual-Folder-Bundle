@@ -223,10 +223,10 @@ files or icons. The areas are checked against the real ROM's render: `BIOS_PREVI
 
 The port letters A to D under the controllers take the colours of the borders of the main menu's four caption pills (read from the ROM: model 5, rim of nodes 1, 3, 2, 4; drawn into model 15 nodes 1..4, unshaded).
 
-Controller labels: on the card grid a small pill in the port's colour (A orange, B green, C blue, D magenta, the main menu's pill
-colours) sits over the lower right of the controller picture for every device that is not a standard controller: Keyboard, Mouse,
-Light Gun, Fishing Rod, Arcade Stick, Twin Stick, Racing Wheel, Maracas, Train, Panther, Dance Mat, Dreameye,
-Microphone. The name comes from what the device reports (its product name first, then its Maple function bits; `pad_kind.c`, tested
+Controller labels: on the card grid a pill like the main menu's captions (A as Play, B as File, C as Music, D as Settings; the BIOS font at
+its own size) is centred over the lower part of the controller picture for every device that is not a standard controller: Keyboard, Mouse,
+Lightgun, Fishing, Arcade, Twin, Racing, Maracas, Train, Panther, Dance, Dreameye,
+Mic, Karaoke. The name comes from what the device reports (its product name first, then its Maple function bits; `pad_kind.c`, tested
 in `bios_engine_test`); a controller whose name is none of the known ones shows its own name. Pico2Maple and BlueRetro are shown by
 what they report in each mode: if a mode reports "Dreamcast Controller" it gets no label. Check the strings of each mode on the
 real devices; `BIOS_PREVIEW_PADLABELS="Keyboard,Mouse"` shows the pills' place on a PC.

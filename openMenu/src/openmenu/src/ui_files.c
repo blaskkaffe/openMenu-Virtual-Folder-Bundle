@@ -449,19 +449,18 @@ draw_pad_labels(void) {
         pad_label_rect r;
         char fit[PAD_KIND_MAX];
         snprintf(fit, sizeof(fit), "%s", kind);
-        while (strlen(fit) > 3 && (float)(gfx_text_width(fit) + 3) * PAD_LABEL_SCALE + 16.0f > PAD_LABEL_MAX_W) {
+        while (strlen(fit) > 3 && (float)(gfx_text_width(fit) + 3) + 16.0f > PAD_LABEL_MAX_W) {
             fit[strlen(fit) - 1] = '\0'; /* a long name of its own (a controller we do not know) is cut to the column */
         }
         kind = fit;
-        float tw = (float)(gfx_text_width(kind) + 3) * PAD_LABEL_SCALE; /* what gfx_text_scaled() draws */
+        float tw = (float)(gfx_text_width(kind) + 3); /* what gfx_text() draws */
         pad_label_layout(px, py, tw, PAD_LABEL_CENTRED, &r);
         uint32_t body, border;
         bmenu_pill_colours(fs.m, p, &body, &border);
         gfx_rrect(r.x, r.y, r.w, r.h, r.h / 2.0f, 0.5f, border);
         gfx_rrect(r.x + PILL_BORDER, r.y + PILL_BORDER, r.w - 2.0f * PILL_BORDER, r.h - 2.0f * PILL_BORDER,
                   r.h / 2.0f - PILL_BORDER, 0.505f, (body & 0x00FFFFFFu) | 0xE0000000u);
-        gfx_text_scaled(kind, r.x + (r.w - tw) / 2.0f, r.y + (r.h - 26.0f * PAD_LABEL_SCALE) / 2.0f, 0.51f, 0xFFFFFFFFu,
-                        PAD_LABEL_SCALE);
+        gfx_text(kind, r.x + (r.w - tw) / 2.0f, r.y + (r.h - 26.0f) / 2.0f, 0.51f, 0xFFFFFFFFu, 1); /* the font at its own size, like every other label */
     }
 }
 

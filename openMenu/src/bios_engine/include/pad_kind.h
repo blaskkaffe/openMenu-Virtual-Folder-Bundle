@@ -16,9 +16,9 @@ const char* pad_kind_name(uint32_t functions, const char* product_name, char out
 typedef struct pad_label_rect {
     float x, y, w, h;
 } pad_label_rect;
-#define PAD_LABEL_SCALE 0.55f /* the text, relative to the menu font */
+#define PAD_LABEL_SCALE 1.0f /* the text, relative to the menu font: the BIOS font at its own size */
 #define PAD_LABEL_CENTRED 1 /* 1: the pill is centred on the controller; 0: its right edge is the controller's right edge */
 #define PILL_BORDER 2.5f    /* the lighter rim of the pill */
-#define PAD_LABEL_MAX_W 90.0f /* the widest pill: a column of the grid is about 100 pixels */
+#define PAD_LABEL_MAX_W 108.0f /* the widest pill; a column of the grid is about 100 pixels */
 /* `centred`: the pill is centred on the controller, else its right edge is the controller's right edge. */
 void pad_label_layout(float pad_x, float pad_y, float text_w, int centred, pad_label_rect* out);
