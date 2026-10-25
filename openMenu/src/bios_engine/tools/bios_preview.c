@@ -26,6 +26,8 @@
 #include "bios_list.h"
 #include "bios_datetime.h"
 #include "bios_files.h"
+#include "pad_kind.h"
+#include "sd_icon.h"
 #include "tex_decode.h"
 #include "bios_models.h"
 #include "bios_case.h"
@@ -613,7 +615,7 @@ main(int argc, char** argv) {
     } else if (script == -14) { /* the File screen: BIOS_PREVIEW_KEYS="frame:key,..." with keys UDLRABXY */
         demo_fill(&rom);
         bfs_init(&demo_fs, &menu, NULL, demo_cards);
-        demo_fs.ports = 3;
+        demo_fs.ports = getenv("BIOS_PREVIEW_PORTS") ? atoi(getenv("BIOS_PREVIEW_PORTS")) : 3;
         bfs_open(&demo_fs);
         const char* keys = getenv("BIOS_PREVIEW_KEYS");
         for (int i = 0; i < frames; i++) {
@@ -623,7 +625,7 @@ main(int argc, char** argv) {
                     const char* c = strchr(p, ':');
                     if (!c) break;
                     if (f == i) {
-                        const char* map = "UDLRABXY";
+                        const char* map = "UDLRABXYPN"; /* P, N: page up / down */
                         const char* k = strchr(map, c[1]);
                         if (k) bfs_key(&demo_fs, (int)(k - map) + 1);
                     }
@@ -748,6 +750,120 @@ main(int argc, char** argv) {
     if (script == -14) {
         bscene_draw_background(&menu.bg, &sink);
         bfs_draw(&demo_fs, &sink);
+        if (getenv("BIOS_PREVIEW_PADLABELS")) { /* "Keyboard,Mouse,...": the pills over ports A, B, ... (text drawn as a white bar of its width) */
+            uint32_t body[4], border[4];
+            for (int i = 0; i < 4; i++) bmenu_pill_colours(&menu, i, &body[i], &border[i]);
+            char list[256];
+            snprintf(list, sizeof(list), "%s", getenv("BIOS_PREVIEW_PADLABELS"));
+            int port = 0;
+            for (char* t = strtok(list, ","); t && port < 4; t = strtok(NULL, ","), port++) {
+                float px, py;
+                if (!bfs_pad_px(&demo_fs, port, &px, &py)) continue;
+                pad_label_rect r;
+                float ps = getenv("BIOS_PREVIEW_PAD_SCALE") ? (float)atof(getenv("BIOS_PREVIEW_PAD_SCALE")) : PAD_LABEL_SCALE; /* the text size to try */
+                float tw = (float)(btext_width(t) + 3) * ps;
+                pad_label_layout(px, py, tw, getenv("BIOS_PREVIEW_CENTRED") ? 1 : PAD_LABEL_CENTRED, &r);
+                if (ps != PAD_LABEL_SCALE) { /* a taller pill for bigger text, same bottom */
+                    float h = 26.0f * ps + 8.0f;
+                    r.y += r.h - h;
+                    r.h = h;
+                }
+                for (int y = (int)r.y; y < (int)(r.y + r.h); y++) {
+                    for (int x = (int)r.x; x < (int)(r.x + r.w); x++) {
+                        float rad = r.h / 2.0f;
+                        float d = 0; /* distance outside the pill's straight part */
+                        float cx = (float)x + 0.5f, cy = (float)y + 0.5f;
+                        float lx = r.x + rad, rx = r.x + r.w - rad, my = r.y + rad;
+                        float ex = cx < lx ? lx - cx : (cx > rx ? cx - rx : 0.0f), ey = cy - my;
+                        d = sqrtf(ex * ex + ey * ey);
+                        if (d > rad) continue;
+                        int rim = d > rad - PILL_BORDER;
+                        uint32_t c32 = rim ? border[port] : body[port];
+                        float a = (float)(c32 >> 24) / 255.0f;
+                        for (int c = 0; c < 3; c++) {
+                            float v = (float)((c32 >> (16 - 8 * c)) & 255) / 255.0f;
+                            fb[y][x][c] = fb[y][x][c] * (1.0f - a) + v * a;
+                        }
+                    }
+                }
+                /* the text: the BIOS font printed into a surface and shrunk by PAD_LABEL_SCALE (what gfx_text_scaled() puts on the pill) */
+                bsurf* ts = bsurf_get(0x7F00, 256, 32);
+                if (ts) {
+                    bsurf_clear(ts);
+                    ts->colour = 0xFFFF;
+                    bsurf_print(ts, 0, 0, t);
+                    float x0 = r.x + (r.w - tw) / 2.0f, y0 = r.y + (r.h - 26.0f * ps) / 2.0f;
+                    for (int y = (int)y0; y < (int)(y0 + 26.0f * ps) + 1; y++) {
+                        for (int x = (int)x0; x < (int)(x0 + tw) + 1; x++) {
+                            float cov = 0.0f, n = 0.0f;
+                            for (int sy = 0; sy < 4; sy++) {
+                                for (int sx = 0; sx < 4; sx++) {
+                                    int u = (int)(((float)x + (float)sx / 4.0f - x0) / ps);
+                                    int v = (int)(((float)y + (float)sy / 4.0f - y0) / ps);
+                                    n += 1.0f;
+                                    if (u >= 0 && u < ts->w && v >= 0 && v < ts->h) {
+                                        cov += (float)((ts->px[v * ts->w + u] >> 12) & 15) / 15.0f;
+                                    }
+                                }
+                            }
+                            cov /= n;
+                            if (x >= 0 && x < W && y >= 0 && y < H && cov > 0.0f) {
+                                for (int c = 0; c < 3; c++) fb[y][x][c] = fb[y][x][c] * (1.0f - cov) + cov;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (getenv("BIOS_PREVIEW_SD")) { /* BIOS_PREVIEW_SD=<slot 0..7>: the SD card mark of the Serial VMU's card */
+            float cx, cy;
+            if (bfs_card_corner_px(&demo_fs, atoi(getenv("BIOS_PREVIEW_SD")), &cx, &cy)) {
+                sd_rect rects[SD_ICON_MAX_RECTS];
+                int n = sd_icon_rects(cx - SD_ICON_W - SD_ICON_INSET_X, cy - SD_ICON_H - SD_ICON_INSET_Y, rects);
+                for (int i = 0; i < n; i++) {
+                    float a = (float)(rects[i].argb >> 24) / 255.0f;
+                    for (int y = (int)(rects[i].y + 0.5f); y < (int)(rects[i].y + rects[i].h + 0.5f); y++) {
+                        for (int x = (int)(rects[i].x + 0.5f); x < (int)(rects[i].x + rects[i].w + 0.5f); x++) {
+                            if (x < 0 || x >= W || y < 0 || y >= H) continue;
+                            for (int c = 0; c < 3; c++) {
+                                float v = (float)((rects[i].argb >> (16 - 8 * c)) & 255) / 255.0f;
+                                fb[y][x][c] = fb[y][x][c] * (1.0f - a) + v * a;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (getenv("BIOS_PREVIEW_HITS")) { /* BIOS_PREVIEW_HITS=1: the areas the mouse pointer answers to, in red; the cursor's in green */
+            float r[40][5];
+            int n = bfs_hit_rects(&demo_fs, r, 40);
+            for (int i = 0; i < n; i++) {
+                int cur = (int)r[i][4] == demo_fs.cur[demo_fs.layer].pos;
+                for (int x = (int)(r[i][0] - r[i][2]); x <= (int)(r[i][0] + r[i][2]); x++) {
+                    for (int k = 0; k < 2; k++) {
+                        int y = (int)(r[i][1] + (k ? r[i][3] : -r[i][3]));
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = cur ? 0 : 1; fb[y][x][1] = cur ? 1 : 0; fb[y][x][2] = 0; }
+                    }
+                }
+                for (int y = (int)(r[i][1] - r[i][3]); y <= (int)(r[i][1] + r[i][3]); y++) {
+                    for (int k = 0; k < 2; k++) {
+                        int x = (int)(r[i][0] + (k ? r[i][2] : -r[i][2]));
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = cur ? 0 : 1; fb[y][x][1] = cur ? 1 : 0; fb[y][x][2] = 0; }
+                    }
+                }
+            }
+            for (int p = 0; p < 4; p++) {
+                float px, py;
+                if (bfs_pad_px(&demo_fs, p, &px, &py)) {
+                    for (int d = -6; d <= 6; d++) {
+                        int x = (int)px + d, y = (int)py;
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = 1; fb[y][x][1] = 1; fb[y][x][2] = 0; }
+                        x = (int)px; y = (int)py + d;
+                        if (x >= 0 && x < W && y >= 0 && y < H) { fb[y][x][0] = 1; fb[y][x][1] = 1; fb[y][x][2] = 0; }
+                    }
+                }
+            }
+        }
     } else if (script == -9) {
         bscene_draw_background(&menu.bg, &sink);
         bmenu_draw_objects(&menu, &sink);

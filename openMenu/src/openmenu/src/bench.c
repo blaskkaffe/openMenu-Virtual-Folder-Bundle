@@ -33,7 +33,7 @@ static const bench_step steps[] = {
     {"options_popup", 0, -1, 0, 120, "0:X 20:Dx3/15 90:B"},
     {"games_leave", 0, -1, 0, 120, "0:B 40:B"},
     {"settings", 1, 3, 0, 320, "0:A 40:Dx20/10 270:B"}, /* B saves the settings: the VMU write is part of it */
-    {"files", 1, 1, 0, 400, "0:A 240:B 300:B"},
+    {"file", 1, 1, 0, 400, "0:A 240:B 300:B"},
     {"internet", 1, 2, 0, 260, "0:A 200:B"}, /* Music and the CD player when the online features are off */
     {"main_end", 1, 0, 0, 180, ""},
 };

@@ -24,8 +24,8 @@ typedef enum bmenu_dir { BMENU_UP, BMENU_DOWN, BMENU_LEFT, BMENU_RIGHT } bmenu_d
 
 /* Accent colours of the window panels, by main menu item (set_panel_accent_color in the BIOS):
  * the same colours as the pills behind the icon names on the main screen. */
-#define BMENU_ACCENT_GAME 0xFFE07000u     /* orange */
-#define BMENU_ACCENT_FILES 0xFF00E070u    /* green */
+#define BMENU_ACCENT_PLAY 0xFFE07000u     /* orange */
+#define BMENU_ACCENT_FILE 0xFF00E070u    /* green */
 #define BMENU_ACCENT_MUSIC 0xFF0070E0u    /* blue: Music, and the online category that takes its place */
 #define BMENU_ACCENT_SETTINGS 0xFFE00070u /* magenta */
 #define BMENU_ACCENT_MAIN 0xFFE0E0E0u     /* light grey: popups on the main screen */
@@ -65,6 +65,11 @@ int bmenu_move(bmenu* m, bmenu_dir dir);
 void bmenu_back_style(bmenu* m, int selected, int anim, int pal);
 /* Is the pixel (px, py) on a BACK marker placed at (x, y) world units? */
 int bmenu_back_hit(float x, float y, float px, float py);
+
+/* The colours of the caption pill of main menu icon `icon` (0 Play, 1 File, 2 Music, 3 Settings), read from the ROM's pill model: the
+ * body and the lighter border, as 0xAARRGGBB with the alpha the BIOS gives them. Returns 0 if the ROM has no such model (the
+ * accent colours are given then). */
+int bmenu_pill_colours(bmenu* m, int icon, uint32_t* body, uint32_t* border);
 
 void bmenu_update(bmenu* m);                          /* one 60 Hz frame */
 void bmenu_draw(bmenu* m, const bscene_sink* sink);   /* background layers, then all objects */

@@ -21,6 +21,9 @@ typedef enum svmu_phase {
     SVMU_CLOSE          /* done or cancelled: nothing to start */
 } svmu_phase;
 
+/* The VMU slot Settings > Serial VMU names, as the File screen numbers them (0 A1, 1 A2, 2 B1 ... 7 D2), -1 when it is off. */
+int svmu_slot(void);
+
 /* Serial VMU is on, and this game uses it (it has a serial and is not homebrew or a tool: type "other"). */
 int svmu_applies(const gd_item* item);
 /* Serial VMU is on but Serial VMU Slots is too, which is not supported yet: the game starts without. */

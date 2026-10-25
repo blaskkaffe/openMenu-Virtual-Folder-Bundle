@@ -51,14 +51,14 @@
 #include "ui_settings.h"
 #include "video.h"
 
-typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILES, SCREEN_MUSIC, SCREEN_INTERNET } screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_DATETIME, SCREEN_FILE, SCREEN_MUSIC, SCREEN_INTERNET } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
  * longer; the animations were written for that rate. */
 #define STEPS_PER_SECOND 60
 #define MAX_STEPS_PER_FRAME 4
 
-enum { ICON_GAME, ICON_FILES, ICON_MUSIC, ICON_SETTINGS };
+enum { ICON_PLAY, ICON_FILE, ICON_MUSIC, ICON_SETTINGS };
 
 #ifndef GFX_MAIN_AUTOSORT
 #define GFX_MAIN_AUTOSORT 1
@@ -133,6 +133,7 @@ static int about_open;                /* the About box over the settings */
 static int saved_page_cursor, saved_page_top;
 static const bios_rom* g_rom;
 static mouse_t pointer;
+static int files_over; /* the pointer is over something of the File screen that a click can pick */
 
 /* x of the pointer on the 640 px picture (16:9 squeezes the picture: undo that) */
 static float
@@ -889,12 +890,12 @@ handle_viewer(button_t b) {
 #define POPUP_ROWS 8
 
 /* The window panels take the colour of their screen, as in the BIOS (the colour of the main menu
- * item the screen belongs to): orange Game, green Files, blue Music / online, magenta Settings. */
+ * item the screen belongs to): orange Play, green File, blue Music / online, magenta Settings. */
 static uint32_t
 screen_accent(void) {
     switch (screen) {
-        case SCREEN_GAMES: return BMENU_ACCENT_GAME;
-        case SCREEN_FILES: return BMENU_ACCENT_FILES;
+        case SCREEN_GAMES: return BMENU_ACCENT_PLAY;
+        case SCREEN_FILE: return BMENU_ACCENT_FILE;
         case SCREEN_MUSIC:
         case SCREEN_INTERNET: return BMENU_ACCENT_MUSIC;
         case SCREEN_SETTINGS:
@@ -1134,7 +1135,7 @@ log_label(void) {
             return options_open ? "games/options" : viewer_open ? "games/viewer" : (recent_open ? "games/recent" : "games");
         case SCREEN_SETTINGS: return "settings";
         case SCREEN_DATETIME: return "date/time";
-        case SCREEN_FILES: return "files";
+        case SCREEN_FILE: return "file";
         case SCREEN_MUSIC: return "cd player";
         case SCREEN_INTERNET: return "internet";
     }
@@ -1252,7 +1253,7 @@ draw_frame(void) {
     } else if (screen == SCREEN_DATETIME) {
         bscene_draw_background(&menu.bg, gfx_sink());
         draw_datetime();
-    } else if (screen == SCREEN_FILES) {
+    } else if (screen == SCREEN_FILE) {
         bscene_draw_background(&menu.bg, gfx_sink());
         uif_draw();
     } else if (screen == SCREEN_MUSIC) {
@@ -1372,7 +1373,7 @@ handle_main(button_t b) {
             break;
         case BTN_A:
         case BTN_START:
-            if (menu.selected == ICON_GAME) {
+            if (menu.selected == ICON_PLAY) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 if (!games_opened) {
                     games_opened = 1;
@@ -1386,11 +1387,11 @@ handle_main(button_t b) {
                 options_open = 0;
                 blist_set_cursor(&glist, uil_cursor());
                 screen = SCREEN_GAMES;
-            } else if (menu.selected == ICON_FILES) {
+            } else if (menu.selected == ICON_FILE) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 uif_open(&menu);
                 uif_set_pal(console_is_pal());
-                screen = SCREEN_FILES;
+                screen = SCREEN_FILE;
             } else if (menu.selected == ICON_SETTINGS) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 bpage_open(&page, &menu, uis_count());
@@ -1814,7 +1815,7 @@ handle_games(button_t b) {
             case BTN_B: /* the bottom row is the last level before the main menu */
                 glist.button = -1;
                 sound_sfx(BAUDIO_SFX_CANCEL);
-                bmenu_show_main(&menu, ICON_GAME);
+                bmenu_show_main(&menu, ICON_PLAY);
                 screen = SCREEN_MAIN;
                 break;
             case BTN_A:
@@ -1873,7 +1874,7 @@ handle_games(button_t b) {
         if (b == BTN_A || b == BTN_START || b == BTN_B) { /* BACK is on the bottom row: B goes on to the main menu */
             sound_sfx(BAUDIO_SFX_CANCEL);
             glist.back_selected = 0;
-            bmenu_show_main(&menu, ICON_GAME);
+            bmenu_show_main(&menu, ICON_PLAY);
             screen = SCREEN_MAIN;
         }
         return;
@@ -2235,7 +2236,7 @@ apply_hover(void) {
             }
             break;
         }
-        case SCREEN_FILES: uif_hover(ux, uy); break;
+        case SCREEN_FILE: files_over = uif_hover(ux, uy); break;
         case SCREEN_INTERNET: uin_hover(ux, uy); break;
         case SCREEN_MUSIC: {
             int i = bcd_item_at_px(ux, uy);
@@ -2292,7 +2293,7 @@ ui_bios_run(const bios_rom* rom) {
 
     start_color = read_boot_color();
     bmenu_init(&menu, rom, NULL);
-    bmenu_show_main(&menu, ICON_GAME);
+    bmenu_show_main(&menu, ICON_PLAY);
     set_icon_labels();
     update_clock();
     online_set_hangup_hook(show_hangup);
@@ -2386,7 +2387,13 @@ ui_bios_run(const bios_rom* rom) {
             handle_games(b);
         } else if (screen == SCREEN_DATETIME) {
             handle_datetime(b);
-        } else if (screen == SCREEN_FILES) {
+        } else if (screen == SCREEN_FILE) {
+            if (b == BTN_A && pointer.clicked && !files_over) {
+                b = BTN_NONE; /* a click on nothing does nothing */
+            }
+            if (pointer.wheel && uif_pages() && (b == BTN_UP || b == BTN_DOWN)) {
+                b = b == BTN_UP ? BTN_PAGE_UP : BTN_PAGE_DOWN; /* the wheel turns the pages */
+            }
             uif_handle(b);
         } else if (screen == SCREEN_MUSIC) {
             handle_music(b);
@@ -2424,8 +2431,8 @@ ui_bios_run(const bios_rom* rom) {
             if (screen == SCREEN_GAMES && viewer_open) {
                 viewer_step();
             }
-            if (screen == SCREEN_FILES && uif_step()) {
-                bmenu_show_main(&menu, ICON_FILES);
+            if (screen == SCREEN_FILE && uif_step()) {
+                bmenu_show_main(&menu, ICON_FILE);
                 screen = SCREEN_MAIN;
             }
         }
@@ -2434,7 +2441,7 @@ ui_bios_run(const bios_rom* rom) {
             settings_sync();
         } else if (screen == SCREEN_DATETIME) {
             bdt_sync(&dtedit);
-        } else if (screen == SCREEN_FILES) {
+        } else if (screen == SCREEN_FILE) {
             uif_sync();
         } else if (screen == SCREEN_MUSIC) {
             bcd_sync(&cdp);

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "bios_surface.h"
+#include "nj_model.h"
 #include "bios_text.h"
 
 /* ---- object ids (all as in the BIOS) ---------------------------------------------------------------------- */
@@ -183,26 +184,44 @@ cursor_off(bfs* fs) {
 }
 
 /* cursor_update 0x8C0108F8: a direction moves along the table first, then the callback sees the new position;
- * A (5), B (6), and 7 when nothing was pressed. */
+ * A (5), B (6), and 7 when nothing was pressed. The pointer (bfs_point) can put the cursor on a position directly:
+ * the callback then sees BFS_WARP and the position, and a key of the same frame follows. */
+#define BFS_WARP 0x20
+
 static void
-cursor_update(bfs* fs) {
+cursor_step(bfs* fs, int key, int target) {
     bfs_cursor* c = &fs->cur[fs->layer];
-    int key = fs->key;
-    fs->key = 0;
     if (!c->on || fs->fly != 0 || !c->cb) {
         return;
     }
     int pos = c->pos, code = 7;
-    if (key >= BFS_KEY_UP && key <= BFS_KEY_RIGHT) {
+    if (target >= 0) {
+        if (target >= c->count) {
+            return;
+        }
+        code = BFS_WARP;
+        pos = target;
+    } else if (key >= BFS_KEY_UP && key <= BFS_KEY_RIGHT) {
         code = key;
         if (pos >= 0 && pos < c->count) {
             pos = c->table[pos][key - 1];
         }
-    } else if (key == BFS_KEY_A || key == BFS_KEY_B) {
+    } else if (key == BFS_KEY_A || key == BFS_KEY_B || key == BFS_KEY_PGUP || key == BFS_KEY_PGDN) {
         code = key;
     }
     c->cb(fs, code, &pos);
     c->pos = pos;
+}
+
+static void
+cursor_update(bfs* fs) {
+    int key = fs->key, warp = fs->warp - 1;
+    fs->key = 0;
+    fs->warp = 0;
+    if (warp >= 0) {
+        cursor_step(fs, 0, warp);
+    }
+    cursor_step(fs, key, -1);
 }
 
 void
@@ -491,6 +510,10 @@ grid_cb(bfs* fs, int code, int* pos) {
         }
     } else if (code >= BFS_KEY_UP && code <= BFS_KEY_RIGHT) {
         dir = code - 1;
+    } else if (code == BFS_WARP) {
+        sfx(fs, 0);
+        fs->g_cursor = *pos;
+        grid_select(fs);
     } else if (code == 7 && *pos < 8 && !card_usable(fs, *pos)) {
         dir = 8;
         *pos = 8;
@@ -726,6 +749,9 @@ popup_cb(bfs* fs, int code, int* pos) {
         }
         moved = 1;
     } else if (code == BFS_KEY_LEFT || code == BFS_KEY_RIGHT) {
+        moved = 1;
+    } else if (code == BFS_WARP) {
+        sfx(fs, 0);
         moved = 1;
     }
     if (moved) {
@@ -1234,6 +1260,9 @@ browser_cb(bfs* fs, int code, int* pos) {
     }
     if (code == 8) {
         moved = 1;
+    } else if (code == BFS_WARP) {
+        moved = 1;
+        sfx(fs, 0);
     } else if (code == BFS_KEY_LEFT) {
         moved = 1;
         sfx(fs, 0);
@@ -1429,6 +1458,18 @@ browser(bfs* fs) {
                     fs->b_redraw = 1;
                     fs->b_dirty_info = 1;
                 }
+                int pg = fs->key == BFS_KEY_PGUP ? -1 : (fs->key == BFS_KEY_PGDN ? 1 : 0);
+                if (pg) { /* Page Up / Down, the mouse wheel: a page of files, the cursor stays on its tile */
+                    fs->key = 0;
+                    int n = browsed_count(fs);
+                    if (pg < 0 ? fs->b_page > 0 : n - fs->b_page * 8 - 24 > 0) {
+                        sfx(fs, 0);
+                        set_page(fs, fs->b_page + pg);
+                        int pos = fs->cur[0].pos;
+                        browser_cb(fs, 8, &pos);
+                        fs->cur[0].pos = pos;
+                    }
+                }
                 info_panel(fs, 0);
                 if (fs->b_dirty_info) {
                     info_panel(fs, 1);
@@ -1619,7 +1660,7 @@ bfs_open(bfs* fs) {
     fs->gauge_set = 0;
     fs->g_ready = -1;
     memset(&fs->op, 0, sizeof(fs->op));
-    fs->m->scene.object_panel_accent = BMENU_ACCENT_FILES;
+    fs->m->scene.object_panel_accent = BMENU_ACCENT_FILE;
 }
 
 void
@@ -1638,10 +1679,13 @@ bfs_update(bfs* fs) {
     if (watched_gone(fs, fs->src_watch) || watched_gone(fs, fs->dst_watch)) {
         fs->changed |= 1;
     }
+    int browsing = fs->state == 5 && fs->b_state == 2;
     if (fs->key == BFS_KEY_X || fs->key == BFS_KEY_Y) { /* X and Y are read by the browser itself */
-        if (fs->state != 5 || fs->b_state != 2) {
+        if (!browsing) {
             fs->key = 0;
         }
+    } else if ((fs->key == BFS_KEY_PGUP || fs->key == BFS_KEY_PGDN) && browsing && fs->cur[0].on && fs->layer == 0) {
+        /* so are the page keys, there */
     } else {
         cursor_update(fs);
     }
@@ -2242,9 +2286,16 @@ icon_cb(bfs* fs, int code, int* pos) {
             fs->f_page++;
         }
         moved = 1;
-    } else if (code == BFS_KEY_LEFT || code == BFS_KEY_RIGHT) {
+    } else if (code == BFS_KEY_LEFT || code == BFS_KEY_RIGHT || code == BFS_WARP) {
         sfx(fs, 0);
         moved = 1;
+    } else if (code == BFS_KEY_PGUP || code == BFS_KEY_PGDN) {
+        int page = fs->f_page + (code == BFS_KEY_PGUP ? -1 : 1);
+        if (page >= 0 && page <= 0x1B) {
+            sfx(fs, 0);
+            fs->f_page = page;
+            moved = 1;
+        }
     } else if (code == BFS_KEY_A) {
         if (*pos == 0x10) {
             sfx(fs, 1);
@@ -2290,7 +2341,7 @@ colour_cb(bfs* fs, int code, int* pos) {
     } else if (code == BFS_KEY_B) {
         sfx(fs, 2);
         fs->f_state = 8;
-    } else if (code >= BFS_KEY_UP && code <= BFS_KEY_RIGHT) {
+    } else if ((code >= BFS_KEY_UP && code <= BFS_KEY_RIGHT) || code == BFS_WARP) {
         sfx(fs, 0);
         moved = 1;
     }
@@ -2316,7 +2367,7 @@ yesno_cb(bfs* fs, int code, int* pos) {
     } else if (code == BFS_KEY_B) {
         sfx(fs, 2);
         fs->f_state = 4;
-    } else if (code == BFS_KEY_UP || code == BFS_KEY_DOWN) {
+    } else if (code == BFS_KEY_UP || code == BFS_KEY_DOWN || code == BFS_WARP) {
         sfx(fs, 0);
     }
     fs->f_cursor = *pos;
@@ -2510,6 +2561,275 @@ bfs_format_flow_(bfs* fs) {
     return 0;
 }
 
+/* ---- the mouse pointer: what is under it ---------------------------------------------------------------------
+ * The objects of the screen sit in world units; a point on the picture is found by projecting their positions, the text
+ * surfaces (file tiles, pickers) by the layout their draw functions use. Sizes are what the BIOS draws. */
+
+typedef struct hit {
+    float x, y, hw, hh; /* centre and half size in pixels */
+    int pos;            /* the cursor position it stands for */
+} hit;
+
+#define HIT_MAX 40
+#define CARD_HW 50.0f /* the card of the file window (position 0) */
+#define CARD_HH 60.0f
+#define ALL_DX 72.0f /* the "ALL" ring of the file window, from the card's position */
+#define ALL_DY -21.0f
+#define BACK_HALF 34.0f
+#define BUTTON_HW 62.0f /* Select / Cancel / Yes / No of the pickers: the object is the marker at their left end */
+#define BUTTON_DX 32.0f
+#define BUTTON_HH 22.0f
+
+static int
+obj_px(bfs* fs, uint16_t id, float* x, float* y) {
+    bvm_obj* o = obj(fs, id);
+    float iw;
+    if (!o || (o->flags & BVM_F_HIDE)) {
+        return 0;
+    }
+    return bscene_project((nj_vec3){o->pos[0], o->pos[1], o->pos[2]}, x, y, &iw);
+}
+
+/* the top left corner of an object's text surface on the picture */
+static int
+surf_origin(bfs* fs, uint16_t id, float* ox, float* oy) {
+    bvm_obj* o = obj(fs, id);
+    bsurf* s = bsurf_find(id);
+    if (!o || !s || (o->flags & BVM_F_HIDE)) {
+        return 0;
+    }
+    float scl[3] = {o->scale_tw[0].cur, o->scale_tw[1].cur, o->scale_tw[2].cur};
+    nj_mat4 m;
+    nj_mat_object(&m, o->pos, scl, o->rot);
+    nj_vec3 a = nj_mat_apply(&m, (nj_vec3){o->text_off[0], o->text_off[1], 0.0f});
+    float sx, sy, iw;
+    if (!bscene_project(a, &sx, &sy, &iw)) {
+        return 0;
+    }
+    *ox = sx - (float)s->w / 2.0f;
+    *oy = sy - (float)s->h / 2.0f;
+    return 1;
+}
+
+static int
+add_obj(bfs* fs, hit* h, int n, uint16_t id, float hw, float hh, int pos) {
+    float x, y;
+    if (n < HIT_MAX && obj_px(fs, id, &x, &y)) {
+        h[n++] = (hit){x, y, hw, hh, pos};
+    }
+    return n;
+}
+
+static int
+add_button(bfs* fs, hit* h, int n, uint16_t id, int pos) {
+    n = add_obj(fs, h, n, id, BUTTON_HW, BUTTON_HH, pos);
+    if (n > 0 && h[n - 1].pos == pos && h[n - 1].hw == BUTTON_HW) {
+        h[n - 1].x += BUTTON_DX;
+    }
+    return n;
+}
+
+static int
+collect_grid(bfs* fs, hit* h) {
+    float px[8], py[8];
+    int have[8], n = 0;
+    float hw = CARD_HW, hh = CARD_HH, dxm = 1e9f, dym = 1e9f;
+    for (int i = 0; i < 8; i++) {
+        have[i] = obj_px(fs, ID_CARD(i), &px[i], &py[i]);
+    }
+    /* a card owns the cell between it and its neighbours */
+    for (int i = 0; i < 8; i++) {
+        for (int j = i + 1; j < 8; j++) {
+            if (!have[i] || !have[j]) continue;
+            float dx = px[i] > px[j] ? px[i] - px[j] : px[j] - px[i];
+            float dy = py[i] > py[j] ? py[i] - py[j] : py[j] - py[i];
+            if (dx > 8.0f && dx < dxm) dxm = dx;
+            if (dy > 8.0f && dy < dym) dym = dy;
+        }
+    }
+    if (dxm < 1e8f) hw = dxm / 2.0f;
+    if (dym < 1e8f) hh = dym / 2.0f;
+    for (int i = 0; i < 8; i++) {
+        if (have[i] && grid_pick_ok(fs, i)) {
+            h[n++] = (hit){px[i], py[i], hw, hh, i};
+        }
+    }
+    return add_obj(fs, h, n, ID_BACK, BACK_HALF, BACK_HALF, 8);
+}
+
+static int
+collect_browser(bfs* fs, hit* h) {
+    int n = add_obj(fs, h, 0, ID_CARD(0), CARD_HW, CARD_HH, 0);
+    if (n) { /* the "ALL" ring on the window's corner belongs to the card as well */
+        h[n] = (hit){h[0].x + ALL_DX, h[0].y + ALL_DY, 28.0f, 28.0f, 0};
+        n++;
+    }
+    n = add_obj(fs, h, n, ID_BACK, BACK_HALF, BACK_HALF, 1);
+    float ox, oy;
+    if (surf_origin(fs, ID_TILES, &ox, &oy)) {
+        int files = browsed_count(fs);
+        for (int t = 0; t < 24 && n < HIT_MAX; t++) {
+            if (fs->b_page * 8 + t >= files) break;
+            /* the tile is 40x50 at (0x4C, 0x60) of its 0x30 x 0x36 cell of the surface; the cell is what answers */
+            h[n++] = (hit){ox + (float)((t & 7) * 0x30 + 0x4C + 20), oy + (float)((t >> 3) * 0x36 + 0x60 + 25), 24.0f, 27.0f, 2 + t};
+        }
+    }
+    return n;
+}
+
+static int
+collect_popup(bfs* fs, hit* h) {
+    const bfs_popup_def* d = fs->p_def;
+    float x[4], y[4], cx;
+    int n = 0, have[4] = {0, 0, 0, 0};
+    if (!d || fs->p_state != 2 || !obj_px(fs, ID_POPUP, &cx, &y[0])) {
+        return 0;
+    }
+    for (int i = 0; i < d->count && i < 4; i++) {
+        have[i] = obj_px(fs, ID_POPBTN(i), &x[i], &y[i]);
+    }
+    float half = 20.0f; /* half the distance between two choices */
+    if (d->count > 1 && have[0] && have[1]) {
+        half = (y[0] > y[1] ? y[0] - y[1] : y[1] - y[0]) / 2.0f;
+    }
+    for (int i = 0; i < d->count && i < 4; i++) {
+        if (have[i] && d->item[i].grey != 1) { /* the choice's marker sits at the left of the panel: the row is as wide as the panel */
+            h[n++] = (hit){cx, y[i], (float)d->w / 2.0f, half, i};
+        }
+    }
+    return n;
+}
+
+static int
+collect_msgbox(bfs* fs, hit* h) {
+    return fs->m_state == 2 ? add_obj(fs, h, 0, ID_POPUP, 256.0f, 100.0f, 0) : 0;
+}
+
+static int
+collect_icons(bfs* fs, hit* h) {
+    int n = 0;
+    float ox, oy;
+    if (surf_origin(fs, ID_PICKER, &ox, &oy)) {
+        for (int k = 0; k < 16; k++) {
+            h[n++] = (hit){ox + (float)((k & 3) * 0x38 + 0xDC + 16), oy + (float)((k >> 2) * 0x38 + 0x20 + 16), 28.0f, 28.0f, k};
+        }
+    }
+    n = add_button(fs, h, n, ID_SELECT, 16);
+    return add_button(fs, h, n, ID_CANCEL, 17);
+}
+
+static int
+collect_colours(bfs* fs, hit* h) {
+    int n = 0;
+    float ox, oy;
+    if (surf_origin(fs, ID_PICKER, &ox, &oy)) {
+        for (int i = 0; i < 32; i++) {
+            h[n++] = (hit){ox + (float)((i & 3) * 0x2C + 0xF0 + 16), oy + (float)((i >> 2) * 0x18 + 0xF + 8), 22.0f, 12.0f, i};
+        }
+        h[n++] = (hit){ox + 243.0f + 85.0f, oy + 222.0f + 16.0f, 85.0f, 17.0f, 32}; /* the Transparent switch and its text */
+    }
+    n = add_button(fs, h, n, ID_SELECT, 33);
+    return add_button(fs, h, n, ID_CANCEL, 34);
+}
+
+static int
+collect_yesno(bfs* fs, hit* h) {
+    int n = add_button(fs, h, 0, ID_SELECT, 0);
+    return add_button(fs, h, n, ID_CANCEL, 1);
+}
+
+static int
+collect(bfs* fs, hit* h) {
+    bfs_cursor* c = &fs->cur[fs->layer];
+    if (!c->on || !c->cb || fs->fly != 0) {
+        return 0;
+    }
+    if (c->cb == grid_cb) return collect_grid(fs, h);
+    if (c->cb == browser_cb) return collect_browser(fs, h);
+    if (c->cb == popup_cb) return collect_popup(fs, h);
+    if (c->cb == msgbox_cb) return collect_msgbox(fs, h);
+    if (c->cb == icon_cb) return collect_icons(fs, h);
+    if (c->cb == colour_cb) return collect_colours(fs, h);
+    if (c->cb == yesno_cb) return collect_yesno(fs, h);
+    return 0;
+}
+
+int
+bfs_hit_rects(bfs* fs, float out[][5], int max) {
+    hit h[HIT_MAX];
+    int n = collect(fs, h);
+    for (int i = 0; i < n && i < max; i++) {
+        out[i][0] = h[i].x;
+        out[i][1] = h[i].y;
+        out[i][2] = h[i].hw;
+        out[i][3] = h[i].hh;
+        out[i][4] = (float)h[i].pos;
+    }
+    return n < max ? n : max;
+}
+
+int
+bfs_point(bfs* fs, float x, float y) {
+    bfs_cursor* c = &fs->cur[fs->layer];
+    hit h[HIT_MAX];
+    int n = collect(fs, h);
+    int best = -1;
+    float best_d = 1e9f;
+    for (int i = 0; i < n; i++) {
+        float dx = x - h[i].x, dy = y - h[i].y;
+        if (dx < -h[i].hw || dx > h[i].hw || dy < -h[i].hh || dy > h[i].hh) {
+            continue;
+        }
+        float d = dx * dx + dy * dy;
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
+    }
+    if (best < 0) {
+        return 0;
+    }
+    if (h[best].pos != c->pos) {
+        fs->warp = h[best].pos + 1;
+    }
+    return 1;
+}
+
+/* The lower right corner of the picture of card `slot` as it is on the screen now (the grid, or the card of the file window), for the
+ * small marks that sit on a card. Returns 0 while the card is not shown plainly: moving, or under a popup, a picker or a message. */
+#define GRID_CARD_HW 48.0f /* half size of the card picture in the grid, from its object position */
+#define GRID_CARD_HH 63.0f
+#define WIN_CARD_HW 45.0f /* the same for the card beside the file window */
+#define WIN_CARD_HH 57.0f
+
+int
+bfs_card_corner_px(bfs* fs, int slot, float* x, float* y) {
+    if (slot < 0 || slot >= BFS_SLOTS || fs->fly != 0 || fs->layer != 0 || obj(fs, ID_PICKER) || obj(fs, ID_COPYBOX) ||
+        obj(fs, ID_RESETBOX) || obj(fs, ID_ZOOM) || obj(fs, ID_POPUP)) {
+        return 0;
+    }
+    int in_window = obj(fs, ID_WINDOW) != NULL;
+    for (int k = in_window ? 0 : slot; k < (in_window ? 1 : slot + 1); k++) {
+        bvm_obj* c = obj(fs, ID_CARD(k));
+        float cx, cy;
+        if (c && c->var[0] == slot && obj_px(fs, ID_CARD(k), &cx, &cy)) {
+            *x = cx + (in_window ? WIN_CARD_HW : GRID_CARD_HW);
+            *y = cy + (in_window ? WIN_CARD_HH : GRID_CARD_HH);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int
+bfs_pad_px(bfs* fs, int port, float* x, float* y) {
+    if (port < 0 || port > 3 || fs->fly != 0 || fs->layer != 0 || fs->g_state != 2) {
+        return 0;
+    }
+    return obj_px(fs, ID_PAD(port), x, y);
+}
+
+
 void
 bfs_draw(bfs* fs, const bscene_sink* sink) {
     static const unsigned passes[2] = {BSCENE_PART_MODEL, BSCENE_PART_TEXT};
@@ -2526,6 +2846,20 @@ bfs_draw(bfs* fs, const bscene_sink* sink) {
             m->scene.ovr[m->scene.ovr_n].argb =
                 fs->card[i].status == BFS_CARD_UNFORMATTED ? 0xFF2F5F9Fu : fs->card[i].colour;
             m->scene.ovr[m->scene.ovr_n].lit = 1;
+            m->scene.ovr_n++;
+        }
+    }
+    /* the port letters A to D of the card grid's frame (model 15, nodes 1..4) take the colour of the border of the main menu's caption
+     * pill of the same position (Play, File, Music, Settings), read from the ROM */
+    if (obj(fs, ID_FRAME)) {
+        for (int p = 0; p < 4 && m->scene.ovr_n < BSCENE_OVR_MAX; p++) {
+            uint32_t body, border;
+            bmenu_pill_colours(m, p, &body, &border);
+            m->scene.ovr[m->scene.ovr_n].model = 15;
+            m->scene.ovr[m->scene.ovr_n].node = 1 + p;
+            m->scene.ovr[m->scene.ovr_n].poly = 0;
+            m->scene.ovr[m->scene.ovr_n].argb = border | 0xFF000000u;
+            m->scene.ovr[m->scene.ovr_n].lit = 0; /* the border's own colour, not dimmed by the light */
             m->scene.ovr_n++;
         }
     }

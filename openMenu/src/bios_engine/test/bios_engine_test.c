@@ -25,6 +25,7 @@
 #include "bios_page.h"
 #include "bios_scene.h"
 #include "nj_model.h"
+#include "pad_kind.h"
 #include "tex_decode.h"
 
 static int failures;
@@ -776,6 +777,50 @@ fs_steps(bmenu* m, bfs* fs, int n, int key) {
     }
 }
 
+/* put the pointer on the area of cursor position `pos` (the middle of it); returns what bfs_point() says, 0 when there is none */
+static int
+fs_point_pos(bfs* fs, int pos) {
+    float r[40][5];
+    int n = bfs_hit_rects(fs, r, 40);
+    for (int i = 0; i < n; i++) {
+        if ((int)r[i][4] == pos) {
+            return bfs_point(fs, r[i][0], r[i][1]);
+        }
+    }
+    return 0;
+}
+
+static void
+test_pad_kind(void) {
+    static const struct {
+        uint32_t fn;
+        const char* name;
+        const char* want; /* NULL: the standard controller, no label */
+    } cases[] = {
+        {0x01000000u, "Dreamcast Controller", NULL},
+        {0x01000000u, "Dreamcast Controller          ", NULL},
+        {0x01000000u, "Arcade", "Arcade"},
+        {0x01000000u, "Dreamcast Fishing Controller", "Fishing"},
+        {0x01000000u, "Dreamcast Racing Controller", "Racing"},
+        {0x01000000u, "Panther DC", "Panther"},
+        {0x01000000u, "Hori Fighting Stick 2", "Arcade"},
+        {0x01000000u, "Some Pad Pro", "Some Pad Pro"},
+        {0x80000000u, "Dreamcast Gun", "Lightgun"},
+        {0x80000000u, "", "Lightgun"},
+        {0x40000000u, "Dreamcast Keyboard", "Keyboard"},
+        {0x00020000u, "Dreamcast Mouse", "Mouse"},
+        {0x00020000u, "", "Mouse"},
+        {0x40020000u, "", "Keyboard"}, /* both bits: the keyboard */
+        {0x10000000u, "", "Mic"},
+        {0x00080000u, "Dreameye", "Dreameye"},
+    };
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        char out[PAD_KIND_MAX];
+        const char* r = pad_kind_name(cases[i].fn, cases[i].name, out);
+        CHECK(cases[i].want ? (r && strcmp(r, cases[i].want) == 0) : r == NULL);
+    }
+}
+
 static void
 test_filescr_real(const bios_rom* rom) {
     static bmenu m;
@@ -803,8 +848,29 @@ test_filescr_real(const bios_rom* rom) {
     CHECK(bsurf_find(0x1180) != NULL && bsurf_find(0x1120) != NULL);
     fs_steps(&m, &fs, 2, BFS_KEY_RIGHT);
     CHECK(fs.b_cursor == 3 && fs.marked[1] && !fs.marked[0]);
+    /* the mouse: a tile under the pointer gets the cursor, nothing under it does not */
+    fs_steps(&m, &fs, 1, 0);
+    CHECK(fs_point_pos(&fs, 4) && fs.b_cursor == 3);
+    fs_steps(&m, &fs, 2, 0);
+    CHECK(fs.b_cursor == 4 && fs.marked[2] && !fs.marked[1]);
+    CHECK(!bfs_point(&fs, 2.0f, 2.0f));
+    CHECK(fs_point_pos(&fs, 3));
+    fs_steps(&m, &fs, 2, 0);
+    CHECK(fs.b_cursor == 3 && fs.marked[1]);
+    CHECK(!fs_point_pos(&fs, 9)); /* only three files: no tile there */
+    fs_point_pos(&fs, 3);
     fs_steps(&m, &fs, 40, BFS_KEY_A); /* the Copy / Delete / Cancel popup */
     CHECK(fs.state == 0xB && fs.nlist == 1 && fs.list[0] == 1);
+    {   /* the popup's choices are under the pointer too; the greyed or missing ones are not */
+        float r[40][5];
+        int n = bfs_hit_rects(&fs, r, 40);
+        CHECK(n >= 2);
+        for (int i = 0; i < n; i++) {
+            CHECK(r[i][4] >= 0 && r[i][4] < 3);
+        }
+        CHECK(bfs_point(&fs, r[n - 1][0], r[n - 1][1]) && fs.warp == (int)r[n - 1][4] + 1);
+        fs.warp = 0;
+    }
     fs_steps(&m, &fs, 2, BFS_KEY_DOWN);
     fs_steps(&m, &fs, 20, BFS_KEY_A); /* Delete: are you sure? (No) */
     CHECK(fs.state == 0x32);
@@ -1235,6 +1301,7 @@ main(void) {
     test_list(&rom);
     test_datetime(&rom);
     test_files(&rom);
+    test_pad_kind();
     test_models(&rom);
     test_case(&rom);
     test_text();

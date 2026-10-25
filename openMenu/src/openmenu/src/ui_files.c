@@ -10,8 +10,11 @@
 #include <bios_audio.h>
 #include <bios_filescr.h>
 #include <bios_surface.h>
+#include <pad_kind.h>
+#include <sd_icon.h>
 
 #include "clock.h"
+#include "serial_vmu.h"
 #include "gfx.h"
 #include "sound.h"
 #include "ui_files.h"
@@ -386,6 +389,9 @@ uif_handle(button_t b) {
         case BTN_START: bfs_key(&fs, BFS_KEY_A); break;
         case BTN_B: bfs_key(&fs, BFS_KEY_B); break;
         case BTN_X: bfs_key(&fs, BFS_KEY_X); break;
+        case BTN_Y: bfs_key(&fs, BFS_KEY_Y); break;
+        case BTN_PAGE_UP: bfs_key(&fs, BFS_KEY_PGUP); break;
+        case BTN_PAGE_DOWN: bfs_key(&fs, BFS_KEY_PGDN); break;
         default: break;
     }
     return 0;
@@ -424,13 +430,72 @@ uif_sync(void) {
     }
 }
 
-void
-uif_draw(void) {
-    bfs_draw(&fs, gfx_sink());
+/* The File screen's card grid shows a pill over each controller that is not a standard one: keyboard, mouse, light gun, fishing
+ * rod, arcade stick and so on, made like the main menu's caption pills (body and lighter border, in the colours of the pill of the same position: A as Play, B as
+ * File, C as Music, D as Settings). */
+static void
+draw_pad_labels(void) {
+    for (int p = 0; p < 4; p++) {
+        maple_device_t* dev = maple_enum_dev(p, 0);
+        float px, py;
+        if (!dev || !dev->valid || !bfs_pad_px(&fs, p, &px, &py)) {
+            continue;
+        }
+        char product[sizeof(dev->info.product_name) + 1], name[PAD_KIND_MAX];
+        memcpy(product, dev->info.product_name, sizeof(dev->info.product_name));
+        product[sizeof(dev->info.product_name)] = '\0';
+        const char* kind = pad_kind_name(dev->info.functions, product, name);
+        if (!kind) {
+            continue;
+        }
+        pad_label_rect r;
+        char fit[PAD_KIND_MAX];
+        snprintf(fit, sizeof(fit), "%s", kind);
+        while (strlen(fit) > 3 && (float)(gfx_text_width(fit) + 3) + 16.0f > PAD_LABEL_MAX_W) {
+            fit[strlen(fit) - 1] = '\0'; /* a long name of its own (a controller we do not know) is cut to the column */
+        }
+        kind = fit;
+        float tw = (float)(gfx_text_width(kind) + 3); /* what gfx_text() draws */
+        pad_label_layout(px, py, tw, PAD_LABEL_CENTRED, &r);
+        uint32_t body, border;
+        bmenu_pill_colours(fs.m, p, &body, &border);
+        gfx_rrect(r.x, r.y, r.w, r.h, r.h / 2.0f, 0.5f, border);
+        gfx_rrect(r.x + PILL_BORDER, r.y + PILL_BORDER, r.w - 2.0f * PILL_BORDER, r.h - 2.0f * PILL_BORDER,
+                  r.h / 2.0f - PILL_BORDER, 0.505f, (body & 0x00FFFFFFu) | 0xE0000000u);
+        gfx_text(kind, r.x + (r.w - tw) / 2.0f, r.y + (r.h - 26.0f) / 2.0f, 0.51f, 0xFFFFFFFFu, 1); /* the font at its own size, like every other label */
+    }
+}
+
+/* The VMU slot the Serial VMU uses (Settings > Serial VMU) carries a small SD card at the lower right of its card. */
+static void
+draw_serial_mark(void) {
+    int slot = svmu_slot();
+    float cx, cy;
+    if (slot < 0 || !bfs_card_corner_px(&fs, slot, &cx, &cy)) {
+        return;
+    }
+    sd_rect r[SD_ICON_MAX_RECTS];
+    int n = sd_icon_rects(cx - SD_ICON_W - SD_ICON_INSET_X, cy - SD_ICON_H - SD_ICON_INSET_Y, r);
+    for (int i = 0; i < n; i++) {
+        gfx_rect(r[i].x, r[i].y, r[i].w, r[i].h, 0.5f + 0.001f * (float)i, r[i].argb);
+    }
 }
 
 void
+uif_draw(void) {
+    bfs_draw(&fs, gfx_sink());
+    if (!left) {
+        draw_pad_labels();
+        draw_serial_mark();
+    }
+}
+
+int
 uif_hover(float x, float y) {
-    (void)x;
-    (void)y;
+    return left ? 0 : bfs_point(&fs, x, y);
+}
+
+int
+uif_pages(void) {
+    return !left && ((fs.state == 5 && fs.b_state == 2 && fs.layer == 0) || fs.f_state == 3);
 }
