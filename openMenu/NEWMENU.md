@@ -241,8 +241,8 @@ real devices; `BIOS_PREVIEW_PADLABELS="Keyboard,Mouse"` shows the pills' place o
 
 ## Todo: File menu, devices (from the plan, later)
 
-- Browse and load Serial VMU saves (the per-game images kept on the SD card by the serial VMU emulation) in the File menu, next to the
-  real cards. Needs a decision, see "Serial VMU saves" below.
+- Serial VMU saves (the per-game images on the SD card): decision needed, see "Serial VMU saves" below. Leaning: keep loading a game's VMU
+  from the games picker as in Derek's fork, so both menus behave the same, and not browse them in the File menu.
 - Serial VMU on/off moves from Settings to the File menu later; back up now / load backup.
 - Integrate with VM2, VMU Pro, USB4Maple and Pico2Maple: sense which of them is plugged in, and control their own features from the
   File menu: switch between VMU slots (and know which is connected), enable/disable GameID and show its status (a small slot number and
@@ -260,6 +260,9 @@ real devices; `BIOS_PREVIEW_PADLABELS="Keyboard,Mouse"` shows the pills' place o
   kept), a card that already uses it says so.
 
 ## Serial VMU saves (decision needed)
+
+Leaning (not decided): loading a game's VMU stays in the games picker, as in Derek's fork (compatible, easy to use); the File menu does not
+browse the per-game images.
 
 How 1.7.1 / Derek's fork keeps them (`serial_vmu.c`, README "Serial VMU Feature"): on the serial SD card, `OPENMENU/SAVES/<serial>/` has one
 folder per game with `SLOT1.VMU` (Multi-Slot: up to `SLOT5.VMU`), `TITLE.TXT` and optional `SLOTn.TXT` labels; each file is a whole 128 KB VMU
