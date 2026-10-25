@@ -273,14 +273,24 @@ browsing of single saves inside the menu: to move a single save one uses the BIO
 
 ## Internet screen layout (ui_internet.c)
 
-One large panel (as the game list's box) with the connection status on top, a page below and a footer line; the CD player's
-five buttons pick the page: Online (players on the left, games being played on the right; Y moves the cursor between the
-columns, A on a game that is on the card starts it through the same start as the game list, A on a player refreshes), Play
-(the browser discs on the card, then a row for the online game catalogue, which needs data from the DreamPi: coming soon),
-Events (upcoming events, refreshed with A), News (placeholder until the DreamPi companion sends news) and Settings (Connection:
-connect or hang up, Interface, ISP settings, Preferred network, DreamPi add-on state, Network test; the ones not built yet are
-dim and say coming soon). X connects or hangs up from any page, B or BACK leaves. The empty player list shows what the fetch is
-doing or why it failed.
+One large panel (as the game list's box) with a heading line, eight list rows and a footer line; the connection status
+("Online via network adapter  X: hang up", the failure reason, ...) is drawn above the panel, right-aligned, not inside it. The
+CD player's five buttons pick the page:
+
+- **Players**: only the players online (name, the game they are in, network). A refreshes the list.
+- **Games**: the games on the card that have online play (META.DAT `network`) or are being played online now, one row per game
+  (not per disc), then the browser discs. Games being played come first, tinted, with the player count in front of the title.
+  A starts the game or browser through the same start as the game list.
+- **Events**: four events to a page, two lines each (title; time and source). A opens one: the whole title wrapped, time, source;
+  B closes it.
+- **News**: four items to a page (heading and the start of its text). A opens one (Up/Down scroll the text). Read by `news_fetch.c`
+  from dc.dreamcastlive.net/news.html and dc.segaonline.net (plain HTTP), cut into items by `news_parse.c`: every h1-h4 heading
+  starts an item, the text after it is its body. This is generic because the pages' markup has not been seen from the cloud
+  session (no network): it may need tuning to the real pages.
+- **Settings**: Connection, Interface, ISP settings, Preferred network, DreamPi add-on state, Network test (the ones not built
+  yet are dim and say coming soon), and the Internet settings of `ui_settings.c`.
+
+X connects or hangs up from any page, B or BACK leaves. The empty player list shows what the fetch is doing or why it failed.
 
 ## Todo: Online menu item (blue, takes the place of Music)
 

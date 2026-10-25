@@ -39,6 +39,8 @@ set(OPENMENU_SOURCES
         src/backend/dcnow_fetch.c
         src/backend/dcnow_vmu.c
         src/backend/events_fetch.c
+        src/backend/news_fetch.c
+        src/backend/news_parse.c
         src/backend/dreampi_link.c
         src/backend/online_games.c
         src/backend/online_time_sync.c

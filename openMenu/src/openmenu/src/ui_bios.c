@@ -2378,6 +2378,7 @@ ui_bios_run(const bios_rom* rom) {
     set_icon_labels();
     update_clock();
     online_set_hangup_hook(show_hangup);
+    uin_set_meta(have_meta);
     uin_set_launch(start_game); /* games started from the Internet screen restore their Serial VMU first */
     dbglog_boot("menu", (unsigned)timer_ms_gettime64());
 
