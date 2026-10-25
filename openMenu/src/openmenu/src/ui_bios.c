@@ -1928,6 +1928,7 @@ handle_music(button_t b) {
 
 static void
 leave_settings(void) {
+    printf("OM leave settings: save\n");
     if (uis_commit() != 0) {
         sound_sfx(BAUDIO_SFX_ERROR);
         show_notice("Could not save settings");
@@ -1935,11 +1936,14 @@ leave_settings(void) {
         sound_sfx(BAUDIO_SFX_CANCEL);
     }
     /* order, multi-disc and recent list changes show up in the list again */
+    printf("OM leave settings: list\n");
     list_set_folder_root();
     uil_reset();
+    printf("OM leave settings: labels\n");
     set_icon_labels();
     bmenu_show_main(&menu, ICON_SETTINGS);
     screen = SCREEN_MAIN;
+    printf("OM leave settings: done\n");
 }
 
 static void

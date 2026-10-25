@@ -133,3 +133,9 @@ Every frame longer than 1.5 refreshes is recorded from the first frame on (`dbgl
 - all small but period long: something outside the loop (disc access, interrupts, a thread holding the CPU).
 Take one log right after boot (without touching anything), one after a minute on the main menu, one after scrolling the game list, and the same
 with Online off, to see which feature adds hitches.
+
+## Freeze when leaving a menu with B (also seen in Flycast)
+
+Leaving Settings prints `OM leave settings: save / list / labels / done` (Flycast log or serial). The last line before the freeze is the step that hangs
+(`uis_commit` = saving to SD/VMU, `list` = rebuilding and sorting the game list, `labels`). Note which menu you left, and whether the freeze
+also happens from Files, Internet, Music, the game list and the main menu.
