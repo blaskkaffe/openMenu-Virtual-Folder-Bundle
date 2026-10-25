@@ -1065,7 +1065,7 @@ settings_sync(void) {
         }
         gfx_set_label((uint16_t)BPAGE_TEXT_ID(s), line);
     }
-    snprintf(line, sizeof(line), "%.36s\n%.36s", uis_group(page.cursor), uis_help(page.cursor)); /* 36 fit the help box */
+    snprintf(line, sizeof(line), "%.28s  %d/%d\n%.36s", uis_group(page.cursor), page.cursor + 1, page.count, uis_help(page.cursor)); /* 36 fit the help box */
     gfx_set_label((uint16_t)BPAGE_HELP_ID, line);
     bpage_sync(&page, page_row, NULL);
 }
@@ -1301,6 +1301,7 @@ draw_frame(void) {
     uint64_t t0 = timer_us_gettime64();
     gfx_set_aspect(sf_aspect[0] == ASPECT_WIDE);
     dcbg_gradient(&menu.bg, &top, &bottom);
+    uis_background(&top, &bottom);
     {
         uint32_t border = blend_color(START_COLOR, 0xFF000000u, fade_step < 0 ? 0 : fade_step);
         vid_border_color((int)((border >> 16) & 0xFF), (int)((border >> 8) & 0xFF), (int)(border & 0xFF));
