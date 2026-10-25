@@ -65,7 +65,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 - [ ] After the game, next start: "Backing up the VMU", data in `SLOT1.VMU`, LASTDISC.TXT gone. Then swap with 1.7.1's menu: it reads the same files.
 - [ ] Damaged file, no SD adapter, no VMU in the socket: the right question each time; Skip keeps LASTDISC.TXT and the next restore warns that the
       last game's VMU is not backed up.
-- [ ] Homebrew (type other) and games without a serial start with none of this; Serial VMU Slots On: the game starts without it and says so.
+- [ ] Homebrew (type other) and games without a serial start with none of this.
 - [ ] Games started from the Recent / Favorites popups and from Internet > Online go through the same restore.
 
 ## 6. Main menu top bar and header logo
@@ -119,7 +119,7 @@ Features still open (see ROADMAP.md)
 - X popup: cheats, version picker, per-game network (DCNow!/DCNET, own storage file); Y screen: description text, scroll, snap/flip.
 - Internet: Play catalogue of online games, News and Events from the DreamPi companion, notifications for starred players/games/events, star
   players/games, ISP settings editor, DreamPi Ethernet/Wi-Fi settings, interface tests (modem, BBA, serial, W5500), written companion protocol.
-- Serial VMU Slots (five images), the fallback VMU picker, exit to BIOS, a File-menu Serial VMU submenu, manual backup/load.
+- Serial VMU: the fallback VMU picker, exit to BIOS, a File-menu Serial VMU submenu, manual backup/load.
 - Settings: background colour choice and dark mode, move the online rows to the Internet menu; flash partition compaction before the ISP editor.
 - Y2K-style look for the Internet pages; 60 fps (still below on hardware).
 
@@ -152,3 +152,16 @@ Open: Flycast uses DCNET, but the player lists are DCNow!'s, and with no DreamPi
 recognised without a DreamPi (a setting Auto / DCNow! / DCNET, or a test of the connection). Also: in Flycast no logo change is visible at all.
 Check the log: `OM logo: NOWO n NOWB n CNET n` (are the three .PVR files on the disc image?) and `OM logo: mode m (shown, state, network, ...)`
 (state must be 2 = online for mode 1; the setting Online features must not be Off).
+
+Freeze on B while connecting or loading online data (not offline): the main screen is drawn with a logo mode then (3 = swirl turning, 1 = Now!), code
+that is new on this branch. A test build with `-DOM_NO_LOGO_MODES` keeps the logo plain. If the freeze is gone with it, the logo code (gfx.c:
+build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the connection or fetch threads (the `OM B:` and `OM logo:` lines say which).
+
+## Serial VMU Slots (Settings > Game list > Serial VMU Slots: On)
+- [ ] First start of a game with no image in any slot: no slot question, the usual "No Serial VMU for this game yet" choices (slot 1).
+- [ ] Next start (after the backup): the question "Serial VMU slot" lists Slot 1..5 with the time of the image (EMPTY when none), or the first line of
+      `SLOT<n>.TXT` as the label; Launch without Serial VMU; Cancel (B).
+- [ ] An empty slot chosen: the blank/as-is choices; a filled slot: the image is restored and the game starts.
+- [ ] At the next start the VMU is backed up into the slot the game was started from (no question; 1.7.1 asks, this menu does not).
+      `LASTDISC.TXT` holds `<serial>-<slot>`; `SLOT<n>.VMU` has the new time. Check on a card shared with 1.7.1 that it reads the same files.
+- [ ] A backup left undone (skipped) is offered ("Back it up now") before the next restore, also when it was made from slot 3 to 5.
