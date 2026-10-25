@@ -749,6 +749,7 @@ main(int argc, char** argv) {
     bscene_sink sink = {NULL, tri, text, NULL};
     if (script == -14) {
         bscene_draw_background(&menu.bg, &sink);
+        bfs_set_serial_slot(&demo_fs, getenv("BIOS_PREVIEW_SD") ? atoi(getenv("BIOS_PREVIEW_SD")) : -1); /* the SD card mark */
         bfs_draw(&demo_fs, &sink);
         if (getenv("BIOS_PREVIEW_PADLABELS")) { /* "Keyboard,Mouse,...": the pills over ports A, B, ... (text drawn as a white bar of its width) */
             uint32_t body[4], border[4];
@@ -809,25 +810,6 @@ main(int argc, char** argv) {
                             cov /= n;
                             if (x >= 0 && x < W && y >= 0 && y < H && cov > 0.0f) {
                                 for (int c = 0; c < 3; c++) fb[y][x][c] = fb[y][x][c] * (1.0f - cov) + cov;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (getenv("BIOS_PREVIEW_SD")) { /* BIOS_PREVIEW_SD=<slot 0..7>: the SD card mark of the Serial VMU's card */
-            float cx, cy;
-            if (bfs_card_corner_px(&demo_fs, atoi(getenv("BIOS_PREVIEW_SD")), &cx, &cy)) {
-                sd_rect rects[SD_ICON_MAX_RECTS];
-                int n = sd_icon_rects(cx - SD_ICON_W - SD_ICON_INSET_X, cy - SD_ICON_H - SD_ICON_INSET_Y, rects);
-                for (int i = 0; i < n; i++) {
-                    float a = (float)(rects[i].argb >> 24) / 255.0f;
-                    for (int y = (int)(rects[i].y + 0.5f); y < (int)(rects[i].y + rects[i].h + 0.5f); y++) {
-                        for (int x = (int)(rects[i].x + 0.5f); x < (int)(rects[i].x + rects[i].w + 0.5f); x++) {
-                            if (x < 0 || x >= W || y < 0 || y >= H) continue;
-                            for (int c = 0; c < 3; c++) {
-                                float v = (float)((rects[i].argb >> (16 - 8 * c)) & 255) / 255.0f;
-                                fb[y][x][c] = fb[y][x][c] * (1.0f - a) + v * a;
                             }
                         }
                     }

@@ -223,10 +223,11 @@ files or icons. The areas are checked against the real ROM's render: `BIOS_PREVI
 
 The port letters A to D under the controllers take the colours of the borders of the main menu's four caption pills (read from the ROM: model 5, rim of nodes 1, 3, 2, 4; drawn into model 15 nodes 1..4, unshaded).
 
-Serial VMU mark: the VMU slot that Settings > Serial VMU names carries a small SD card at the lower right of its card, on the
-card grid and on the card beside the file window (`sd_icon.c` makes the rectangles, `ui_files.c` draws them, `bfs_card_corner_px`
-says where the card is). `BIOS_PREVIEW_SD=<slot>` shows it on a PC. It is hidden while the card moves or a popup, picker or message
-is over it.
+Serial VMU mark: the card of the VMU slot that Settings > Serial VMU names carries a small SD card (the back of one, three flat
+colours: card, read / write switch, yellow contacts; `sd_icon.c`) at the lower right, on the card grid and on the card beside the
+file window. `bfs_draw` draws it right after the card object, so it moves with the card (also in the flight to the file window),
+fades with the screen transitions and lies under popups and pickers, which show it through their transparency. It stays below the
+card's own display. `BIOS_PREVIEW_SD=<slot>` shows it on a PC.
 
 Input: every controller, mouse and keyboard in every port steers the menu, not only the first one (`input.c`).
 

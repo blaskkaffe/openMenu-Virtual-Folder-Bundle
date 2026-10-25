@@ -1,44 +1,58 @@
-/* sd_icon: see sd_icon.h. The back of an SD card as in the Dreamcast BIOS's own pictures: flat colours, a light outline, no gradients.
- * Black body with the corner cut at the top left, a row of gold contacts along the top and the single contact beside the cut,
- * the grey write-protect tab on the right, the groove at the bottom, a few lighter specks for the grain of the plastic. */
+/* sd_icon: see sd_icon.h. The back of an SD card, simple and flat like the menu's models: the corner cut at the top left, a row of
+ * contacts along the top and the single one beside the cut, the read / write switch on the right edge. Three colours. */
 #include "sd_icon.h"
 
-#define CUT 3        /* the cut corner (top left), in pixels */
-#define STEP_ROWS 11 /* the rows at the top are one pixel narrower on each side, as on a real card */
+#define CARD_ARGB 0xFF1F2536u   /* blackish grey-blue */
+#define SWITCH_ARGB 0xFF353C52u /* a little lighter */
+#define GOLD_ARGB 0xFFF2C81Eu   /* the contacts: one yellow */
 
-#define EDGE_ARGB 0xFFE4E6EDu
-#define BODY_ARGB 0xFF14161Du
-#define GRAIN_ARGB 0xFF2B2E39u
-#define GOLD_A_ARGB 0xFFD8B04Au
-#define GOLD_B_ARGB 0xFFEED27Cu
-#define TAB_ARGB 0xFF7A7F8Bu
-#define GROOVE_ARGB 0xFF2B2E39u
+#define CUT 6.0f    /* the cut corner (top left) */
+#define ROUND 2.5f  /* the other three corners */
 
-/* the silhouette: the cut corner, the narrower upper part, the full lower part */
-static int
-shape(sd_rect* out, int n, float x, float y, float w, float h, int cut, int step_rows, uint32_t argb) {
-    for (int r = 0; r < cut; r++) {
-        int left = cut - r > 1 ? cut - r : 1;
-        out[n++] = (sd_rect){x + (float)left, y + (float)r, w - (float)left - 1.0f, 1.0f, argb};
-    }
-    out[n++] = (sd_rect){x + 1.0f, y + (float)cut, w - 2.0f, (float)(step_rows - cut), argb};
-    out[n++] = (sd_rect){x, y + (float)step_rows, w, h - (float)step_rows, argb};
-    return n;
+static void
+tri(const bscene_sink* sink, float invw, uint32_t argb, float x0, float y0, float x1, float y1, float x2, float y2) {
+    bscene_vtx v[3] = {{x0, y0, invw, 0.0f, 0.0f, argb, 0}, {x1, y1, invw, 0.0f, 0.0f, argb, 0}, {x2, y2, invw, 0.0f, 0.0f, argb, 0}};
+    const bscene_texref none = {BSCENE_TEX_NONE, 0, 0, 0};
+    sink->triangle(sink->user, v, none);
 }
 
-int
-sd_icon_rects(float x, float y, sd_rect out[SD_ICON_MAX_RECTS]) {
-    static const unsigned char grain[][2] = {{5, 14}, {9, 17}, {14, 13}, {18, 19}, {7, 21}, {12, 24}, {17, 15}, {20, 23}, {4, 25}};
-    int n = shape(out, 0, x, y, SD_ICON_W, SD_ICON_H, CUT, STEP_ROWS, EDGE_ARGB);
-    n = shape(out, n, x + 1.0f, y + 1.0f, SD_ICON_W - 2.0f, SD_ICON_H - 2.0f, CUT - 1, STEP_ROWS - 1, BODY_ARGB);
-    for (unsigned i = 0; i < sizeof(grain) / sizeof(grain[0]); i++) {
-        out[n++] = (sd_rect){x + (float)grain[i][0], y + (float)grain[i][1], 1.0f, 1.0f, GRAIN_ARGB};
+static void
+quad(const bscene_sink* sink, float invw, uint32_t argb, float x, float y, float w, float h) {
+    tri(sink, invw, argb, x, y, x + w, y, x, y + h);
+    tri(sink, invw, argb, x + w, y, x + w, y + h, x, y + h);
+}
+
+static uint32_t
+faded(uint32_t argb, float alpha) {
+    return (argb & 0x00FFFFFFu) | ((uint32_t)((float)(argb >> 24) * alpha) << 24);
+}
+
+void
+sd_icon_draw(const bscene_sink* sink, float x, float y, float invw, float alpha) {
+    if (!sink || !sink->triangle || alpha <= 0.0f) {
+        return;
     }
-    out[n++] = (sd_rect){x + 2.0f, y + 5.0f, 2.0f, 5.0f, GOLD_A_ARGB}; /* the contact beside the cut */
+    const float w = SD_ICON_W, h = SD_ICON_H;
+    x = (float)(int)(x + 0.5f); /* on whole pixels, so the stripes of the contacts stay even wherever the card is */
+    y = (float)(int)(y + 0.5f);
+    const uint32_t card = faded(CARD_ARGB, alpha), sw = faded(SWITCH_ARGB, alpha), gold = faded(GOLD_ARGB, alpha);
+
+    /* the card: a fan from its middle round the outline: the cut corner top left, the other three corners rounded (two points each) */
+    const float r = ROUND, d = ROUND * 0.2929f; /* d: how far in a rounded corner's middle point is from the box corner */
+    const float px[] = {x + CUT, x + w - r, x + w - d, x + w,     x + w,     x + w - d, x + w - r, x + r,     x + d,     x,         x};
+    const float py[] = {y,       y,         y + d,     y + r,     y + h - r, y + h - d, y + h,     y + h,     y + h - d, y + h - r, y + CUT};
+    const int n = (int)(sizeof(px) / sizeof(px[0]));
+    float cx = x + w / 2.0f, cy = y + h / 2.0f;
+    for (int i = 0; i < n; i++) {
+        int j = (i + 1) % n;
+        tri(sink, invw, card, cx, cy, px[i], py[i], px[j], py[j]);
+    }
+
+    /* the read / write switch on the right edge */
+    quad(sink, invw, sw, x + w - 3.0f, y + 12.0f, 3.0f, 6.0f);
+    /* the contacts: the one beside the cut, and the row along the top */
+    quad(sink, invw, gold, x + 3.0f, y + 7.0f, 2.0f, 6.0f);
     for (int i = 0; i < 5; i++) {
-        out[n++] = (sd_rect){x + 6.0f + 3.0f * (float)i, y + 2.0f, 2.0f, 7.0f, i & 1 ? GOLD_B_ARGB : GOLD_A_ARGB};
+        quad(sink, invw, gold, x + 7.0f + 3.0f * (float)i, y + 2.0f, 2.0f, 8.0f);
     }
-    out[n++] = (sd_rect){x + SD_ICON_W - 2.0f, y + 10.0f, 2.0f, 4.0f, TAB_ARGB};
-    out[n++] = (sd_rect){x + 6.0f, y + SD_ICON_H - 5.0f, 12.0f, 1.0f, GROOVE_ARGB};
-    return n;
 }

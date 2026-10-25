@@ -157,6 +157,7 @@ typedef struct bfs {
     int layer;
     int key;
     int warp;             /* 1 + the cursor position the pointer asked for, 0 none (bfs_point) */
+    int serial_mark;      /* 1 + the slot that carries the Serial VMU's SD card mark, 0 none (bfs_set_serial_slot) */
     /* tables from the ROM */
     const uint8_t* grid_search;  /* 0x8C036FE0 */
     const uint8_t* arrow_tab;    /* 0x8C037124 */
@@ -191,9 +192,9 @@ int bfs_hit_rects(bfs* fs, float out[][5], int max);
 /* Where controller port `port` (0..3) is drawn on the card grid: its centre on the 640x480 picture. Returns 0 when the grid
  * with the controller is not showing (another screen, a popup over it, a screen transition). */
 int bfs_pad_px(bfs* fs, int port, float* x, float* y);
-/* The lower right corner of card `slot`'s picture on the screen (the grid, or the card of the file window), for marks that sit on a
- * card. Returns 0 when the card is not shown plainly (moving, or under a popup, picker or message). */
-int bfs_card_corner_px(bfs* fs, int slot, float* x, float* y);
+/* The slot (0 A1, 1 A2, 2 B1 ... 7 D2) whose card carries the small SD card mark of the Serial VMU, -1 for none. The mark is drawn by
+ * bfs_draw() with the card: it moves, fades and goes under popups with it. */
+void bfs_set_serial_slot(bfs* fs, int slot);
 /* The command the caller has to carry out, NULL if none. */
 bfs_op* bfs_pending(bfs* fs);
 
