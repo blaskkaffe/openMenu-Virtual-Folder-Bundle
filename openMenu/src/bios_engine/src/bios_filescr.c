@@ -2823,6 +2823,18 @@ bfs_draw(bfs* fs, const bscene_sink* sink) {
             m->scene.ovr_n++;
         }
     }
+    /* the port letters A to D of the card grid's frame (model 15, nodes 1..4) take the main menu's four button colours */
+    static const uint32_t port_colour[4] = {BMENU_ACCENT_GAME, BMENU_ACCENT_FILES, BMENU_ACCENT_MUSIC, BMENU_ACCENT_SETTINGS};
+    if (obj(fs, ID_FRAME)) {
+        for (int p = 0; p < 4 && m->scene.ovr_n < BSCENE_OVR_MAX; p++) {
+            m->scene.ovr[m->scene.ovr_n].model = 15;
+            m->scene.ovr[m->scene.ovr_n].node = 1 + p;
+            m->scene.ovr[m->scene.ovr_n].poly = 0;
+            m->scene.ovr[m->scene.ovr_n].argb = port_colour[p];
+            m->scene.ovr[m->scene.ovr_n].lit = 0;
+            m->scene.ovr_n++;
+        }
+    }
     window_colours(fs, &m->scene);
     if (obj(fs, ID_PREVIEW) && m->scene.ovr_n < BSCENE_OVR_MAX) { /* FUN_8C021BE4: the card of the memory reset */
         m->scene.ovr[m->scene.ovr_n].model = 70;
