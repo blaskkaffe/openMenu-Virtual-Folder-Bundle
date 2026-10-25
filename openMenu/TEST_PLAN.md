@@ -79,7 +79,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 - [ ] While connecting the swirl turns about its own centre, once in about 1.2 s, wordmark still; it starts with the dial and stops on connect/fail.
 - [ ] Online on Dreamcast Now!: "Now!" in the swirl's colour right after "Dreamcast" (not overlapping the clock, not cut off).
 - [ ] Online through a DreamPi with DCNET selected: the swirl with "DCNET" over the wordmark's place, same size and baseline as "Dreamcast".
-      Over modem/serial the swirl keeps turning up to 6 s until the DreamPi says which network; a Pi without the add-on ends on "Now!".
+      "Now!" shows right away, also without the DreamPi add-on; with it the logo changes to "DCNET" when the add-on reports that network.
 - [ ] Without NOWO/NOWB/CNET.PVR on the disc the logo stays as it is online (no crash).
 - [ ] Compare the letters with the real wordmark at 1:1 on a CRT: weight, height, baseline (known: baseline about 1 px high, strokes lighter than
       the wordmark's own).
