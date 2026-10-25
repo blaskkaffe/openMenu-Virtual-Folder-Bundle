@@ -170,7 +170,13 @@ static void
 update_logo_mode(void) {
     online_header oh;
     online_header_get(&oh);
-    gfx_set_logo_mode(!oh.shown ? 0 : oh.state == 1 || (oh.state == 2 && oh.pi_pending) ? 3 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1);
+    int mode = !oh.shown ? 0 : oh.state == 1 || (oh.state == 2 && oh.pi_pending) ? 3 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1;
+    static int last_mode = -1;
+    if (mode != last_mode) { /* why the logo is what it is: shown, link state (0 none 1 connecting 2 online 3 failed), DreamPi network */
+        printf("OM logo: mode %d (shown %d, state %d, network %d, pi_pending %d)\n", mode, oh.shown, oh.state, oh.network, oh.pi_pending);
+        last_mode = mode;
+    }
+    gfx_set_logo_mode(mode);
 }
 
 /* The BIOS shows the date and time in the header bar, in its own small antialiased font (fx_debug_hex_text
@@ -2431,6 +2437,11 @@ ui_bios_run(const bios_rom* rom) {
             dbglog_hitch(&prev_frame, prev_label);
         }
         button_t b = input_poll();
+        static int b_trace;
+        if (b_trace) {
+            printf("OM B: frame %u after B ok\n", frame_no);
+            b_trace = 0;
+        }
         if (bench_active()) {
             bench_cmd bc;
             if (b == BTN_START) {
@@ -2445,6 +2456,10 @@ ui_bios_run(const bios_rom* rom) {
             if (!bench_active()) {
                 show_notice("Performance test done: results on the serial port");
             }
+        }
+        if (b == BTN_B) {
+            printf("OM B: pressed, frame %u, screen %d\n", frame_no, (int)screen);
+            b_trace = 1;
         }
         input_mouse(&pointer);
         if (bench_active()) {
