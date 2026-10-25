@@ -59,7 +59,7 @@ container does not look as expected. The status line at the bottom shows the res
 ## Phase 4 (menu wired to the launcher)
 
 Game opens the game browser (with a detail line), Settings edits boot animation and the exit
-mode and saves them. Files and Music show "Not available yet".
+mode and saves them. File and Music show "Not available yet".
 
 Still open: language settings, Music (online).
 
@@ -184,9 +184,9 @@ dark translucent body, rim in the screen's accent colour: Game orange, Settings 
 editor, the About box and the popups use it now (`bscene_draw_panel`). In the editor the green ovals
 are drawn under the names of the buttons, which start over the right half of the oval.
 
-## Files screen: the BIOS File screen
+## File screen: the BIOS File screen
 
-Main menu > Files is the BIOS's own File screen, ported from the boot ROM (`bios_engine/bios_filescr`,
+Main menu > File is the BIOS's own File screen, ported from the boot ROM (`bios_engine/bios_filescr`,
 `file_screen_update` 0x8C017A60 and what it calls). Same objects, scripts, positions, cursor tables, state
 machines and messages (read from the ROM's message tables) as the original:
 
@@ -225,20 +225,20 @@ The port letters A to D under the controllers take the colours of the borders of
 
 Controller labels: on the card grid a small pill in the port's colour (A orange, B green, C blue, D magenta, the main menu's pill
 colours) sits over the lower right of the controller picture for every device that is not a standard controller: Keyboard, Mouse,
-Light Gun, Fishing Rod, Arcade Stick, Twin Stick, Racing Wheel, Maracas, Train Controller, Panther, Dance Mat, Dreameye,
+Light Gun, Fishing Rod, Arcade Stick, Twin Stick, Racing Wheel, Maracas, Train, Panther, Dance Mat, Dreameye,
 Microphone. The name comes from what the device reports (its product name first, then its Maple function bits; `pad_kind.c`, tested
 in `bios_engine_test`); a controller whose name is none of the known ones shows its own name. Pico2Maple and BlueRetro are shown by
 what they report in each mode: if a mode reports "Dreamcast Controller" it gets no label. Check the strings of each mode on the
 real devices; `BIOS_PREVIEW_PADLABELS="Keyboard,Mouse"` shows the pills' place on a PC.
 
-## Todo: Files, devices, DreamPi (from the plan, later)
+## Todo: File menu, devices, DreamPi (from the plan, later)
 
 - Browse and load Serial VMU saves (the saves kept on the SD card by the serial VMU emulation) in the
-  Files menu, next to the real cards.
+  File menu, next to the real cards.
 - Show an SD card model or icon on the VMU slot that is allocated for the serial SD.
-- Serial SD settings in the Files menu: on/off, slot/controller number, back up now, load backup.
+- Serial SD settings in the File menu: on/off, slot/controller number, back up now, load backup.
 - Integrate with VM2, VMU Pro, USB4Maple and Pico2Maple: sense which of them is plugged in, and
-  control their own features from the Files menu: switch between VMU slots (and know which is
+  control their own features from the File menu: switch between VMU slots (and know which is
   connected), enable/disable GameID and show its status, battery level of VM2 and VMU Pro, and more.
 - Much later: integrate with DreamPi so that the DreamPi script can load, download and upload saves
   and VMU backups.

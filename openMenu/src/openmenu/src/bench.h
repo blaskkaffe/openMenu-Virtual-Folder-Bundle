@@ -2,7 +2,7 @@
  *
  * A fixed script goes through every screen with the same key presses at the same frames: main menu idle and moving,
  * game list open / idle / scrolling slow and fast / paging (cases flying), the case viewer turning and flipping, the
- * options popup, Settings, Files, Internet (or Music), and the main menu again. Each step first settles for a moment
+ * options popup, Settings, File, Internet (or Music), and the main menu again. Each step first settles for a moment
  * (not measured, the serial lines are written then), then measures every frame: frame time (fps, dropped frames, worst,
  * 50/95/99th percentile), CPU busy share, logic / build / PVR wait / GPU / TA times, vertices, triangles, texture
  * uploads and picture loads, heap and video RAM before and after. Results go to the serial port as "OM bench ..."

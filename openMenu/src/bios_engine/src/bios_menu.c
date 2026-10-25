@@ -11,8 +11,8 @@
 
 /* The 2x2 cursor table of the original (0x8C038724): {up, down, left, right} per icon */
 static const uint8_t cursor_table[BMENU_ICONS][4] = {
-    {0, 2, 0, 1}, /* Game */
-    {1, 3, 0, 1}, /* Files */
+    {0, 2, 0, 1}, /* Play */
+    {1, 3, 0, 1}, /* File */
     {0, 2, 2, 3}, /* Music */
     {1, 3, 2, 3}, /* Settings */
 };
@@ -239,4 +239,19 @@ bmenu_back_hit(float x, float y, float px, float py) {
     const float px_per_unit = 11.32f; /* 4000 / 353.5: pixels per world unit at the BACK marker's depth */
     float cx = 320.0f + x * px_per_unit, cy = 240.0f - y * px_per_unit;
     return px >= cx - 34.0f && px <= cx + 34.0f && py >= cy - 34.0f && py <= cy + 34.0f;
+}
+
+int
+bmenu_pill_colours(bmenu* m, int icon, uint32_t* body, uint32_t* border) {
+    static const int node[BMENU_ICONS] = {1, 3, 2, 4}; /* the corner of model 5 each caption pill takes (2x2 as the icons) */
+    static const uint32_t accent[BMENU_ICONS] = {BMENU_ACCENT_PLAY, BMENU_ACCENT_FILE, BMENU_ACCENT_MUSIC, BMENU_ACCENT_SETTINGS};
+    nj_node* n = icon >= 0 && icon < BMENU_ICONS ? bscene_node(&m->scene, 5, node[icon]) : NULL;
+    if (n && n->mesh && n->mesh->npolys >= 2 && n->mesh->polys[0].has_diffuse && n->mesh->polys[1].has_diffuse) {
+        *body = n->mesh->polys[0].diffuse;
+        *border = n->mesh->polys[1].diffuse;
+        return 1;
+    }
+    *body = (accent[icon & 3] & 0x00FFFFFFu) | 0xB2000000u;
+    *border = (accent[icon & 3] & 0x00FFFFFFu) | 0xCC000000u;
+    return 0;
 }

@@ -1,5 +1,5 @@
 /*
- * ui_files: the Files screen, the BIOS File screen for the memory cards: pick a card, browse its
+ * ui_files: the File screen, the BIOS File screen for the memory cards: pick a card, browse its
  * files, copy files to another card, delete them, reset a card. The screen is bios_filescr; ui_bios.c calls in here.
  */
 #pragma once

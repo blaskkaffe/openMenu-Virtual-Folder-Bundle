@@ -614,7 +614,7 @@ main(int argc, char** argv) {
     } else if (script == -14) { /* the File screen: BIOS_PREVIEW_KEYS="frame:key,..." with keys UDLRABXY */
         demo_fill(&rom);
         bfs_init(&demo_fs, &menu, NULL, demo_cards);
-        demo_fs.ports = 3;
+        demo_fs.ports = getenv("BIOS_PREVIEW_PORTS") ? atoi(getenv("BIOS_PREVIEW_PORTS")) : 3;
         bfs_open(&demo_fs);
         const char* keys = getenv("BIOS_PREVIEW_KEYS");
         for (int i = 0; i < frames; i++) {
@@ -750,7 +750,8 @@ main(int argc, char** argv) {
         bscene_draw_background(&menu.bg, &sink);
         bfs_draw(&demo_fs, &sink);
         if (getenv("BIOS_PREVIEW_PADLABELS")) { /* "Keyboard,Mouse,...": the pills over ports A, B, ... (text drawn as a white bar of its width) */
-            static const uint32_t col[4] = {0xE07000u, 0x00E070u, 0x0070E0u, 0xE00070u};
+            uint32_t body[4], border[4];
+            for (int i = 0; i < 4; i++) bmenu_pill_colours(&menu, i, &body[i], &border[i]);
             char list[256];
             snprintf(list, sizeof(list), "%s", getenv("BIOS_PREVIEW_PADLABELS"));
             int port = 0;
@@ -758,18 +759,24 @@ main(int argc, char** argv) {
                 float px, py;
                 if (!bfs_pad_px(&demo_fs, port, &px, &py)) continue;
                 pad_label_rect r;
-                float tw = (float)strlen(t) * 11.0f * PAD_LABEL_SCALE;
-                pad_label_layout(px, py, tw, &r);
+                float tw = (float)(btext_width(t) + 3) * PAD_LABEL_SCALE;
+                pad_label_layout(px, py, tw, getenv("BIOS_PREVIEW_CENTRED") ? 1 : PAD_LABEL_CENTRED, &r);
                 for (int y = (int)r.y; y < (int)(r.y + r.h); y++) {
                     for (int x = (int)r.x; x < (int)(r.x + r.w); x++) {
-                        float dx = 0, dy = 0, rad = r.h / 2.0f;
-                        if (x < r.x + rad) dx = r.x + rad - x - 0.5f; else if (x > r.x + r.w - rad) dx = x + 0.5f - (r.x + r.w - rad);
-                        dy = (float)y + 0.5f - (r.y + rad);
-                        if (dx * dx + dy * dy > rad * rad) continue;
+                        float rad = r.h / 2.0f;
+                        float d = 0; /* distance outside the pill's straight part */
+                        float cx = (float)x + 0.5f, cy = (float)y + 0.5f;
+                        float lx = r.x + rad, rx = r.x + r.w - rad, my = r.y + rad;
+                        float ex = cx < lx ? lx - cx : (cx > rx ? cx - rx : 0.0f), ey = cy - my;
+                        d = sqrtf(ex * ex + ey * ey);
+                        if (d > rad) continue;
+                        int rim = d > rad - PILL_BORDER;
+                        uint32_t c32 = rim ? border[port] : body[port];
+                        float a = (float)(c32 >> 24) / 255.0f;
                         int in_text = x >= (int)(r.x + (r.w - tw) / 2) && x < (int)(r.x + (r.w + tw) / 2) && y >= (int)(r.y + (r.h - 14) / 2) && y < (int)(r.y + (r.h + 14) / 2);
                         for (int c = 0; c < 3; c++) {
-                            float v = (float)((col[port] >> (16 - 8 * c)) & 255) / 255.0f;
-                            fb[y][x][c] = in_text ? 1.0f : fb[y][x][c] * 0.18f + v * 0.82f;
+                            float v = (float)((c32 >> (16 - 8 * c)) & 255) / 255.0f;
+                            fb[y][x][c] = in_text ? 1.0f : fb[y][x][c] * (1.0f - a) + v * a;
                         }
                     }
                 }

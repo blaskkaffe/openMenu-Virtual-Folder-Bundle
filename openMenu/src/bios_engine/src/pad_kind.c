@@ -29,8 +29,8 @@ static const struct {
     {"fighting stick", "Arcade Stick"},
     {"racing", "Racing Wheel"},
     {"wheel", "Racing Wheel"},
-    {"densha", "Train Controller"},
-    {"train", "Train Controller"},
+    {"densha", "Train"},
+    {"train", "Train"},
     {"panther", "Panther"},
     {"dance", "Dance Mat"},
     {"dreameye", "Dreameye"},
@@ -82,7 +82,7 @@ const char* pad_kind_name(uint32_t functions, const char* product_name, char out
     }
     /* nothing in the name: the functions say what it is */
     if (functions & FN_KEYBOARD) {
-        snprintf(out, PAD_KIND_MAX, "%s", (functions & FN_MOUSE) ? "Keyboard + Mouse" : "Keyboard");
+        snprintf(out, PAD_KIND_MAX, "%s", (functions & FN_MOUSE) ? "Kbd + Mouse" : "Keyboard");
         return out;
     }
     if (functions & FN_MOUSE) {
@@ -125,9 +125,9 @@ const char* pad_kind_name(uint32_t functions, const char* product_name, char out
 #define PILL_PAD 8.0f /* left and right of the text */
 
 void
-pad_label_layout(float pad_x, float pad_y, float text_w, pad_label_rect* out) {
+pad_label_layout(float pad_x, float pad_y, float text_w, int centred, pad_label_rect* out) {
     out->w = text_w + 2.0f * PILL_PAD;
     out->h = PILL_H;
-    out->x = pad_x + PAD_RIGHT - out->w;
+    out->x = centred ? pad_x - out->w / 2.0f : pad_x + PAD_RIGHT - out->w;
     out->y = pad_y + PAD_BOTTOM - out->h;
 }

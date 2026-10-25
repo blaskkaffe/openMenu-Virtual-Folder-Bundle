@@ -1660,7 +1660,7 @@ bfs_open(bfs* fs) {
     fs->gauge_set = 0;
     fs->g_ready = -1;
     memset(&fs->op, 0, sizeof(fs->op));
-    fs->m->scene.object_panel_accent = BMENU_ACCENT_FILES;
+    fs->m->scene.object_panel_accent = BMENU_ACCENT_FILE;
 }
 
 void
@@ -2823,19 +2823,16 @@ bfs_draw(bfs* fs, const bscene_sink* sink) {
             m->scene.ovr_n++;
         }
     }
-    /* the port letters A to D of the card grid's frame (model 15, nodes 1..4) take the colours of the borders of the main menu's four
-     * caption pills (model 5, the rim polygon of nodes 1, 3, 2, 4: Game, Files, Music, Settings), read from the ROM */
-    static const int pill_node[4] = {1, 3, 2, 4};
+    /* the port letters A to D of the card grid's frame (model 15, nodes 1..4) take the colour of the border of the main menu's caption
+     * pill of the same position (Play, File, Music, Settings), read from the ROM */
     if (obj(fs, ID_FRAME)) {
         for (int p = 0; p < 4 && m->scene.ovr_n < BSCENE_OVR_MAX; p++) {
-            nj_node* pill = bscene_node(&m->scene, 5, pill_node[p]);
-            if (!pill || !pill->mesh || pill->mesh->npolys < 1 || !pill->mesh->polys[0].has_diffuse) {
-                continue;
-            }
+            uint32_t body, border;
+            bmenu_pill_colours(m, p, &body, &border);
             m->scene.ovr[m->scene.ovr_n].model = 15;
             m->scene.ovr[m->scene.ovr_n].node = 1 + p;
             m->scene.ovr[m->scene.ovr_n].poly = 0;
-            m->scene.ovr[m->scene.ovr_n].argb = pill->mesh->polys[0].diffuse | 0xFF000000u;
+            m->scene.ovr[m->scene.ovr_n].argb = border | 0xFF000000u;
             m->scene.ovr[m->scene.ovr_n].lit = 0; /* the border's own colour, not dimmed by the light */
             m->scene.ovr_n++;
         }

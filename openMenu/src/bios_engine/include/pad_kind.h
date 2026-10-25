@@ -1,4 +1,4 @@
-/* pad_kind: what kind of device sits in a controller port, for the label on the Files screen. Pure functions (no KOS),
+/* pad_kind: what kind of device sits in a controller port, for the label on the File screen. Pure functions (no KOS),
  * so they are tested on the PC. */
 #pragma once
 
@@ -17,4 +17,8 @@ typedef struct pad_label_rect {
     float x, y, w, h;
 } pad_label_rect;
 #define PAD_LABEL_SCALE 0.55f /* the text, relative to the menu font */
-void pad_label_layout(float pad_x, float pad_y, float text_w, pad_label_rect* out);
+#define PAD_LABEL_CENTRED 0 /* 1: the pill is centred on the controller; 0: lower right corner */
+#define PILL_BORDER 2.5f    /* the lighter rim of the pill */
+#define PAD_LABEL_MAX_W 90.0f /* the widest pill: a column of the grid is about 100 pixels */
+/* `centred`: the pill is centred on the controller, else its right edge is the controller's right edge. */
+void pad_label_layout(float pad_x, float pad_y, float text_w, int centred, pad_label_rect* out);

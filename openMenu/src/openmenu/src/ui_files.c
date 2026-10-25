@@ -428,11 +428,11 @@ uif_sync(void) {
     }
 }
 
-/* The Files screen's card grid shows a pill over each controller that is not a standard one: keyboard, mouse, light gun, fishing
- * rod, arcade stick and so on, in the colour of its port (the main menu's four pill colours: A orange, B green, C blue, D magenta). */
+/* The File screen's card grid shows a pill over each controller that is not a standard one: keyboard, mouse, light gun, fishing
+ * rod, arcade stick and so on, made like the main menu's caption pills (body and lighter border, in the colours of the pill of the same position: A as Play, B as
+ * File, C as Music, D as Settings). */
 static void
 draw_pad_labels(void) {
-    static const uint32_t port_colour[4] = {BMENU_ACCENT_GAME, BMENU_ACCENT_FILES, BMENU_ACCENT_MUSIC, BMENU_ACCENT_SETTINGS};
     for (int p = 0; p < 4; p++) {
         maple_device_t* dev = maple_enum_dev(p, 0);
         float px, py;
@@ -447,9 +447,19 @@ draw_pad_labels(void) {
             continue;
         }
         pad_label_rect r;
+        char fit[PAD_KIND_MAX];
+        snprintf(fit, sizeof(fit), "%s", kind);
+        while (strlen(fit) > 3 && (float)(gfx_text_width(fit) + 3) * PAD_LABEL_SCALE + 16.0f > PAD_LABEL_MAX_W) {
+            fit[strlen(fit) - 1] = '\0'; /* a long name of its own (a controller we do not know) is cut to the column */
+        }
+        kind = fit;
         float tw = (float)(gfx_text_width(kind) + 3) * PAD_LABEL_SCALE; /* what gfx_text_scaled() draws */
-        pad_label_layout(px, py, tw, &r);
-        gfx_rrect(r.x, r.y, r.w, r.h, r.h / 2.0f, 0.5f, 0xD0000000u | (port_colour[p] & 0x00FFFFFFu));
+        pad_label_layout(px, py, tw, PAD_LABEL_CENTRED, &r);
+        uint32_t body, border;
+        bmenu_pill_colours(fs.m, p, &body, &border);
+        gfx_rrect(r.x, r.y, r.w, r.h, r.h / 2.0f, 0.5f, border);
+        gfx_rrect(r.x + PILL_BORDER, r.y + PILL_BORDER, r.w - 2.0f * PILL_BORDER, r.h - 2.0f * PILL_BORDER,
+                  r.h / 2.0f - PILL_BORDER, 0.505f, (body & 0x00FFFFFFu) | 0xE0000000u);
         gfx_text_scaled(kind, r.x + (r.w - tw) / 2.0f, r.y + (r.h - 26.0f * PAD_LABEL_SCALE) / 2.0f, 0.51f, 0xFFFFFFFFu,
                         PAD_LABEL_SCALE);
     }
