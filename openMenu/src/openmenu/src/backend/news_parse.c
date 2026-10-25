@@ -32,11 +32,25 @@ static void
 commit(parser* ps) {
     trim_end(ps->title, &ps->tn);
     trim_end(ps->body, &ps->bn);
-    if (ps->active && ps->tn > 0 && ps->count < ps->max) {
+    char when[NEWS_WHEN_LEN] = "";
+    char* posted = strstr(ps->body, "Posted by ");
+    if (posted) { /* "... - Posted by NAME on DATE": the date and the name go to their own line */
+        char* on = strstr(posted, " on ");
+        if (on) {
+            snprintf(when, sizeof(when), "%s  %.*s", on + 4, (int)(on - (posted + 10)), posted + 10);
+        }
+        *posted = '\0';
+        ps->bn = strlen(ps->body);
+        while (ps->bn > 0 && (ps->body[ps->bn - 1] == ' ' || ps->body[ps->bn - 1] == '-')) {
+            ps->body[--ps->bn] = '\0';
+        }
+    }
+    if (ps->active && ps->tn > 0 && ps->bn > 0 && ps->count < ps->max) {
         news_item_t* it = &ps->out[ps->count++];
         snprintf(it->title, sizeof(it->title), "%s", ps->title);
         snprintf(it->body, sizeof(it->body), "%s", ps->body);
         snprintf(it->source, sizeof(it->source), "%s", ps->source);
+        snprintf(it->when, sizeof(it->when), "%s", when);
     }
     ps->title[0] = ps->body[0] = '\0';
     ps->tn = ps->bn = 0;
