@@ -15,7 +15,7 @@ it (a version step there would make 1.7.1 treat it as unknown). Our own saved da
 background colour, dark mode) needs a separate file on the VMU / SD, or keys in DEFAULTS.INI `[BIOSMENU]`.
 
 Serial VMU (`serial_vmu.c`) restores a game's VMU image from the serial SD card before the game starts and backs it up at the next start, with 1.7.1's file layout (one image per game; not yet: Serial VMU Slots, the fallback VMU picker, exit to BIOS). Written without a console build: untested.
-Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's).
+Version string is v1.7.1-ateam (the 1.7.1 features ported so far; this is not a merge of Derek's code). Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's).
 
 ## Decisions needed before coding
 
