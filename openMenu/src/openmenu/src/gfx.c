@@ -702,6 +702,11 @@ gfx_load_logo_texts(void) {
     printf("OM logo: NOWO %d NOWB %d CNET %d (/cd/*.PVR loaded)\n", logo_now_tex[0].valid, logo_now_tex[1].valid, logo_dcnet_text_tex.valid);
 }
 
+int
+gfx_logo_texts_loaded(void) {
+    return logo_now_tex[0].valid | logo_now_tex[1].valid << 1 | logo_dcnet_text_tex.valid << 2;
+}
+
 /* Pictures made from the ROM's logo while the menu runs (nothing of it is kept anywhere): the swirl with the wordmark's D, the
  * wordmark alone, and the swirl on its own for turning. Nothing is made when a LOGO.PVR of the user's own is in use. */
 static void

@@ -163,6 +163,7 @@ static int report_page; /* 0 off, 1 the table of the debug log, 2 the QR code wi
 static dbglog_sample last_sample;
 
 static char status_line[64];
+static char logo_line[64]; /* logo mode, link state and the .PVR files, in the X debug overlay */
 
 /* The logo at the left of the bar follows the connection: the plain logo, the swirl turning while connecting, "Now!" behind it on
  * Dreamcast Now!, "DCNET" on DCNET. Every frame, so the turning starts when the dial does. */
@@ -176,6 +177,8 @@ update_logo_mode(void) {
         printf("OM logo: mode %d (shown %d, state %d, network %d)\n", mode, oh.shown, oh.state, oh.network);
         last_mode = mode;
     }
+    snprintf(logo_line, sizeof(logo_line), "logo %d  shown %d state %d net %d  PVR %d", mode, oh.shown, oh.state, oh.network,
+             gfx_logo_texts_loaded());
     gfx_set_logo_mode(mode);
 }
 
@@ -1364,6 +1367,7 @@ draw_frame(void) {
     if (show_debug) {
         if (screen == SCREEN_MAIN) {
             gfx_text(status_line, TEXT_X, STATUS_Y, 0.5f, 0x80FFFFFFu, 0);
+            gfx_text(logo_line, TEXT_X, STATUS_Y - 28.0f, 0.5f, 0x80FFFFFFu, 0);
             if (debug_iso) {
                 char iso[32];
                 snprintf(iso, sizeof(iso), "Y: %s", iso_names[debug_iso]);
