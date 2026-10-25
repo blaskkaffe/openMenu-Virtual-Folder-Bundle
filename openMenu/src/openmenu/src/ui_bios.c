@@ -2344,6 +2344,11 @@ ui_bios_run(const bios_rom* rom) {
             dbglog_hitch(&prev_frame, prev_label);
         }
         button_t b = input_poll();
+        static int b_trace;
+        if (b_trace) {
+            printf("OM B: frame %u after B ok\n", frame_no);
+            b_trace = 0;
+        }
         if (bench_active()) {
             bench_cmd bc;
             if (b == BTN_START) {
@@ -2358,6 +2363,10 @@ ui_bios_run(const bios_rom* rom) {
             if (!bench_active()) {
                 show_notice("Performance test done: results on the serial port");
             }
+        }
+        if (b == BTN_B) {
+            printf("OM B: pressed, frame %u, screen %d\n", frame_no, (int)screen);
+            b_trace = 1;
         }
         input_mouse(&pointer);
         if (bench_active()) {

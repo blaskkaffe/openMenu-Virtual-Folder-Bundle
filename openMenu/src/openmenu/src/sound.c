@@ -105,6 +105,11 @@ sound_sfx(int sfx) {
     if (!ready) {
         return;
     }
+#ifdef OM_MUTE_CANCEL /* test build: B's sound off, to see whether the freeze on B comes from it */
+    if (sfx == 2) {
+        return;
+    }
+#endif
     uint8_t slot[16];
     baudio_cmd_play(slot, UI_PLAYER, 0, sfx, UI_PRIORITY);
     send_command(slot);
