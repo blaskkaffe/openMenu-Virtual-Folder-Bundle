@@ -172,6 +172,9 @@ update_logo_mode(void) {
     online_header oh;
     online_header_get(&oh);
     int mode = !oh.shown ? 0 : oh.state == 1 ? 3 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1;
+#ifdef OM_NO_LOGO_MODES /* test build: the header logo never changes, to see whether the freeze on B while online comes from it */
+    mode = 0;
+#endif
     static int last_mode = -1;
     if (mode != last_mode) { /* why the logo is what it is: shown, link state (0 none 1 connecting 2 online 3 failed), DreamPi network */
         printf("OM logo: mode %d (shown %d, state %d, network %d)\n", mode, oh.shown, oh.state, oh.network);

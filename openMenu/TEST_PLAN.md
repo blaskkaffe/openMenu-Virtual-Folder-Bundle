@@ -152,3 +152,7 @@ Open: Flycast uses DCNET, but the player lists are DCNow!'s, and with no DreamPi
 recognised without a DreamPi (a setting Auto / DCNow! / DCNET, or a test of the connection). Also: in Flycast no logo change is visible at all.
 Check the log: `OM logo: NOWO n NOWB n CNET n` (are the three .PVR files on the disc image?) and `OM logo: mode m (shown, state, network, ...)`
 (state must be 2 = online for mode 1; the setting Online features must not be Off).
+
+Freeze on B while connecting or loading online data (not offline): the main screen is drawn with a logo mode then (3 = swirl turning, 1 = Now!), code
+that is new on this branch. A test build with `-DOM_NO_LOGO_MODES` keeps the logo plain. If the freeze is gone with it, the logo code (gfx.c:
+build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the connection or fetch threads (the `OM B:` and `OM logo:` lines say which).
