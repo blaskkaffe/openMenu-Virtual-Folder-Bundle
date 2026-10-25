@@ -121,3 +121,15 @@ Features still open (see ROADMAP.md)
 - Serial VMU Slots (five images), the fallback VMU picker, exit to BIOS, a File-menu Serial VMU submenu, manual backup/load.
 - Settings: background colour choice and dark mode, move the online rows to the Internet menu; flash partition compaction before the ISP editor.
 - Y2K-style look for the Internet pages; 60 fps (still below on hardware).
+
+## Stutter at start and random frame drops
+
+Every frame longer than 1.5 refreshes is recorded from the first frame on (`dbglog_hitch`, no debug overlay needed). Open the debug log page
+(QR code, also sent over serial as `OM log`) and read the `HITCH` lines (the first 12 of 48 kept; `HITCH n total` is the count):
+`frame|ms|period|logic|build|wait|art|art_us|text|screen` in microseconds. Reading them:
+- many hitches in the first 5 s, `art_us` or `text` high: pictures and text built on first use (preload or spread them);
+- `logic` high: Auto-Connect, list build, VMU/SD access on the main thread (move to a thread or spread);
+- `build` high: too much drawn that frame; `wait` high with low build: the GPU/TA is the limit (vertices, translucent overdraw);
+- all small but period long: something outside the loop (disc access, interrupts, a thread holding the CPU).
+Take one log right after boot (without touching anything), one after a minute on the main menu, one after scrolling the game list, and the same
+with Online off, to see which feature adds hitches.

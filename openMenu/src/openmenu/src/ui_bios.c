@@ -2320,6 +2320,10 @@ ui_bios_run(const bios_rom* rom) {
     int frames_this_second = 0;
 
     uint64_t frame_t0_prev = timer_us_gettime64();
+    uint64_t loop_t0 = frame_t0_prev;
+    unsigned frame_no = 0;
+    dbglog_hitch_info prev_frame = {0}; /* the previous frame's work: its length shows in this frame's period */
+    char prev_label[16] = "";
     gfx_stats sec_gs; /* this second's numbers, summed from every frame's */
     memset(&sec_gs, 0, sizeof(sec_gs));
 
@@ -2327,6 +2331,13 @@ ui_bios_run(const bios_rom* rom) {
         uint64_t logic_t0 = timer_us_gettime64();
         unsigned frame_period = (unsigned)(logic_t0 - frame_t0_prev);
         frame_t0_prev = logic_t0;
+        frame_no++;
+        if (frame_no > 1 && frame_period > (1500000u / (unsigned)video_refresh_hz())) {
+            prev_frame.frame = frame_no - 1;
+            prev_frame.ms = (unsigned)((logic_t0 - loop_t0) / 1000u);
+            prev_frame.period_us = frame_period;
+            dbglog_hitch(&prev_frame, prev_label);
+        }
         button_t b = input_poll();
         if (bench_active()) {
             bench_cmd bc;
@@ -2487,6 +2498,16 @@ ui_bios_run(const bios_rom* rom) {
             sec_gs.art_us += fs.art_us;
             sec_gs.text_uploads += fs.text_uploads;
             sec_gs.headers += fs.headers;
+            {
+                unsigned draw_us = (unsigned)(draw_t1 - draw_t0);
+                prev_frame.logic_us = (unsigned)(logic_end - logic_t0);
+                prev_frame.build_us = draw_us > fs.wait_us ? draw_us - fs.wait_us : 0;
+                prev_frame.wait_us = fs.wait_us;
+                prev_frame.art_loads = fs.art_loads;
+                prev_frame.art_us = fs.art_us;
+                prev_frame.text_uploads = fs.text_uploads;
+                snprintf(prev_label, sizeof(prev_label), "%s", log_label());
+            }
             if (bench_active()) {
                 unsigned draw_us = (unsigned)(draw_t1 - draw_t0);
                 bench_frame bf = {frame_period, (unsigned)(logic_end - logic_t0), draw_us > fs.wait_us ? draw_us - fs.wait_us : 0,

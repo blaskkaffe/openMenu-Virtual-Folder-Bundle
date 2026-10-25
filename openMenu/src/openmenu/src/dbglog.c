@@ -44,6 +44,27 @@ dbglog_boot_lines(char* a, char* b, size_t cap) {
     }
 }
 
+#define MAX_HITCHES 48
+static struct {
+    dbglog_hitch_info f;
+    char label[16];
+} hitches[MAX_HITCHES];
+static unsigned n_hitches_total;
+
+void
+dbglog_hitch(const dbglog_hitch_info* f, const char* label) {
+    if (n_hitches_total < MAX_HITCHES) {
+        hitches[n_hitches_total].f = *f;
+        snprintf(hitches[n_hitches_total].label, sizeof(hitches[0].label), "%s", label);
+    }
+    n_hitches_total++;
+}
+
+unsigned
+dbglog_hitch_count(void) {
+    return n_hitches_total;
+}
+
 void
 dbglog_clear(void) {
     n_entries = 0;
@@ -125,6 +146,14 @@ dbglog_text(char* out, size_t cap, const char* info) {
         n += snprintf(out + n, cap - (size_t)n, "%s|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u\n", e->label, e->s.fps, e->fps_min,
                       e->s.tris, e->s.sync, e->s.build, e->s.wait, e->s.gpu, e->s.ta, e->s.vtx, e->s.hdr, e->s.autosort,
                       e->s.beg, e->s.bg, e->s.drawn, e->secs);
+    }
+    if (n > 0 && (size_t)n < cap) {
+        n += snprintf(out + n, cap - (size_t)n, "HITCH %u total\nframe|ms|period|logic|build|wait|art|art_us|text|screen (us)\n", n_hitches_total);
+        for (unsigned i = 0; i < n_hitches_total && i < 12 && n > 0 && (size_t)n < cap; i++) {
+            const dbglog_hitch_info* f = &hitches[i].f;
+            n += snprintf(out + n, cap - (size_t)n, "%u|%u|%u|%u|%u|%u|%u|%u|%u|%s\n", f->frame, f->ms, f->period_us, f->logic_us,
+                          f->build_us, f->wait_us, f->art_loads, f->art_us, f->text_uploads, hitches[i].label);
+        }
     }
     return n < 0 ? 0 : ((size_t)n >= cap ? (int)cap - 1 : n);
 }
