@@ -293,33 +293,24 @@ vf_card_look(int slot, int* shape, int* colour_index) {
     return 0;
 }
 
-/* ICONDATA_VMS: the icon the VMU shows on its own screen and the BIOS shows for the card:
- * 0x00 description (16 bytes), 0x10 offset of the monochrome icon, 0x14 offset of the colour icon (0: none),
- * then the 32x32 1 bit icon and the colour icon (16 palette entries, then 32x32 at 4 bits a pixel). The BIOS
- * reads the offsets at 0x10 and 0x14 (vmu_decode_file_header 0x8C023B40). */
-static int
-write_icondata(maple_device_t* dev, int shape, int custom, const unsigned char bgra[4]) {
-    uint8_t file[0xA0 + 32 + 512];
-    memset(file, 0, sizeof(file));
-    memcpy(file, "MEMORY CARD     ", 16);
-    file[0x10] = 0x20;
-    file[0x14] = 0xA0;
-    const uint8_t* g = ICON_TABLE + (shape + 5) * 128;
-    memcpy(file + 0x20, g, 128);
-    uint16_t back = custom ? (uint16_t)(0xF000 | ((bgra[2] >> 4) << 8) | ((bgra[1] >> 4) << 4) | (bgra[0] >> 4)) : 0xFAAA;
-    uint16_t pal[2] = {back, 0xF000}; /* 0: the card colour, 1: black */
-    for (int i = 0; i < 2; i++) {
-        file[0xA0 + i * 2] = (uint8_t)(pal[i] & 0xFF);
-        file[0xA0 + i * 2 + 1] = (uint8_t)(pal[i] >> 8);
-    }
-    for (int y = 0; y < 32; y++) {
-        for (int x = 0; x < 32; x++) {
-            int set = (g[y * 4 + x / 8] >> (7 - (x & 7))) & 1;
-            uint8_t* b = file + 0xA0 + 32 + (y * 32 + x) / 2;
-            *b |= (uint8_t)(set << ((x & 1) ? 0 : 4));
+/* The card's icon and colour belong to the root block (the hidden area): that is where the BIOS keeps what its memory reset and its
+ * file manager show. An ICONDATA_VMS file is a different thing: a picture a game or a tool puts on the card, which the BIOS shows instead
+ * of the root block's icon when it is there. Earlier builds of this menu wrote one (a file in the card's file list that a real card does not
+ * have): the file is recognised by its header, exactly as they wrote it (description "MEMORY CARD", 704 bytes), and removed. Any other
+ * ICONDATA_VMS is left alone. */
+#define OWN_ICONDATA_SIZE (0xA0 + 32 + 512)
+
+static void
+remove_own_icondata(maple_device_t* dev) {
+    void* data = NULL;
+    int size = 0;
+    if (vmufs_read(dev, "ICONDATA_VMS", &data, &size) == 0 && data) {
+        int ours = size == OWN_ICONDATA_SIZE && memcmp(data, "MEMORY CARD     ", 16) == 0;
+        free(data);
+        if (ours) {
+            vmufs_delete(dev, "ICONDATA_VMS");
         }
     }
-    return vmufs_write(dev, "ICONDATA_VMS", file, (int)sizeof(file), VMUFS_OVERWRITE) < 0 ? -1 : 0;
 }
 
 static int
@@ -347,7 +338,8 @@ vf_set_look_raw(int slot, int shape, int custom, const unsigned char bgra[4]) {
     if (write_root_look(dev, shape, custom, bgra) != 0) {
         return -1;
     }
-    return write_icondata(dev, shape, custom, bgra); /* the card keeps working even if this file cannot be written */
+    remove_own_icondata(dev);
+    return 0;
 }
 
 int

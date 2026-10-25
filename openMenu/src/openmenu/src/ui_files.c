@@ -445,34 +445,42 @@ uif_sync(void) {
  * File, C as Music, D as Settings). */
 static void
 draw_pad_labels(void) {
+    char kind[4][PAD_KIND_MAX];
+    float px[4], py[4], tw[4];
+    pad_label_rect r[4];
     for (int p = 0; p < 4; p++) {
         maple_device_t* dev = maple_enum_dev(p, 0);
-        float px, py;
-        if (!dev || !dev->valid || !bfs_pad_px(&fs, p, &px, &py)) {
+        char product[sizeof(dev->info.product_name) + 1];
+        tw[p] = 0.0f;
+        if (!dev || !dev->valid || !bfs_pad_px(&fs, p, &px[p], &py[p])) {
             continue;
         }
-        char product[sizeof(dev->info.product_name) + 1], name[PAD_KIND_MAX];
         memcpy(product, dev->info.product_name, sizeof(dev->info.product_name));
         product[sizeof(dev->info.product_name)] = '\0';
-        const char* kind = pad_kind_name(dev->info.functions, product, name);
-        if (!kind) {
+        if (!pad_kind_name(dev->info.functions, product, kind[p])) {
             continue;
         }
-        pad_label_rect r;
-        char fit[PAD_KIND_MAX];
-        snprintf(fit, sizeof(fit), "%s", kind);
-        while (strlen(fit) > 3 && (float)(gfx_text_width(fit) + 3) + 16.0f > PAD_LABEL_MAX_W) {
-            fit[strlen(fit) - 1] = '\0'; /* a long name of its own (a controller we do not know) is cut to the column */
+        for (;;) { /* a long name of its own (a controller we do not know) is cut to fit the column */
+            pad_label_rect probe;
+            pad_label_layout(0.0f, 0.0f, (float)(gfx_text_width(kind[p]) + 3), PAD_LABEL_CENTRED, &probe);
+            if (strlen(kind[p]) <= 3 || probe.w <= PAD_LABEL_MAX_W) {
+                break;
+            }
+            kind[p][strlen(kind[p]) - 1] = '\0';
         }
-        kind = fit;
-        float tw = (float)(gfx_text_width(kind) + 3); /* what gfx_text() draws */
-        pad_label_layout(px, py, tw, PAD_LABEL_CENTRED, &r);
+        tw[p] = (float)(gfx_text_width(kind[p]) + 3); /* what gfx_text() draws */
+    }
+    pad_label_layout_set(4, px, py, tw, PAD_LABEL_CENTRED, r); /* a pill that would touch the one before it goes to the top of its controller */
+    for (int p = 0; p < 4; p++) {
+        if (tw[p] <= 0.0f) {
+            continue;
+        }
         uint32_t body, border;
         bmenu_pill_colours(fs.m, p, &body, &border);
-        gfx_rrect(r.x, r.y, r.w, r.h, r.h / 2.0f, 0.5f, border);
-        gfx_rrect(r.x + PILL_BORDER, r.y + PILL_BORDER, r.w - 2.0f * PILL_BORDER, r.h - 2.0f * PILL_BORDER,
-                  r.h / 2.0f - PILL_BORDER, 0.505f, (body & 0x00FFFFFFu) | 0xE0000000u);
-        gfx_text(kind, r.x + (r.w - tw) / 2.0f, r.y + (r.h - 26.0f) / 2.0f, 0.51f, 0xFFFFFFFFu, 1); /* the font at its own size, like every other label */
+        gfx_rrect(r[p].x, r[p].y, r[p].w, r[p].h, r[p].h / 2.0f, 0.5f, border);
+        gfx_rrect(r[p].x + PILL_BORDER, r[p].y + PILL_BORDER, r[p].w - 2.0f * PILL_BORDER, r[p].h - 2.0f * PILL_BORDER,
+                  r[p].h / 2.0f - PILL_BORDER, 0.505f, (body & 0x00FFFFFFu) | 0xE0000000u);
+        gfx_text(kind[p], r[p].x + (r[p].w - tw[p]) / 2.0f, r[p].y + (r[p].h - 26.0f) / 2.0f, 0.51f, 0xFFFFFFFFu, 1);
     }
 }
 

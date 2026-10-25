@@ -50,7 +50,7 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 | Blue swirl logo for PAL, custom LOGO.PVR | Done | header logo; the checklist notes the logo setting only affects game launch |
 | Online player count in the taskbar | Partial | drawn into the header's text surface in the row above the clock, in the clock's font: a connection lamp and "DCNow! n DCNet n" while online (`update_clock` in ui_bios.c; the letters were drawn to match the ROM digits: `tools/gen_clock_letters.py`). `online.c` reads the list once a link is up. Rendered with the real engine code on the preview, untested on a console |
 | Notifications (starred player/game/event) | Missing | `dreampi_link_event_banner()` exists but nothing draws it |
-| Connectivity status, keyboard/mouse indicator, extra clock settings in the header | Partial | connectivity: the lamp (grey off, yellow connecting, green online, red failed). Clock: Settings > Display > Clock format (12 hour with AM/PM, 24 hour, date only, each also with Swatch .beat; .beat needs Online time sync for the time zone and the .beat flag is kept in this menu's own favorites file, not in OPENMENU.SYS, so 1.7.1 never sees it). Keyboard/mouse indicator goes on the File screen's icons (next) |
+| Connectivity status, keyboard/mouse indicator, extra clock settings in the header | Partial | connectivity: the text "DCNow! n DCNet n" while online (no lamp). Clock: Settings > Display > Clock format (12 hour with AM/PM, 24 hour, date only, each also with Swatch .beat; .beat needs Online time sync for the time zone and the .beat flag is kept in this menu's own favorites file, not in OPENMENU.SYS, so 1.7.1 never sees it). Keyboard/mouse indicator goes on the File screen's icons (next) |
 | 60 fps | Partial | OPEN item 2: still below 60 on hardware; DMA vertex path is in |
 
 ## 4. Play menu
@@ -113,8 +113,9 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 |---|---|---|
 | Scrollable list, 4 rows, 3D icon, help box | Done | rows beyond the BIOS use digit icons until real icons exist |
 | BIOS settings (language, clock, sound, auto start) | Done | written to flash as the BIOS does |
-| Background colour choice, dark mode | Missing | `dcbg` takes the gradient from the ROM; needs a small palette table |
-| Online rows that belong in the Internet menu | To move | brief: keep Internet settings in the Internet menu |
+| Background colour choice, dark mode | Done in code | Settings > Display > Background (BIOS blue, Green, Orange, Purple, Red, Grey) and Dark mode; `bg_palette.c` (host-tested) changes the gradient in `draw_frame`, the swirl and water layers keep their look. Kept in this menu's favorites file flags, not OPENMENU.SYS. Not compiled; colours are guesses to judge on a screen |
+| Online rows that belong in the Internet menu | Done in code | Player list refresh, VMU online status and Online time sync are on the Internet screen's Settings page (A cycles the value). Online features stays in Settings: the Internet screen only exists once it is on |
+| Settings list order and position | Done in code | groups BIOS, Display, Game list, Starting games, System, Internet, Other; the help box shows the row number (n/total) |
 | Flash partition 2 compaction | Missing | OPEN item 4; risk grows with every flash write (clock, ISP editor) |
 
 ## Added by the consolidated brief (PROJECT_BRIEF.md)

@@ -22,6 +22,7 @@
 #include "launch.h"
 #include "sound.h"
 #include "ui_internet.h"
+#include "ui_settings.h"
 
 /* The bottom row, as the game list has it: the CD player's BACK marker and buttons (scripts 6, 0x17..0x1A) */
 #define PRIO 0x1000
@@ -51,7 +52,7 @@ static const char* const page_names[PAGES] = {"Online", "Play", "Events", "News"
 
 /* The lists behind the pages (the Online page has two, Y moves between them) */
 enum { LIST_PLAYERS, LIST_GAMES, LIST_EVENTS, LIST_PLAY, LIST_SETTINGS, LISTS };
-enum { SET_CONNECTION, SET_INTERFACE, SET_ISP, SET_NETWORK, SET_COMPANION, SET_TEST, SET_ROWS };
+enum { SET_CONNECTION, SET_INTERFACE, SET_ISP, SET_NETWORK, SET_COMPANION, SET_TEST, SET_ROWS }; /* rows from SET_ROWS on are settings of ui_settings.c (uis_net_first) */
 
 /* The Online page's columns */
 #define COL_L_X (PANE_X + PAD)
@@ -197,7 +198,7 @@ list_rows(int l) {
         case LIST_GAMES: return ngames;
         case LIST_EVENTS: return nevents;
         case LIST_PLAY: return nbrowsers + 1;
-        default: return SET_ROWS;
+        default: return SET_ROWS + uis_net_count();
     }
 }
 
@@ -300,6 +301,11 @@ static const char*
 setting_text(int row, char* out, size_t size) {
     dcnow_device_t used = dcnow_device_hint();
     int online = conn.state == DCNOW_CONN_ONLINE;
+    if (row >= SET_ROWS) {
+        int r = uis_net_first() + row - SET_ROWS;
+        snprintf(out, size, "%s  %s", uis_label(r), uis_value(r));
+        return out;
+    }
     switch (row) {
         case SET_CONNECTION:
             snprintf(out, size, "Connection  %s", online ? "Online (A: hang up)" : conn.state == DCNOW_CONN_CONNECTING ? "Connecting..." : "Off (A: connect)");
@@ -317,7 +323,7 @@ setting_text(int row, char* out, size_t size) {
 
 static int
 setting_dim(int row) {
-    return row == SET_ISP || row == SET_NETWORK || row == SET_TEST;
+    return row < SET_ROWS && (row == SET_ISP || row == SET_NETWORK || row == SET_TEST);
 }
 
 int
@@ -423,6 +429,11 @@ uin_handle(button_t b) {
                 default:
                     if (sel[LIST_SETTINGS] == SET_CONNECTION) {
                         connect_or_hang_up();
+                    } else if (sel[LIST_SETTINGS] >= SET_ROWS) { /* a choice: the next value, saved at once */
+                        int r = uis_net_first() + sel[LIST_SETTINGS] - SET_ROWS;
+                        uis_change(r, 1);
+                        sound_sfx(BAUDIO_SFX_CONFIRM);
+                        say(uis_commit() == 0 ? uis_help(r) : "Could not save settings");
                     } else {
                         sound_sfx(setting_dim(sel[LIST_SETTINGS]) ? BAUDIO_SFX_ERROR : BAUDIO_SFX_CURSOR);
                         say(setting_dim(sel[LIST_SETTINGS]) ? "Coming soon" : "Nothing to change here");

@@ -25,7 +25,10 @@ int favorites_toggle(const gd_item* item);
 int favorites_save_ok(void);
 
 /* Settings of this menu that 1.7.1 does not have, kept in the same file (its header has a spare byte) because OPENMENU.SYS is shared with
- * 1.7.1 and must not hold anything it does not know: bit 0 is the Swatch .beat clock. Valid after favorites_init(). Setting saves at once. */
+ * 1.7.1 and must not hold anything it does not know: bit 0 is the Swatch .beat clock, bits 1-3 the background colour (bg_palette.h), bit 4 dark mode. Valid after favorites_init(). Setting saves at once. */
 #define FORK_FLAG_BEAT 1
+#define FORK_BG_SHIFT 1
+#define FORK_BG_MASK 0x0E
+#define FORK_FLAG_DARK 0x10
 unsigned favorites_flags(void);
 void favorites_set_flags(unsigned flags);

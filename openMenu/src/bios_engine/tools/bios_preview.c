@@ -854,35 +854,40 @@ main(int argc, char** argv) {
         bscene_draw_background(&menu.bg, &sink);
         bfs_set_serial_slot(&demo_fs, getenv("BIOS_PREVIEW_SD") ? atoi(getenv("BIOS_PREVIEW_SD")) : -1); /* the SD card mark */
         bfs_draw(&demo_fs, &sink);
-        if (getenv("BIOS_PREVIEW_PADLABELS")) { /* "Keyboard,Mouse,...": the pills over ports A, B, ... (text drawn as a white bar of its width) */
+        if (getenv("BIOS_PREVIEW_PADLABELS")) { /* "Keyboard,Mouse,...": the pills of ports A, B, ... as ui_files.c lays them out (an empty name: no label) */
             uint32_t body[4], border[4];
             for (int i = 0; i < 4; i++) bmenu_pill_colours(&menu, i, &body[i], &border[i]);
             char list[256];
+            char* names[4] = {NULL, NULL, NULL, NULL};
             snprintf(list, sizeof(list), "%s", getenv("BIOS_PREVIEW_PADLABELS"));
-            int port = 0;
-            for (char* t = strtok(list, ","); t && port < 4; t = strtok(NULL, ","), port++) {
-                float px, py;
-                if (!bfs_pad_px(&demo_fs, port, &px, &py)) continue;
-                pad_label_rect r;
-                float ps = getenv("BIOS_PREVIEW_PAD_SCALE") ? (float)atof(getenv("BIOS_PREVIEW_PAD_SCALE")) : PAD_LABEL_SCALE; /* the text size to try */
-                float tw = (float)(btext_width(t) + 3) * ps;
-                pad_label_layout(px, py, tw, getenv("BIOS_PREVIEW_CENTRED") ? 1 : PAD_LABEL_CENTRED, &r);
-                if (ps != PAD_LABEL_SCALE) { /* a taller pill for bigger text, same bottom */
-                    float h = 26.0f * ps + 8.0f;
-                    r.y += r.h - h;
-                    r.h = h;
+            char* cur = list;
+            for (int port = 0; port < 4 && cur; port++) {
+                char* comma = strchr(cur, ',');
+                if (comma) *comma = '\0';
+                names[port] = cur[0] ? cur : NULL;
+                cur = comma ? comma + 1 : NULL;
+            }
+            float px[4] = {0}, py[4] = {0}, tw[4] = {0};
+            pad_label_rect rr[4];
+            for (int port = 0; port < 4; port++) {
+                if (names[port] && bfs_pad_px(&demo_fs, port, &px[port], &py[port])) {
+                    tw[port] = (float)(btext_width(names[port]) + 3);
                 }
+            }
+            pad_label_layout_set(4, px, py, tw, getenv("BIOS_PREVIEW_CENTRED") ? 1 : PAD_LABEL_CENTRED, rr);
+            for (int port = 0; port < 4; port++) {
+                pad_label_rect r = rr[port];
+                if (tw[port] <= 0.0f) continue;
+                const char* t = names[port];
                 for (int y = (int)r.y; y < (int)(r.y + r.h); y++) {
                     for (int x = (int)r.x; x < (int)(r.x + r.w); x++) {
                         float rad = r.h / 2.0f;
-                        float d = 0; /* distance outside the pill's straight part */
                         float cx = (float)x + 0.5f, cy = (float)y + 0.5f;
                         float lx = r.x + rad, rx = r.x + r.w - rad, my = r.y + rad;
                         float ex = cx < lx ? lx - cx : (cx > rx ? cx - rx : 0.0f), ey = cy - my;
-                        d = sqrtf(ex * ex + ey * ey);
+                        float d = sqrtf(ex * ex + ey * ey);
                         if (d > rad) continue;
-                        int rim = d > rad - PILL_BORDER;
-                        uint32_t c32 = rim ? border[port] : body[port];
+                        uint32_t c32 = d > rad - PILL_BORDER ? border[port] : body[port];
                         float a = (float)(c32 >> 24) / 255.0f;
                         for (int c = 0; c < 3; c++) {
                             float v = (float)((c32 >> (16 - 8 * c)) & 255) / 255.0f;
@@ -890,33 +895,7 @@ main(int argc, char** argv) {
                         }
                     }
                 }
-                /* the text: the BIOS font printed into a surface and shrunk by PAD_LABEL_SCALE (what gfx_text_scaled() puts on the pill) */
-                bsurf* ts = bsurf_get(0x7F00, 256, 32);
-                if (ts) {
-                    bsurf_clear(ts);
-                    ts->colour = 0xFFFF;
-                    bsurf_print(ts, 0, 0, t);
-                    float x0 = r.x + (r.w - tw) / 2.0f, y0 = r.y + (r.h - 26.0f * ps) / 2.0f;
-                    for (int y = (int)y0; y < (int)(y0 + 26.0f * ps) + 1; y++) {
-                        for (int x = (int)x0; x < (int)(x0 + tw) + 1; x++) {
-                            float cov = 0.0f, n = 0.0f;
-                            for (int sy = 0; sy < 4; sy++) {
-                                for (int sx = 0; sx < 4; sx++) {
-                                    int u = (int)(((float)x + (float)sx / 4.0f - x0) / ps);
-                                    int v = (int)(((float)y + (float)sy / 4.0f - y0) / ps);
-                                    n += 1.0f;
-                                    if (u >= 0 && u < ts->w && v >= 0 && v < ts->h) {
-                                        cov += (float)((ts->px[v * ts->w + u] >> 12) & 15) / 15.0f;
-                                    }
-                                }
-                            }
-                            cov /= n;
-                            if (x >= 0 && x < W && y >= 0 && y < H && cov > 0.0f) {
-                                for (int c = 0; c < 3; c++) fb[y][x][c] = fb[y][x][c] * (1.0f - cov) + cov;
-                            }
-                        }
-                    }
-                }
+                blit_text(t, (int)(r.x + (r.w - tw[port]) / 2.0f), (int)(r.y + (r.h - 26.0f) / 2.0f), 0xFFFFFF); /* the BIOS font, at its own size */
             }
         }
         if (getenv("BIOS_PREVIEW_HITS")) { /* BIOS_PREVIEW_HITS=1: the areas the mouse pointer answers to, in red; the cursor's in green */
