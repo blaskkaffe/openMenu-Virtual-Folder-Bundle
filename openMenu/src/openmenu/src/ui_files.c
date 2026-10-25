@@ -461,8 +461,13 @@ draw_pad_labels(void) {
         pad_label_rect r;
         char fit[PAD_KIND_MAX];
         snprintf(fit, sizeof(fit), "%s", kind);
-        while (strlen(fit) > 3 && (float)(gfx_text_width(fit) + 3) + 16.0f > PAD_LABEL_MAX_W) {
-            fit[strlen(fit) - 1] = '\0'; /* a long name of its own (a controller we do not know) is cut to the column */
+        for (;;) { /* a long name of its own (a controller we do not know) is cut to fit the column */
+            pad_label_rect probe;
+            pad_label_layout(0.0f, 0.0f, (float)(gfx_text_width(fit) + 3), PAD_LABEL_CENTRED, &probe);
+            if (strlen(fit) <= 3 || probe.w <= PAD_LABEL_MAX_W) {
+                break;
+            }
+            fit[strlen(fit) - 1] = '\0';
         }
         kind = fit;
         float tw = (float)(gfx_text_width(kind) + 3); /* what gfx_text() draws */

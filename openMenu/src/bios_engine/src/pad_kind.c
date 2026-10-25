@@ -32,6 +32,8 @@ static const struct {
     {"densha", "Train"},
     {"train", "Train"},
     {"panther", "Panther"},
+    {"pop'n", "Pop'n"},
+    {"popn", "Pop'n"},
     {"dance", "Dance"},
     {"dreameye", "Dreameye"},
     {"camera", "Dreameye"},

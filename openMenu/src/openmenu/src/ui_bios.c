@@ -191,37 +191,24 @@ update_clock(void) {
     /* Clock format setting; the time zone for .beat comes from Online time sync (Off: not known, no beats) */
     clock_header_text(text, sizeof(text), clock_date_order(), uis_clock_mode(), y, mo, d, h, mi,
                       online_time_sync_minutes(sf_online_time_sync[0]), sf_online_time_sync[0] != ONLINE_TIME_SYNC_OFF);
-    /* The row above the clock (same font): a lamp for the connection and the players per network while online */
+    /* The row above the clock (same font): the players per network while online (no lamp: the text says it) */
     online_header oh;
     online_header_get(&oh);
-    int lamp = oh.shown ? oh.state + 1 : 0; /* 0 none, 1 grey, 2 yellow, 3 green, 4 red */
     if (oh.shown && oh.state == 2 && oh.players >= 0) {
         snprintf(counts, sizeof(counts), "DCNow! %d DCNet %d", oh.dcnow, oh.dcnet);
     }
     char key[64];
-    snprintf(key, sizeof(key), "%s|%s|%d", text, counts, lamp);
+    snprintf(key, sizeof(key), "%s|%s", text, counts);
     static char shown[64];
     static uint32_t shown_serial;
     bsurf* s = bsurf_get(BMENU_ID_HEADER, 256, 32);
     if (s && (strcmp(shown, key) != 0 || s->serial != shown_serial)) {
         bsurf_clear(s);
         bsurf_clock_text(s, 40, 16, text);
-        if (lamp > 0) {
-            static const uint16_t lamp_colour[5] = {0, 0xF999, 0xFFD3, 0xF3D6, 0xFE33}; /* ARGB4444 */
+        if (counts[0]) {
             int text_w = (int)strlen(counts) * 11;
             int right = 40 + (int)strlen(text) * 11; /* the clock's right edge */
-            int x = right - text_w;
-            int lamp_x = (counts[0] ? x : right) - 14;
-            if (lamp_x < 2) {
-                lamp_x = 2;
-            }
-            if (!counts[0]) {
-                lamp_x = right - 10; /* alone: at the clock's right edge */
-            }
-            bsurf_fill(s, lamp_x, 4, 9, 9, lamp_colour[lamp]);
-            if (counts[0]) {
-                bsurf_clock_text(s, x, 0, counts);
-            }
+            bsurf_clock_text(s, right - text_w, 0, counts);
         }
         strcpy(shown, key);
         shown_serial = s->serial;
