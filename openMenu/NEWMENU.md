@@ -253,8 +253,8 @@ real devices; `BIOS_PREVIEW_PADLABELS="Keyboard,Mouse"` shows the pills' place o
 - X on a VMU of the card grid: a menu in the style of the Play screen's X menu, with "Set as Serial VMU" and "Serial VMU Off" (it writes
   Settings > Serial VMU, "On (B1)" and so on, and saves). The slot carries the SD card mark.
 - Card popup (A on the card in the file window): Copy all, Delete all (memory reset), Change Color and Logo, Use full size, Cancel.
-  Change Color and Logo runs the BIOS icon and colour pickers, then writes only the root block's icon and colour and ICONDATA_VMS
-  (`BFS_OP_LOOK`, `vf_set_look_raw`): no file is touched. Use full size opens a popup with what it means and Cancel / Extend capacity
+  Change Color and Logo runs the BIOS icon and colour pickers, then writes only the root block's icon and colour, the hidden area where the BIOS keeps them
+  (`BFS_OP_LOOK`, `vf_set_look_raw`): no file is touched or made (an `ICONDATA_VMS` that an earlier build of this menu wrote is removed). Use full size opens a popup with what it means and Cancel / Extend capacity
   (`BFS_OP_EXTEND`, `vf_extend_capacity`): the block count of the root block goes from 200 to 241 (the blocks 200..240 that the BIOS leaves
   unused become free space). Untested on hardware: do it on a spare card first. A memory reset keeps the extended size (the root block is
   kept), a card that already uses it says so.
