@@ -1514,9 +1514,6 @@ svmu_active(void) {
  * here and only returned because the launch failed. */
 static int
 start_game(const gd_item* g) {
-    if (svmu_slots_unsupported(g)) {
-        show_notice("Serial VMU Slots are not supported yet");
-    }
     if (svmu_applies(g)) {
         svmu_item = g;
         svmu_row = 0;

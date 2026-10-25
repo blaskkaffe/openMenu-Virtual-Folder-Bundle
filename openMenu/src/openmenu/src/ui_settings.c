@@ -98,6 +98,8 @@ static const row_def rows[] = {
      REMEMBER_LAST_GAME_END + 1, on_off},
     {0, -1, "Game list", "Serial VMU", "Each game's VMU image kept on the serial SD card", &sf_serial_vmu, SERIAL_VMU_END + 1,
      serial_vmu_modes},
+    {0, -1, "Game list", "Serial VMU Slots", "Five VMU images per game, asked at each start", &sf_serial_vmu_multislot,
+     SERIAL_VMU_MULTISLOT_END + 1, on_off},
     {0, -1, "Starting games", "Boot animation", "What the BIOS shows before a game", &sf_boot_mode, BOOT_MODE_END + 1, boot_modes},
     {0, -1, "Starting games", "Exit to BIOS", "How other discs return to the BIOS", &sf_bios_3d, BIOS_3D_END + 1, disc_exit},
     {0, -1, "System", "VMU beep on save", "The VMU beeps when a save is written", &sf_beep, BEEP_END + 1, on_off},

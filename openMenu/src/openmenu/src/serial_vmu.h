@@ -3,7 +3,8 @@
  * (/sd/OPENMENU/SAVES/<serial>/SLOT1.VMU, TITLE.TXT next to it). Before a game starts the image is written to the
  * VMU that Settings > Serial VMU names; /sd/OPENMENU/LASTDISC.TXT then says which game ran, and the next time the
  * menu starts the VMU is copied back to the SD card. The file layout is the same as 1.7.1's, so both menus can share
- * one card. Not here yet: Serial VMU Slots (five images per game), the fallback VMU picker and exit to BIOS.
+ * one card. With Serial VMU Slots on (five images per game, SLOT1..5.VMU) the restore asks which slot (one question, listing each slot's time
+or its SLOT<n>.TXT label); the backup at the next start goes into the slot the game was started from, without asking. Not here yet: the fallback VMU picker and exit to BIOS.
  *
  * No drawing: a small state machine that is stepped once per frame (one VMU block a frame, as 1.7.1) and asks its
  * questions as a list of choices, which the front end shows as a popup.
@@ -26,8 +27,6 @@ int svmu_slot(void);
 
 /* Serial VMU is on, and this game uses it (it has a serial and is not homebrew or a tool: type "other"). */
 int svmu_applies(const gd_item* item);
-/* Serial VMU is on but Serial VMU Slots is too, which is not supported yet: the game starts without. */
-int svmu_slots_unsupported(const gd_item* item);
 
 /* Before a game starts. Afterwards svmu_phase() says what to do. */
 void svmu_begin_restore(const gd_item* item);
