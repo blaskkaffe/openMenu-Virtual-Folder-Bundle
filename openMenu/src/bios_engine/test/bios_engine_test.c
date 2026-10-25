@@ -803,6 +803,7 @@ test_pad_kind(void) {
         {0x01000000u, "Dreamcast Fishing Controller", "Fishing"},
         {0x01000000u, "Dreamcast Racing Controller", "Racing"},
         {0x01000000u, "Panther DC", "Panther"},
+        {0x01000000u, "Pop'n Music Controller", "Pop'n Music"},
         {0x01000000u, "Hori Fighting Stick 2", "Arcade"},
         {0x01000000u, "Some Pad Pro", "Some Pad Pro"},
         {0x80000000u, "Dreamcast Gun", "Lightgun"},
