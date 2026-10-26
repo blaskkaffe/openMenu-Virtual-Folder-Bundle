@@ -315,7 +315,7 @@ tri(void* user, const bscene_vtx v[3], bscene_texref ref) {
 
 /* ---- Labels of the screens, for pictures (BIOS_PREVIEW_LABEL_FILE): the console sets the texts of the icon captions, the Settings rows, the
  * game list rows and the help box through gfx_set_label(); here a file does. One line each: `0x200|Play` (an icon caption), `0x1407|Language|English`
- * (a Settings row: label and value), `0x140B|BIOS|Language of the BIOS messages` (the help box: group and help), `0x17C0|Some Game` (a game
+ * (a Settings row: label and value), `0x140B|BIOS|Language of the BIOS messages` (no longer used: the information under the Settings box is written by the app), `0x17C0|Some Game` (a game
  * list row), and `@x,y,rrggbb|text` for any text at a place of the picture (x < 0: centred on -x). The font is the BIOS's own, at its own size. */
 typedef struct {
     unsigned id;
@@ -398,9 +398,6 @@ draw_label_text(const bvm_obj* o, float x, float y, int x0, int y0) {
     } else if (o->id >= BPAGE_TEXT_ID(0) && o->id < BPAGE_TEXT_ID(BPAGE_SLOTS)) { /* "label" and the value 250 px further */
         blit_text(l->a, x0 + 10, y0, 0xFFFFFF);
         blit_text(l->b, x0 + 250, y0, 0xFFFFFF);
-    } else if (o->id == BPAGE_HELP_ID) { /* two lines, left edge 156 px left of the anchor */
-        blit_text(l->a, (int)(x - 156.0f), y0 + 6, 0xFFFFFF);
-        blit_text(l->b, (int)(x - 156.0f), y0 + 6 + 32, 0xFFFFFF);
     } else if (o->id >= BLIST_TEXT_ID(0) && o->id < BLIST_TEXT_ID(BLIST_MAX_SLOTS)) { /* a game list row: left aligned */
         blit_text(l->a, x0, y0, 0xFFFFFF);
     } else {

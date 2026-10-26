@@ -1,10 +1,11 @@
 /*
- * bios_page: the look of the BIOS Settings screen (rows with a 3D icon, a pill and a text line,
- * plus a help box underneath) as a scrollable list. The original shows four fixed rows; this
- * shows four at a time and scrolls through any number of rows. It only places objects; what
- * the rows say and do is up to the caller. Portable C.
- *
- * Object ids and scripts are those of settings_screen_update in the original.
+ * bios_page: the look of the BIOS Settings screen (rows with a 3D icon, a pill and a text line) as a scrollable
+ * list. The original shows four rows, each on a bar of its own, with a help box underneath. This has the game
+ * list's one tall box (the row bar model grown along y, see bios_list) as wide as the original's rows, holding
+ * BPAGE_SLOTS rows, and a second, separate bar under it for the information about the selected row. The caller
+ * writes the information text inside the rectangle bpage_info_rect_px() gives. Green arrows (the date editor's)
+ * at the box's right edge show that there are more rows above / below. It only places objects; what the rows say
+ * and do is up to the caller. Portable C.
  */
 #ifndef BIOS_PAGE_H
 #define BIOS_PAGE_H
@@ -15,16 +16,14 @@
 extern "C" {
 #endif
 
-#define BPAGE_SLOTS 4
+#define BPAGE_SLOTS 6
 
 /* Row icons: the four BIOS settings icons, or a digit 0-9 as a placeholder. */
 #define BPAGE_ICON_BIOS(i) (i)        /* 0 language, 1 date/time, 2 sound, 3 other */
 #define BPAGE_ICON_DIGIT(d) (10 + (d)) /* 3D digit model, until real icons exist */
 
-/* Text object ids: slot rows 0x1407..0x140A, help box 0x140B. The text of a row is
- * "label\tvalue" (value right aligned); the help box holds a plain string. */
+/* Text object ids of the slot rows. The text of a row is "label\tvalue" (the value in a column of its own). */
 #define BPAGE_TEXT_ID(slot) (0x1407 + (slot))
-#define BPAGE_HELP_ID 0x140B
 #define BPAGE_LABEL_MAX 96 /* room for a text line: label, tab, value */
 
 typedef struct bpage {
@@ -70,6 +69,9 @@ int bpage_row_in_slot(const bpage* p, int slot);
 
 /* The slot whose bar is under a point (pixels), -1 if none. */
 int bpage_slot_at_px(const bpage* p, float x, float y);
+
+/* The rectangle (pixels) inside the information bar that the caller's text must stay within: x0, y0, x1, y1. */
+void bpage_info_rect_px(float* x0, float* y0, float* x1, float* y1);
 
 /* Draw the objects of the page (no background). */
 void bpage_draw(bpage* p, const bscene_sink* sink);

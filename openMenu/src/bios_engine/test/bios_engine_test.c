@@ -1254,13 +1254,13 @@ test_page(const bios_rom* rom) {
     for (int i = 0; i < 6; i++) {
         CHECK(bpage_move(&p, 1) == 1);
     }
-    CHECK(p.cursor == 6 && p.top == 3); /* scrolled so the cursor is the last visible row */
-    CHECK(bpage_row_in_slot(&p, 0) == 3 && bpage_row_in_slot(&p, 3) == 6);
-    CHECK(bpage_move(&p, 100) == 1 && p.cursor == 9 && p.top == 6);
+    CHECK(p.cursor == 6 && p.top == 1); /* scrolled so the cursor is the last visible row */
+    CHECK(bpage_row_in_slot(&p, 0) == 1 && bpage_row_in_slot(&p, 5) == 6);
+    CHECK(bpage_move(&p, 100) == 1 && p.cursor == 9 && p.top == 4);
     /* the BIOS cursor table: rows wrap, left and right go to BACK, BACK goes up to the row before the last, else the last */
     p.cursor = 9;
     CHECK(bpage_nav(&p, BPAGE_DOWN) == 1 && p.cursor == 0 && p.top == 0);
-    CHECK(bpage_nav(&p, BPAGE_UP) == 1 && p.cursor == 9 && p.top == 6);
+    CHECK(bpage_nav(&p, BPAGE_UP) == 1 && p.cursor == 9 && p.top == 4);
     CHECK(bpage_nav(&p, BPAGE_LEFT) == 1 && p.back_selected);
     CHECK(bpage_nav(&p, BPAGE_UP) == 1 && !p.back_selected && p.cursor == 8);
     CHECK(bpage_nav(&p, BPAGE_RIGHT) == 1 && p.back_selected);

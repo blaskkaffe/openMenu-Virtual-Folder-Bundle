@@ -1052,8 +1052,6 @@ settings_sync(void) {
         }
         gfx_set_label((uint16_t)BPAGE_TEXT_ID(s), line);
     }
-    snprintf(line, sizeof(line), "%.28s  %d/%d\n%.36s", uis_group(page.cursor), page.cursor + 1, page.count, uis_help(page.cursor)); /* 36 fit the help box */
-    gfx_set_label((uint16_t)BPAGE_HELP_ID, line);
     bpage_sync(&page, page_row, NULL);
 }
 
@@ -1076,16 +1074,40 @@ draw_about(void) {
     gfx_text("A: close", 144.0f, 316.0f, 0.7f, 0xFFA0A0A0u, 0);
 }
 
+/* Draw `text` at scale `scale` in at most `max_w` pixels: a longer text is cut and ends in "..". */
+static void
+text_fitted(const char* text, float x, float y, float scale, uint32_t color, float max_w) {
+    char cut[100], tmp[100];
+    snprintf(cut, sizeof(cut), "%s", text);
+    if ((float)gfx_text_width(cut) * scale > max_w) {
+        size_t n = strlen(cut);
+        while (n > 0) {
+            cut[--n] = '\0';
+            snprintf(tmp, sizeof(tmp), "%s..", cut);
+            if ((float)gfx_text_width(tmp) * scale <= max_w) {
+                snprintf(cut, sizeof(cut), "%s", tmp);
+                break;
+            }
+        }
+    }
+    gfx_text_scaled(cut, x, y, 0.5f, color, scale);
+}
+
+/* The information bar under the box: the group and the row number, and what the selected setting does, inside the bar. */
+static void
+draw_settings_info(void) {
+    float x0, y0, x1, y1;
+    char line[48];
+    bpage_info_rect_px(&x0, &y0, &x1, &y1);
+    snprintf(line, sizeof(line), "%s  %d/%d", uis_group(page.cursor), page.cursor + 1, page.count);
+    text_fitted(line, x0, y0 + 8.0f, 0.8f, 0xFFB0B0B0u, x1 - x0);
+    text_fitted(uis_help(page.cursor), x0, y0 + 8.0f + 26.0f, 0.8f, 0xFFFFFFFFu, x1 - x0);
+}
+
 static void
 draw_settings(void) {
-    bpage_draw(&page, gfx_sink());
-    /* more rows above / below the four shown */
-    if (page.top > 0) {
-        gfx_text("^", 590.0f, 40.0f, 0.5f, 0xFFFFFFFFu, 1);
-    }
-    if (page.top + BPAGE_SLOTS < page.count) {
-        gfx_text("v", 590.0f, 370.0f, 0.5f, 0xFFFFFFFFu, 1);
-    }
+    bpage_draw(&page, gfx_sink()); /* the green arrows for more rows above / below are part of it */
+    draw_settings_info();
     if (about_open) {
         draw_about();
     }

@@ -2,18 +2,56 @@
 #include "bios_page.h"
 
 #define PRIO 0x1000
+#define PX_PER_UNIT 11.32f /* 4000 / 353.5: pixels per world unit at the rows' depth */
+#define ROW_Z (-353.515625f)
 #define DIGIT_SCALE 0.4f /* the digit models are much larger than the icons */
 
-/* Per slot: anchor (position holder and row bar), highlight pill, icon, text line. */
-static const struct {
-    int anchor_script, pill_script, icon_script, text_script;
-    uint16_t anchor_id, pill_id, icon_id, text_id;
-} slots[BPAGE_SLOTS] = {
-    {0x49, 0x1d, 0x4d, 0x23, 0x1600, 0x1401, 0x1604, 0x1407},
-    {0x4a, 0x1e, 0x4e, 0x24, 0x1601, 0x1402, 0x1605, 0x1408},
-    {0x4b, 0x1f, 0x4f, 0x25, 0x1602, 0x1403, 0x1606, 0x1409},
-    {0x4c, 0x21, 0x50, 0x26, 0x1603, 0x1405, 0x1607, 0x140A},
-};
+/* Layout in world units (screen centre = 0,0) and pixels. The row bar, pill, icon and text positions are those of the
+ * game list (bios_list.c), which took them from the original Settings screen; the bar and the pill are not shortened here. */
+#define ANCHOR_X 1.95f
+#define ICON_X (-22.6f)
+#define ICON_Z (ROW_Z + 2.5f)
+#define PILL_X (-5.45f)
+#define PILL_SCALE 0.859375f
+#define TEXT_X 3.7f /* centre of the 512 px text surface: its left edge is 10 px (PAGE_TEXT_PAD) left of where the label starts */
+#define BAR_H_PX 53.0f /* height of the row bar model at scale 0.8671875 */
+#define BAR_SCALE 0.8671875f
+#define BAR_LEFT_UNIT (-30.75003f) /* leftmost x of the row bar model */
+#define BAR_WIDTH_UNIT 59.0f
+/* the two boxes, in pixels: the rows, and under them the information (above the BACK marker, which is at y 367-435) */
+#define BOX_TOP_PX 66.0f
+#define BOX_PAD_PX 8.0f
+#define ROW_PITCH_PX 35.0f
+#define BOX_BOTTOM_PX (BOX_TOP_PX + 2.0f * BOX_PAD_PX + (float)BPAGE_SLOTS * ROW_PITCH_PX)
+#define INFO_TOP_PX (BOX_BOTTOM_PX + 8.0f)
+#define INFO_BOTTOM_PX 366.0f
+#define INFO_PAD_X_PX 36.0f /* the bar's rounded ends */
+#define ARROW_SCALE 0.7f
+#define ARROW_INSET_PX 30.0f /* from the box's right edge to the arrow's centre, and from its top / bottom */
+
+#define ID_BOX 0x1700
+#define ID_INFO 0x1701
+#define ID_PILL(s) ((uint16_t)(0x1720 + (s)))
+#define ID_ICON(s) ((uint16_t)(0x1740 + (s)))
+#define ID_UP 0x1760
+#define ID_DOWN 0x1761
+
+static float
+bar_left_px(void) {
+    return 320.0f + (ANCHOR_X + BAR_LEFT_UNIT * BAR_SCALE) * PX_PER_UNIT;
+}
+
+static float
+bar_right_px(void) {
+    return 320.0f + (ANCHOR_X + (BAR_LEFT_UNIT + BAR_WIDTH_UNIT) * BAR_SCALE) * PX_PER_UNIT;
+}
+
+/* y of the row in `slot`, in world units */
+static float
+row_y(int slot) {
+    float centre_px = (BOX_TOP_PX + BOX_BOTTOM_PX) * 0.5f;
+    return (240.0f - centre_px) / PX_PER_UNIT + ((float)(BPAGE_SLOTS - 1) * 0.5f - (float)slot) * ROW_PITCH_PX / PX_PER_UNIT;
+}
 
 /* BIOS icon k: model 43+k with motion 14+k. Digit d: model 21+d (no motion). */
 static void
@@ -30,6 +68,21 @@ icon_model(int icon, uint16_t* model, uint16_t* motion, int* has_motion) {
     }
 }
 
+static void
+set_pos(bvm_obj* o, float x, float y, float z) {
+    o->flags &= ~(uint32_t)BVM_F_ATTACHED; /* absolute: the scripts attached these to the original's anchors */
+    o->pos_tw[0].cur = o->pos[0] = x;
+    o->pos_tw[1].cur = o->pos[1] = y;
+    o->pos_tw[2].cur = o->pos[2] = z;
+    o->pos_tw[0].step = o->pos_tw[1].step = o->pos_tw[2].step = 0;
+    o->pos_tw[0].frames = o->pos_tw[1].frames = o->pos_tw[2].frames = 0;
+}
+
+static void
+set_hidden(bvm_obj* o, int hide) {
+    o->flags = hide ? (o->flags | BVM_F_HIDE) : (o->flags & ~(uint32_t)BVM_F_HIDE);
+}
+
 void
 bpage_open(bpage* p, bmenu* m, int count) {
     p->m = m;
@@ -39,21 +92,20 @@ bpage_open(bpage* p, bmenu* m, int count) {
     p->back_selected = 0;
     p->anim = 0;
     bvm_kill_all(&m->vm);
+    bvm_create(&m->vm, 0x49, ID_BOX, PRIO);  /* the box of the rows: the row bar, made taller in bpage_draw */
+    bvm_create(&m->vm, 0x49, ID_INFO, PRIO); /* the box of the information under it */
+    for (int s = 0; s < BPAGE_SLOTS; s++) {
+        bvm_create(&m->vm, 0x1d, ID_PILL(s), PRIO);
+    }
+    for (int s = 0; s < BPAGE_SLOTS; s++) {
+        bvm_create(&m->vm, 0x4d, ID_ICON(s), PRIO);
+    }
+    for (int s = 0; s < BPAGE_SLOTS; s++) {
+        bvm_create(&m->vm, 0x23, (uint16_t)BPAGE_TEXT_ID(s), PRIO);
+    }
+    bvm_create(&m->vm, 0x3d, ID_UP, PRIO);   /* the green arrows of the date editor: more rows above / below */
+    bvm_create(&m->vm, 0x3e, ID_DOWN, PRIO);
     bvm_create(&m->vm, 6, 0x1110, PRIO);
-    for (int i = 0; i < BPAGE_SLOTS; i++) {
-        bvm_create(&m->vm, slots[i].anchor_script, slots[i].anchor_id, PRIO);
-    }
-    for (int i = 0; i < BPAGE_SLOTS; i++) {
-        bvm_create(&m->vm, slots[i].pill_script, slots[i].pill_id, PRIO);
-    }
-    bvm_create(&m->vm, 0x22, 0x1406, PRIO); /* the help box */
-    for (int i = 0; i < BPAGE_SLOTS; i++) {
-        bvm_create(&m->vm, slots[i].icon_script, slots[i].icon_id, PRIO);
-    }
-    for (int i = 0; i < BPAGE_SLOTS; i++) {
-        bvm_create(&m->vm, slots[i].text_script, slots[i].text_id, PRIO);
-    }
-    bvm_create(&m->vm, 0x27, BPAGE_HELP_ID, PRIO);
 
     /* the BACK marker sits bottom left (settings_screen_update state 0) */
     bvm_obj* back = bvm_find(&m->vm, 0x1110);
@@ -106,61 +158,90 @@ void
 bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
     bvm* vm = &p->m->vm;
     p->anim++;
+    float box_y = (240.0f - (BOX_TOP_PX + BOX_BOTTOM_PX) * 0.5f) / PX_PER_UNIT;
+    float info_y = (240.0f - (INFO_TOP_PX + INFO_BOTTOM_PX) * 0.5f) / PX_PER_UNIT;
+    bvm_obj* box = bvm_find(vm, ID_BOX);
+    bvm_obj* info = bvm_find(vm, ID_INFO);
+    if (box) {
+        set_pos(box, ANCHOR_X, box_y, ROW_Z);
+        box->scale_tw[0].cur = box->scale_tw[2].cur = BAR_SCALE;
+        box->scale_tw[1].cur = BAR_SCALE;
+        set_hidden(box, 0);
+    }
+    if (info) {
+        set_pos(info, ANCHOR_X, info_y, ROW_Z);
+        info->scale_tw[0].cur = info->scale_tw[2].cur = BAR_SCALE;
+        info->scale_tw[1].cur = BAR_SCALE;
+        set_hidden(info, 0);
+    }
     for (int s = 0; s < BPAGE_SLOTS; s++) {
         int row = bpage_row_in_slot(p, s);
-        bvm_obj* anchor = bvm_find(vm, slots[s].anchor_id);
-        bvm_obj* pill = bvm_find(vm, slots[s].pill_id);
-        bvm_obj* icon = bvm_find(vm, slots[s].icon_id);
-        bvm_obj* text = bvm_find(vm, slots[s].text_id);
+        bvm_obj* pill = bvm_find(vm, ID_PILL(s));
+        bvm_obj* icon = bvm_find(vm, ID_ICON(s));
+        bvm_obj* text = bvm_find(vm, (uint16_t)BPAGE_TEXT_ID(s));
         int on = row >= 0;
         int sel = on && row == p->cursor && !p->back_selected;
-        if (anchor) {
-            anchor->flags = on ? (anchor->flags & ~(uint32_t)BVM_F_HIDE) : (anchor->flags | BVM_F_HIDE);
-        }
+        float y = row_y(s);
         if (pill) {
+            set_pos(pill, PILL_X, y, ROW_Z + 0.78f);
+            pill->scale_tw[0].cur = pill->scale_tw[2].cur = PILL_SCALE;
+            pill->scale_tw[1].cur = PILL_SCALE * 0.9f * ROW_PITCH_PX / BAR_H_PX; /* a thin gap between the rows' pills */
             pill->var[1] = sel;
-            pill->flags = on ? (pill->flags & ~(uint32_t)BVM_F_HIDE) : (pill->flags | BVM_F_HIDE);
+            set_hidden(pill, !on);
         }
         if (icon) {
             icon->var[0] = sel;
-            icon->flags = on ? (icon->flags & ~(uint32_t)BVM_F_HIDE) : (icon->flags | BVM_F_HIDE);
-            if (on && row_fn) {
-                bpage_row r = {0};
-                int has_motion;
-                row_fn(user, row, &r);
-                icon_model(r.icon, &icon->model, &icon->motion, &has_motion);
-                icon->texlist = icon->model;
-                for (int a = 0; a < 3; a++) {
-                    icon->scale_tw[a].cur = has_motion ? 0.9375f : DIGIT_SCALE;
-                }
-                if (!has_motion) {
-                    icon->flags &= ~(uint32_t)BVM_F_MOTION;
+            set_hidden(icon, !on);
+            if (on) {
+                set_pos(icon, ICON_X, y, ICON_Z);
+                if (row_fn) {
+                    bpage_row r = {0};
+                    int has_motion;
+                    row_fn(user, row, &r);
+                    icon_model(r.icon, &icon->model, &icon->motion, &has_motion);
+                    icon->texlist = icon->model;
+                    /* the icons are made for rows 78 px apart: shrink them to this pitch */
+                    float k = ROW_PITCH_PX / 78.0f;
+                    for (int a = 0; a < 3; a++) {
+                        icon->scale_tw[a].cur = (has_motion ? 0.9375f : DIGIT_SCALE) * k;
+                    }
+                    if (!has_motion) {
+                        icon->flags &= ~(uint32_t)BVM_F_MOTION;
+                    }
                 }
             }
         }
         if (text) {
             text->text_w = 512;
             text->text_h = 32;
+            set_pos(text, TEXT_X, y, ROW_Z + 1.5f);
             text->flags = on ? (text->flags | BVM_F_TEXT) : (text->flags & ~(uint32_t)BVM_F_TEXT);
         }
     }
-    bvm_obj* help = bvm_find(vm, BPAGE_HELP_ID);
-    if (help) {
-        help->text_w = 512;
-        help->text_h = 64;
+    /* the green arrows at the box's right edge, only when there are rows out of sight in that direction */
+    float ax = (bar_right_px() - ARROW_INSET_PX - 320.0f) / PX_PER_UNIT;
+    bvm_obj* up = bvm_find(vm, ID_UP);
+    bvm_obj* down = bvm_find(vm, ID_DOWN);
+    if (up) {
+        set_pos(up, ax, (240.0f - (BOX_TOP_PX + ARROW_INSET_PX)) / PX_PER_UNIT, ROW_Z + 2.0f);
+        up->scale_tw[0].cur = up->scale_tw[1].cur = up->scale_tw[2].cur = ARROW_SCALE;
+        set_hidden(up, p->top <= 0);
+    }
+    if (down) {
+        set_pos(down, ax, (240.0f - (BOX_BOTTOM_PX - ARROW_INSET_PX)) / PX_PER_UNIT, ROW_Z + 2.0f);
+        down->scale_tw[0].cur = down->scale_tw[1].cur = down->scale_tw[2].cur = ARROW_SCALE;
+        set_hidden(down, p->top + BPAGE_SLOTS >= p->count);
     }
 }
 
 int
 bpage_slot_at_px(const bpage* p, float x, float y) {
-    /* the four bars of the BIOS Settings screen (anchors 0x1600..0x1603 at y 14.26, 7.42, 0.35, -6.45) */
-    static const float ys[BPAGE_SLOTS] = {14.2578125f, 7.421875f, 0.3515625f, -6.4453125f};
-    if (x < 40.0f || x > 620.0f) {
+    if (x < bar_left_px() || x > bar_right_px()) {
         return -1;
     }
     for (int s = 0; s < BPAGE_SLOTS; s++) {
-        float cy = 240.0f - ys[s] * 11.32f;
-        if (y >= cy - 30.0f && y <= cy + 30.0f && bpage_row_in_slot(p, s) >= 0) {
+        float cy = 240.0f - row_y(s) * PX_PER_UNIT;
+        if (y >= cy - ROW_PITCH_PX * 0.5f && y <= cy + ROW_PITCH_PX * 0.5f && bpage_row_in_slot(p, s) >= 0) {
             return s;
         }
     }
@@ -168,16 +249,40 @@ bpage_slot_at_px(const bpage* p, float x, float y) {
 }
 
 void
+bpage_info_rect_px(float* x0, float* y0, float* x1, float* y1) {
+    *x0 = bar_left_px() + INFO_PAD_X_PX;
+    *x1 = bar_right_px() - INFO_PAD_X_PX;
+    *y0 = INFO_TOP_PX;
+    *y1 = INFO_BOTTOM_PX;
+}
+
+/* the extra height of a bar of `height_px` pixels over the model's own, per side, in model units (bios_scene's stretch_yd) */
+static float
+grow_units(float height_px) {
+    return (height_px - BAR_H_PX) * 0.5f / (PX_PER_UNIT * BAR_SCALE);
+}
+
+void
 bpage_draw(bpage* p, const bscene_sink* sink) {
     static const unsigned passes[2] = {BSCENE_PART_MODEL, BSCENE_PART_TEXT};
     bmenu* m = p->m;
     bmenu_back_style(m, p->back_selected, p->anim, p->pal);
+    m->scene.stretch_on = 0;
     for (int pass = 0; pass < 2; pass++) {
         m->scene.parts = passes[pass];
         for (int i = 0; i < m->vm.count; i++) {
-            bscene_draw_object(&m->scene, &m->vm.objs[m->vm.order[i]], sink);
+            const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
+            /* grow the bars along y without squeezing their corners (as the game list's box) */
+            m->scene.stretch_yc = m->scene.stretch_yd = m->scene.stretch_yx = 0.0f;
+            if (o->id == ID_BOX || o->id == ID_INFO) {
+                m->scene.stretch_yc = 0.72f;
+                m->scene.stretch_yx = BAR_LEFT_UNIT;
+                m->scene.stretch_yd = grow_units(o->id == ID_BOX ? BOX_BOTTOM_PX - BOX_TOP_PX : INFO_BOTTOM_PX - INFO_TOP_PX);
+            }
+            bscene_draw_object(&m->scene, o, sink);
         }
     }
+    m->scene.stretch_yc = m->scene.stretch_yd = m->scene.stretch_yx = 0.0f;
     m->scene.parts = BSCENE_PART_ALL;
 }
 
