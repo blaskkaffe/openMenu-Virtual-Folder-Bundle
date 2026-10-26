@@ -39,6 +39,8 @@ int gfx_load_logo(const char* path);
 void gfx_set_logo_mode(int mode);
 /* NOWO.PVR, NOWB.PVR and CNET.PVR of the menu disc: the letters of modes 1 and 2 (without them those modes leave the logo alone). */
 void gfx_load_logo_texts(void);
+/* Which of NOWO, NOWB and CNET.PVR were loaded: bits 0, 1, 2 (for the debug line). */
+int gfx_logo_texts_loaded(void);
 void gfx_logo_badge(void);
 
 /* Triangles submitted since gfx_begin_frame(). */

@@ -6,6 +6,7 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <backend/gd_item.h>
@@ -28,12 +29,13 @@
 #define TOTAL_SIZE (BLOCKS * BLOCK_SIZE)
 #define SAVES_DIR SVMU_SD "/OPENMENU/SAVES"
 #define LASTDISC SVMU_SD "/OPENMENU/LASTDISC.TXT"
-#define SLOT 1
+#define NUM_SLOTS 5
+#define MAX_CHOICES 8
 
 enum { ASK_NONE, ASK_NO_SD, ASK_NO_VMU, ASK_FIRST_TIME, ASK_CORRUPT, ASK_WIPE, ASK_RESTORE_FAILED, ASK_BACKUP_FAILED,
-       ASK_BACKUP_NO_VMU, ASK_PENDING };
+       ASK_BACKUP_NO_VMU, ASK_PENDING, ASK_SLOT };
 enum { ACT_CANCEL, ACT_PLAIN, ACT_ASIS, ACT_WIPE_ASK, ACT_WIPE, ACT_RETRY, ACT_SKIP, ACT_DISCARD, ACT_BACK, ACT_BACKUP_NOW,
-       ACT_OVERWRITE };
+       ACT_OVERWRITE, ACT_SLOT_1 /* ... ACT_SLOT_1 + 4 */ };
 enum { MODE_RESTORE, MODE_BACKUP, MODE_WIPE };
 
 static struct {
@@ -45,12 +47,14 @@ static struct {
     char name[128];
     const gd_item* item;
     int device;                   /* 0..7: A1 A2 B1 B2 C1 C2 D1 D2 */
+    int slot;                     /* 1..5: the image of the game (SLOT<n>.VMU); 1 without Serial VMU Slots */
     int block;
     uint8_t* buffer;
     char message[48];
     int count;
-    const char* text[4];
-    int act[4];
+    const char* text[MAX_CHOICES];
+    int act[MAX_CHOICES];
+    char slot_text[NUM_SLOTS][64];
 } s;
 
 /* ---- Paths and the files ---- */
@@ -97,16 +101,16 @@ sync_sd(void) {
 }
 
 static void
-slot_path(const char* serial, char* out, size_t size) {
-    snprintf(out, size, "%s/%s/SLOT%d.VMU", SAVES_DIR, serial, SLOT);
+slot_path(const char* serial, int slot, char* out, size_t size) {
+    snprintf(out, size, "%s/%s/SLOT%d.VMU", SAVES_DIR, serial, slot);
 }
 
 /* 0 = there and the right size, 1 = not there, 2 = the wrong size */
 static int
-file_status(const char* serial) {
+file_status(const char* serial, int slot) {
     char path[256];
     struct stat st;
-    slot_path(serial, path, sizeof(path));
+    slot_path(serial, slot, path, sizeof(path));
     if (stat(path, &st) != 0) {
         return 1;
     }
@@ -125,12 +129,12 @@ read_image(const char* path, uint8_t* buf) {
 }
 
 static int
-write_image(const char* serial, const uint8_t* buf) {
+write_image(const char* serial, int slot, const uint8_t* buf) {
     char path[256];
     if (ensure_dirs(serial) != 0) {
         return -1;
     }
-    slot_path(serial, path, sizeof(path));
+    slot_path(serial, slot, path, sizeof(path));
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
         return -1;
@@ -158,12 +162,12 @@ write_title(const char* serial, const char* title) {
 
 /* LASTDISC.TXT: "<serial>-<slot>", as 1.7.1 writes it (a slot suffix is how its Slots mode tells which image to back up). */
 static void
-write_lastdisc(const char* serial) {
+write_lastdisc(const char* serial, int slot) {
     char text[32];
     if (ensure_dirs(NULL) != 0) {
         return;
     }
-    snprintf(text, sizeof(text), "%s-%d", serial, SLOT);
+    snprintf(text, sizeof(text), "%s-%d", serial, slot);
     int fd = open(LASTDISC, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) {
         write(fd, text, strlen(text));
@@ -306,6 +310,70 @@ ask(int kind) {
     }
 }
 
+static void start_restore_flow(void);
+
+/* The label of a slot: "Slot 2  2026-01-02 10:11", "Slot 3  EMPTY", with the custom label of SLOT<n>.TXT (1.7.1 reads it) when there is one.
+ * Returns the number of slots that hold an image. */
+static int
+fill_slot_texts(void) {
+    int used = 0;
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        char path[256], when[40] = "EMPTY", label[32] = "";
+        struct stat st;
+        slot_path(s.serial, i + 1, path, sizeof(path));
+        if (stat(path, &st) == 0 && st.st_size > 0) {
+            used++;
+            struct tm* tm = st.st_mtime > 0 ? localtime(&st.st_mtime) : NULL;
+            if (tm) {
+                snprintf(when, sizeof(when), "%04d-%02d-%02d %02d:%02d", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour,
+                         tm->tm_min);
+            } else {
+                snprintf(when, sizeof(when), "UNKNOWN");
+            }
+        }
+        snprintf(path, sizeof(path), "%s/%s/SLOT%d.TXT", SAVES_DIR, s.serial, i + 1);
+        int fd = open(path, O_RDONLY);
+        if (fd >= 0) {
+            ssize_t n = read(fd, label, sizeof(label) - 1);
+            close(fd);
+            n = n > 0 ? n : 0;
+            label[n] = '\0';
+            char* end = strpbrk(label, "\r\n");
+            if (end) {
+                *end = '\0';
+            }
+        }
+        if (label[0]) {
+            snprintf(s.slot_text[i], sizeof(s.slot_text[i]), "Slot %d  %.20s", i + 1, label);
+        } else {
+            snprintf(s.slot_text[i], sizeof(s.slot_text[i]), "Slot %d  %s", i + 1, when);
+        }
+    }
+    return used;
+}
+
+/* Which image of the game to start with: no question without Serial VMU Slots, or when no slot holds an image yet. */
+static void
+choose_slot_then_restore(void) {
+    s.slot = 1;
+    if (sf_serial_vmu_multislot[0] == SERIAL_VMU_MULTISLOT_ON && savefile_sd_available() && fill_slot_texts() > 0) {
+        s.phase = SVMU_ASK;
+        s.ask = ASK_SLOT;
+        snprintf(s.message, sizeof(s.message), "Serial VMU slot");
+        for (int i = 0; i < NUM_SLOTS; i++) {
+            s.text[i] = s.slot_text[i];
+            s.act[i] = ACT_SLOT_1 + i;
+        }
+        s.text[NUM_SLOTS] = "Launch without Serial VMU";
+        s.act[NUM_SLOTS] = ACT_PLAIN;
+        s.text[NUM_SLOTS + 1] = "Cancel";
+        s.act[NUM_SLOTS + 1] = ACT_CANCEL;
+        s.count = NUM_SLOTS + 2;
+        return;
+    }
+    start_restore_flow();
+}
+
 /* ---- Flows ---- */
 
 static void
@@ -319,13 +387,13 @@ start_restore_flow(void) {
         ask(ASK_NO_VMU);
         return;
     }
-    switch (file_status(s.serial)) {
+    switch (file_status(s.serial, s.slot)) {
         case 1: ask(ASK_FIRST_TIME); return;
         case 2: ask(ASK_CORRUPT); return;
         default: break;
     }
     char path[256];
-    slot_path(s.serial, path, sizeof(path));
+    slot_path(s.serial, s.slot, path, sizeof(path));
     s.buffer = malloc(TOTAL_SIZE);
     if (!s.buffer || read_image(path, s.buffer) != 0) {
         ask(ASK_RESTORE_FAILED);
@@ -376,7 +444,7 @@ start_wipe(void) {
 static void
 go_launch(void) {
     free_buffer();
-    write_lastdisc(s.serial); /* so the next start backs the VMU up */
+    write_lastdisc(s.serial, s.slot); /* so the next start backs the VMU up */
     write_title(s.serial, s.name);
     s.phase = SVMU_LAUNCH;
 }
@@ -385,13 +453,7 @@ go_launch(void) {
 
 int
 svmu_applies(const gd_item* item) {
-    return item && item->product[0] && strcmp(item->type, "other") != 0 && sf_serial_vmu[0] != SERIAL_VMU_OFF
-           && sf_serial_vmu_multislot[0] != SERIAL_VMU_MULTISLOT_ON;
-}
-
-int
-svmu_slots_unsupported(const gd_item* item) {
-    return item && item->product[0] && sf_serial_vmu[0] != SERIAL_VMU_OFF && sf_serial_vmu_multislot[0] == SERIAL_VMU_MULTISLOT_ON;
+    return item && item->product[0] && strcmp(item->type, "other") != 0 && sf_serial_vmu[0] != SERIAL_VMU_OFF;
 }
 
 void
@@ -403,11 +465,11 @@ svmu_begin_restore(const gd_item* item) {
     s.device = device_of_setting();
     /* A backup left undone (skipped at the last start) would be overwritten by this restore */
     char text[32], pending[16];
-    if (savefile_sd_available() && read_lastdisc(text, sizeof(text)) && parse_lastdisc(text, pending, sizeof(pending)) == SLOT) {
+    if (savefile_sd_available() && read_lastdisc(text, sizeof(text)) && parse_lastdisc(text, pending, sizeof(pending)) > 0) {
         ask(ASK_PENDING);
         return;
     }
-    start_restore_flow();
+    choose_slot_then_restore();
 }
 
 int
@@ -417,11 +479,7 @@ svmu_begin_backup(void) {
         return 0;
     }
     memset(&s, 0, sizeof(s));
-    int slot = parse_lastdisc(text, s.serial, sizeof(s.serial));
-    if (slot != SLOT) {
-        memset(&s, 0, sizeof(s)); /* 1.7.1 with Slots left it: this menu cannot make that backup, so it stays for 1.7.1 */
-        return 0;
-    }
+    s.slot = parse_lastdisc(text, s.serial, sizeof(s.serial)); /* the image the game was started from gets the backup */
     const gd_item* g = list_find_by_product(s.serial);
     snprintf(s.name, sizeof(s.name), "%s", g ? g->name : "");
     s.device = device_of_setting();
@@ -451,7 +509,7 @@ svmu_step(void) {
         return;
     }
     if (s.mode == MODE_BACKUP) {
-        if (write_image(s.serial, s.buffer) != 0) {
+        if (write_image(s.serial, s.slot, s.buffer) != 0) {
             ask(ASK_BACKUP_FAILED);
             return;
         }
@@ -511,7 +569,7 @@ svmu_choose(int index) {
         case ACT_BACKUP_NOW: { /* back the last game's VMU up first; the game is started again afterwards */
             char text[32];
             if (read_lastdisc(text, sizeof(text))) {
-                parse_lastdisc(text, s.serial, sizeof(s.serial));
+                s.slot = parse_lastdisc(text, s.serial, sizeof(s.serial));
                 const gd_item* g = list_find_by_product(s.serial);
                 snprintf(s.name, sizeof(s.name), "%s", g ? g->name : "");
                 start_backup_flow();
@@ -522,11 +580,16 @@ svmu_choose(int index) {
         }
         case ACT_OVERWRITE:
             clear_lastdisc();
-            start_restore_flow();
+            choose_slot_then_restore();
             break;
         case ACT_SKIP: free_buffer(); s.phase = SVMU_CLOSE; break;        /* LASTDISC.TXT stays: asked again at the next start */
         case ACT_DISCARD: free_buffer(); clear_lastdisc(); s.phase = SVMU_CLOSE; break;
-        default: break;
+        default:
+            if (s.act[index] >= ACT_SLOT_1 && s.act[index] < ACT_SLOT_1 + NUM_SLOTS) {
+                s.slot = s.act[index] - ACT_SLOT_1 + 1;
+                start_restore_flow();
+            }
+            break;
     }
 }
 

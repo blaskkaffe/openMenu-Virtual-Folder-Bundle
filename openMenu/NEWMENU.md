@@ -72,7 +72,7 @@ logo is used. `tools/bios-logo/biologo.py` makes the file: `convert logo.png LOG
 BIOS logo as a starting point. `BIOS_PREVIEW_LOGO=LOGO.PVR bios_preview ...` shows it on a PC.
 A fully transparent picture hides the logo.
 Online modes (not with a `LOGO.PVR` of your own): while connecting the swirl turns (a turn in 72 frames, the wordmark stays; the swirl is
-drawn as its own rotated quad by `gfx_logo_badge`); once connected the swirl stops and the logo changes to the one for the network. Over a modem or the serial cable the swirl keeps turning (up to 6 s) until the DreamPi has said which network it has selected, so the logo does not flip from "Now!" to "DCNET". Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
+drawn as its own rotated quad by `gfx_logo_badge`); once connected the swirl stops and the logo changes to the one for the network. The logo does not wait for the DreamPi add-on: it shows "Now!" at once and changes to "DCNET" only if the add-on reports that network. Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
 (`gfx_logo_badge`); connected through a DreamPi that has DCNET selected the wordmark is replaced by "DCNET" next to the swirl
 (`gfx_set_logo_mode`, a 128x32 picture built from the ROM's logo, so a PAL console keeps its blue swirl). The letters are three small .PVR files (64x32) on the menu disc next to LOGO.PVR: `NOWO.PVR` (orange) and `NOWB.PVR` (blue) "Now!", picked by the swirl's hue, and `CNET.PVR` (grey). The soft edges are baked in (an edge pixel is lighter than the bar, as in the BIOS logo) and they are drawn untinted. They hold
 nothing of the BIOS logo: "Now!" is simply drawn after the logo, and for DCNET the menu crops the ROM's logo to the swirl and its own D while it runs
@@ -279,14 +279,24 @@ browsing of single saves inside the menu: to move a single save one uses the BIO
 
 ## Internet screen layout (ui_internet.c)
 
-One large panel (as the game list's box) with the connection status on top, a page below and a footer line; the CD player's
-five buttons pick the page: Online (players on the left, games being played on the right; Y moves the cursor between the
-columns, A on a game that is on the card starts it through the same start as the game list, A on a player refreshes), Play
-(the browser discs on the card, then a row for the online game catalogue, which needs data from the DreamPi: coming soon),
-Events (upcoming events, refreshed with A), News (placeholder until the DreamPi companion sends news) and Settings (Connection:
-connect or hang up, Interface, ISP settings, Preferred network, DreamPi add-on state, Network test; the ones not built yet are
-dim and say coming soon). X connects or hangs up from any page, B or BACK leaves. The empty player list shows what the fetch is
-doing or why it failed.
+One large panel (as the game list's box) with a heading line, eight list rows and a footer line; the connection status
+("Online via network adapter  X: hang up", the failure reason, ...) is drawn above the panel, right-aligned, not inside it. The
+CD player's five buttons pick the page:
+
+- **Players**: only the players online (name, the game they are in, network). A refreshes the list.
+- **Games**: the games on the card that have online play (META.DAT `network`) or are being played online now, one row per game
+  (not per disc), then the browser discs. Games being played come first, tinted, with the player count in front of the title.
+  A starts the game or browser through the same start as the game list.
+- **Events**: four events to a page, two lines each (title; time and source). A opens one: the whole title wrapped, time, source;
+  B closes it.
+- **News**: four items to a page (heading and the start of its text). A opens one (Up/Down scroll the text). Read by `news_fetch.c`
+  from dc.dreamcastlive.net/news.html and dc.segaonline.net (plain HTTP), cut into items by `news_parse.c`: every h1-h4 heading
+  starts an item, the text after it is its body. The DreamcastLive page (pasted by the owner) is h1 title, then h3 + p per item ending "- Posted by NAME on DATE", which becomes the date line; the Sega Online page has not been seen (the cloud
+  session has no network), so it may need tuning.
+- **Settings**: Connection, Interface, ISP settings, Preferred network, DreamPi add-on state, Network test (the ones not built
+  yet are dim and say coming soon), and the Internet settings of `ui_settings.c`.
+
+X connects or hangs up from any page, B or BACK leaves. The empty player list shows what the fetch is doing or why it failed.
 
 ## Todo: Online menu item (blue, takes the place of Music)
 

@@ -65,6 +65,8 @@ static rom_tex logo_tex;
 static rom_tex logo_dcnet_tex;  /* the BIOS logo cropped to its swirl (mode 2: swirl + the D; CNET.PVR is drawn after it) */
 static rom_tex logo_word_tex;   /* the BIOS logo without its swirl (mode 3) */
 static rom_tex logo_swirl_tex;  /* the swirl alone, 32x32, turned while connecting (mode 3) */
+static float logo_ox, logo_oy; /* top left of the header logo's quad this frame (it slides in with the bar) */
+static int logo_seen;
 static int logo_mode;           /* see gfx_set_logo_mode */
 static int logo_variants_tried;
 static text_tex text_texes[MAX_TEXT_ENTRIES];
@@ -701,6 +703,11 @@ gfx_load_logo_texts(void) {
     printf("OM logo: NOWO %d NOWB %d CNET %d (/cd/*.PVR loaded)\n", logo_now_tex[0].valid, logo_now_tex[1].valid, logo_dcnet_text_tex.valid);
 }
 
+int
+gfx_logo_texts_loaded(void) {
+    return logo_now_tex[0].valid | logo_now_tex[1].valid << 1 | logo_dcnet_text_tex.valid << 2;
+}
+
 /* Pictures made from the ROM's logo while the menu runs (nothing of it is kept anywhere): the swirl with the wordmark's D, the
  * wordmark alone, and the swirl on its own for turning. Nothing is made when a LOGO.PVR of the user's own is in use. */
 static void
@@ -1047,6 +1054,13 @@ sink_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
         tex = get_rom_texture(ref);
         if (!tex) {
             return; /* texture missing from this ROM: draw nothing rather than garbage */
+        }
+    }
+    if (ref.kind == BSCENE_TEX_TEXLIST && ref.a == BMENU_HEADER_MODEL && ref.b == BMENU_LOGO_SLOT) {
+        for (int i = 0; i < 3; i++) {
+            if (!logo_seen || v[i].x < logo_ox) logo_ox = v[i].x;
+            if (!logo_seen || v[i].y < logo_oy) logo_oy = v[i].y;
+            logo_seen = 1;
         }
     }
     tri_count++;
@@ -1520,6 +1534,7 @@ gfx_image(int id, float x, float y, float w, float h, float z) {
 void
 gfx_logo_badge(void) {
     const float sx = 139.0f / 128.0f, sy = 34.0f / 32.0f;
+    const float ox = logo_seen ? logo_ox : 27.0f, oy = logo_seen ? logo_oy : 28.0f; /* follows the header bar while it slides */
     if (logo_mode == 3) { /* connecting: the swirl turns, the wordmark stays */
         static unsigned turn;
         build_logo_variants();
@@ -1529,7 +1544,7 @@ gfx_logo_badge(void) {
         const float s = 1.074f; /* one scale both ways keeps the swirl round while it turns */
         float a = (float)(turn++ % 72u) * (6.2831853f / 72.0f); /* one turn in 72 frames */
         float ca = cosf(a), sa = sinf(a);
-        float cx = 27.0f + LOGO_SWIRL_CX * sx, cy = 28.0f + LOGO_SWIRL_CY * sy;
+        float cx = ox + LOGO_SWIRL_CX * sx, cy = oy + LOGO_SWIRL_CY * sy;
         ensure_header(&logo_swirl_tex, NULL, 0);
         for (int i = 0; i < 4; i++) {
             float tx = (i & 1) ? 32.0f : 0.0f, ty = (i & 2) ? (float)LOGO_H : 0.0f;
@@ -1546,7 +1561,7 @@ gfx_logo_badge(void) {
         return;
     }
     const uint32_t tint = 0xFFFFFFFFu;
-    float x = logo_mode == 1 ? 27.0f + 127.0f * sx - 2.0f : 27.0f + (float)LOGO_D_END * sx, y = 28.0f;
+    float x = logo_mode == 1 ? ox + 127.0f * sx - 2.0f : ox + (float)LOGO_D_END * sx, y = oy;
     float w = (float)text->w * sx, h = (float)LOGO_H * sy;
     ensure_header(text, NULL, 0);
     send_vertex(x, y, 0.5f, 0.0f, 0.0f, tint, 0);
@@ -1647,6 +1662,7 @@ void
 gfx_begin_frame(uint32_t top, uint32_t bottom) {
     frame_no++;
     tri_count = 0;
+    logo_seen = 0;
     {
         uint64_t t0 = timer_us_gettime64();
         pvr_wait_ready();

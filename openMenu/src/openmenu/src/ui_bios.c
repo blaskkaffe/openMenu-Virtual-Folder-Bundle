@@ -163,6 +163,7 @@ static int report_page; /* 0 off, 1 the table of the debug log, 2 the QR code wi
 static dbglog_sample last_sample;
 
 static char status_line[64];
+static char logo_line[64]; /* logo mode, link state and the .PVR files, in the X debug overlay */
 
 /* The logo at the left of the bar follows the connection: the plain logo, the swirl turning while connecting, "Now!" behind it on
  * Dreamcast Now!, "DCNET" on DCNET. Every frame, so the turning starts when the dial does. */
@@ -170,12 +171,17 @@ static void
 update_logo_mode(void) {
     online_header oh;
     online_header_get(&oh);
-    int mode = !oh.shown ? 0 : oh.state == 1 || (oh.state == 2 && oh.pi_pending) ? 3 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1;
+    int mode = !oh.shown ? 0 : oh.state == 1 ? 3 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1;
+#ifdef OM_NO_LOGO_MODES /* test build: the header logo never changes, to see whether the freeze on B while online comes from it */
+    mode = 0;
+#endif
     static int last_mode = -1;
     if (mode != last_mode) { /* why the logo is what it is: shown, link state (0 none 1 connecting 2 online 3 failed), DreamPi network */
-        printf("OM logo: mode %d (shown %d, state %d, network %d, pi_pending %d)\n", mode, oh.shown, oh.state, oh.network, oh.pi_pending);
+        printf("OM logo: mode %d (shown %d, state %d, network %d)\n", mode, oh.shown, oh.state, oh.network);
         last_mode = mode;
     }
+    snprintf(logo_line, sizeof(logo_line), "logo %d  shown %d state %d net %d  PVR %d", mode, oh.shown, oh.state, oh.network,
+             gfx_logo_texts_loaded());
     gfx_set_logo_mode(mode);
 }
 
@@ -1386,6 +1392,7 @@ draw_frame(void) {
     if (show_debug) {
         if (screen == SCREEN_MAIN) {
             gfx_text(status_line, TEXT_X, STATUS_Y, 0.5f, 0x80FFFFFFu, 0);
+            gfx_text(logo_line, TEXT_X, STATUS_Y - 28.0f, 0.5f, 0x80FFFFFFu, 0);
             if (debug_iso) {
                 char iso[32];
                 snprintf(iso, sizeof(iso), "Y: %s", iso_names[debug_iso]);
@@ -1529,9 +1536,6 @@ svmu_active(void) {
  * here and only returned because the launch failed. */
 static int
 start_game(const gd_item* g) {
-    if (svmu_slots_unsupported(g)) {
-        show_notice("Serial VMU Slots are not supported yet");
-    }
     if (svmu_applies(g)) {
         svmu_item = g;
         svmu_row = 0;
@@ -2400,6 +2404,7 @@ ui_bios_run(const bios_rom* rom) {
     set_icon_labels();
     update_clock();
     online_set_hangup_hook(show_hangup);
+    uin_set_meta(have_meta);
     uin_set_launch(start_game); /* games started from the Internet screen restore their Serial VMU first */
     dbglog_boot("menu", (unsigned)timer_ms_gettime64());
 

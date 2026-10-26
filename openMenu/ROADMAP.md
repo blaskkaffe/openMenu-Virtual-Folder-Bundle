@@ -14,8 +14,8 @@ Storage rule from the 1.7.1 work: `OPENMENU.SYS` is shared with Derek's menu, so
 it (a version step there would make 1.7.1 treat it as unknown). Our own saved data (per-game network, favourites,
 background colour, dark mode) needs a separate file on the VMU / SD, or keys in DEFAULTS.INI `[BIOSMENU]`.
 
-Serial VMU (`serial_vmu.c`) restores a game's VMU image from the serial SD card before the game starts and backs it up at the next start, with 1.7.1's file layout (one image per game; not yet: Serial VMU Slots, the fallback VMU picker, exit to BIOS). Written without a console build: untested.
-Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's).
+Serial VMU (`serial_vmu.c`) restores a game's VMU image from the serial SD card before the game starts and backs it up at the next start, with 1.7.1's file layout (five images per game with Serial VMU Slots on; not yet: the fallback VMU picker, exit to BIOS). Written without a console build: untested.
+Version string is v1.7.1-ateam (the 1.7.1 features ported so far; this is not a merge of Derek's code). Serial VMU Slots are in (Settings > Game list > Serial VMU Slots). Not in this branch yet from 1.7.1: background music (BGM.ADP), the theme styles (not wanted: the look is the BIOS's).
 
 ## Decisions needed before coding
 
@@ -83,7 +83,7 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 |---|---|---|
 | BIOS File screen (cards, copy, delete, memory reset with icon/colour) | Done | ported from the ROM; untested on real cards |
 | VMU icon and colour | Partial | only through memory reset (BIOS behaviour); no change without wiping |
-| Serial VMU submenu (enable, slot, backup/restore) | Partial | Settings > Game list > Serial VMU picks the VMU socket; restore before launch and backup at start work as 1.7.1 (`serial_vmu.c`, untested on hardware). No File-menu submenu yet, no manual backup/load, no Slots |
+| Serial VMU submenu (enable, slot, backup/restore) | Partial | Settings > Game list > Serial VMU picks the VMU socket; restore before launch and backup at start work as 1.7.1 (`serial_vmu.c`, untested on hardware). No File-menu submenu yet, no manual backup/load |
 | Expand VMU storage | Blocked | depends on the device (VM2/VMU Pro/pico2maple) |
 | VMU slot selection, GameID box | Blocked | no protocol yet for VM2, VMU Pro, pico2maple |
 | Controller type label per port | Partial | types can be read from maple function codes today; selecting/emulating a type is Blocked (BlueRetro/pico2maple firmware) |
@@ -93,13 +93,13 @@ Not in this branch yet from 1.7.1: Serial VMU Slots, background music (BGM.ADP),
 
 | Item | Status | Notes |
 |---|---|---|
-| Sections | Done (layout) | buttons: Online (players and games side by side, Y switches column, A on a game starts it if it is on the card), Play (browsers; the online game catalogue row says coming soon), Events, News (placeholder: needs the DreamPi companion), Settings (connection, interface, ISP / preferred network / test as coming soon rows). Untested: written without a console build |
+| Sections | Done (layout) | buttons: Players (online players only), Games (online games of the card, being played first with the player count, then the browsers; A starts), Events (4 per page, A opens), News (4 per page, A opens; read from dc.dreamcastlive.net and dc.segaonline.net, generic heading parser, markup not seen), Settings. Status line above the panel. Untested: written without a console build |
 | Players online | Done | Pi `/players` first, fallbacks; DCNow!/DCNET counts |
 | Games being played | Partial | listed; A starts the game when it is on the card (through the game list's start, Serial VMU first; untested on a console), otherwise says so; A on the player column refreshes. Launch by Pi queue works (`dreampi_link.c`) |
 | Star player/game/event + notifications | Missing | needs Pi-side storage or a save-file list, plus the banner (see main menu) |
 | Online game catalogue (features, connection methods, network) | Missing | needs a data source (DreamcastLive / Flycast DCNet lists), best prepared on the Pi |
 | Events (DC99) | Partial | upcoming only; no current/upcoming split, no detail view |
-| News | Missing | Pi-side scraper + endpoint first |
+| News | Partial | `news_fetch.c` + `news_parse.c` (host-tested parser) read dc.dreamcastlive.net/news.html and dc.segaonline.net; needs tuning to the real markup, untested on a console. Pi-side scraper still an option |
 | Companion interface | Partial | DreamPiAutoToggle module: game list upload, launch queue, `/players`, `/api/events/upcoming`, NET, PLAYING. No written spec of the protocol |
 | ISP settings editor | Missing | OPEN item 3; "coming soon" row; flash format partly decoded |
 | DreamPi Ethernet / Wi-Fi settings | Blocked | Pi-side endpoints first |

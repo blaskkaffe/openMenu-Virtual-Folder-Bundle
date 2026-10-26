@@ -37,6 +37,7 @@ static event_item_t parsed[EVENTS_MAX];
 static kthread_t* worker = NULL;
 static volatile int abort_requested = 0;
 static volatile int worker_done = 0;
+static int restart_pending; /* started again while an aborted fetch was still ending: starts when it has */
 static char body[BODY_MAX + 1];
 
 static void
@@ -448,8 +449,10 @@ join_worker(void) {
 void
 events_fetch_start(void) {
     if (worker != NULL && !worker_done) {
+        restart_pending = abort_requested; /* an aborted fetch is still ending (it never blocks the menu): start when it has */
         return;
     }
+    restart_pending = 0;
     join_worker();
     abort_requested = 0;
     worker_done = 0;
@@ -462,9 +465,10 @@ events_fetch_start(void) {
 
 void
 events_fetch_abort(void) {
+    /* Only asks the worker to stop: waiting for it here froze the menu when it was inside a lookup or a connection. It is joined
+     * by the poll once it has ended. */
     abort_requested = 1;
-    join_worker();
-    abort_requested = 0;
+    restart_pending = 0;
     mutex_lock(&events_mutex);
     if (status.state == EVENTS_RUNNING) {
         status.state = EVENTS_IDLE;
@@ -476,6 +480,10 @@ void
 events_fetch_poll(events_status_t* out) {
     if (worker != NULL && worker_done) {
         join_worker();
+        if (restart_pending) {
+            restart_pending = 0;
+            events_fetch_start();
+        }
     }
     mutex_lock(&events_mutex);
     *out = status;
