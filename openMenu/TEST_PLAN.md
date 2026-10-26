@@ -165,3 +165,11 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 - [ ] At the next start the VMU is backed up into the slot the game was started from (no question; 1.7.1 asks, this menu does not).
       `LASTDISC.TXT` holds `<serial>-<slot>`; `SLOT<n>.VMU` has the new time. Check on a card shared with 1.7.1 that it reads the same files.
 - [ ] A backup left undone (skipped) is offered ("Back it up now") before the next restore, also when it was made from slot 3 to 5.
+
+## Freeze on B (findings so far)
+- Seen: B on the Events page while it was loading and nothing shown yet; B out of the case viewer and the game list right after changing the game
+  or turning the case. The viewer's B does nothing but `sound_sfx(BAUDIO_SFX_CANCEL)`, so the cancel sound is the main suspect (test: `-DOM_MUTE_CANCEL`).
+- Done in code: leaving the Internet screen no longer waits for the events/news worker threads (`*_fetch_abort` only raises the flag; the poll joins
+  the thread when it has ended; a start during that time is queued).
+- Test: B at once on Events / News while loading, then open them again (must load); B out of the case viewer right after turning it, with and
+  without `-DOM_MUTE_CANCEL`.
