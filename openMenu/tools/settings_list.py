@@ -10,7 +10,7 @@ for m in re.finditer(r"static const char\* const (\w+)\[\] = \{(.*?)\};", SRC, r
     arrays[m.group(1)] = re.findall(r'"([^"]*)"', m.group(2))
 rows_src = SRC[SRC.index("static const row_def rows[]"):SRC.index("#define NET_ROWS")]
 rows = []
-for m in re.finditer(r'\{(UIS_ACTION_\w+|0), (-?\d+), "([^"]*)", "([^"]*)", "([^"]*)", ([^\n]*?)(?:\n\s*([^\n]*?))?\},\n', rows_src):
+for m in re.finditer(r'\{(UIS_ACTION_\w+|0), (-?\w+), "([^"]*)", "([^"]*)", "([^"]*)", ([^\n]*?)(?:\n\s*([^\n]*?))?\},\n', rows_src):
     action, icon, group, label, help_, a, b = m.groups()
     rest = (a + " " + (b or "")).replace("\n", " ")
     names = next((arrays[n] for n in re.findall(r"\b(\w+)\b", rest) if n in arrays), None)
