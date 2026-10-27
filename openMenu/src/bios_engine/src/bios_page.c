@@ -6,28 +6,35 @@
 #define ROW_Z (-353.515625f)
 #define DIGIT_SCALE 0.4f /* the digit models are much larger than the icons */
 
-/* Layout in world units (screen centre = 0,0) and pixels. The row bar, pill, icon and text positions are those of the
- * game list (bios_list.c), which took them from the original Settings screen; the bar and the pill are not shortened here. */
+/* Layout in world units (screen centre = 0,0) and pixels, measured on the original Settings screen: the row bars span x 40..619,
+ * the value pill (model 33, unscaled) x 256..615 and 45 px high, the icons are centred on x 75, the labels start at x 110 and the
+ * values at x 351, the help box (model 34) spans x 188..622, y 340..432 with the BACK marker to its left. Everything keeps its
+ * original size: only the rows are closer together (54 px instead of 78) so that five fit the box above the information bar. */
 #define ANCHOR_X 1.95f
-#define ICON_X (-22.6f)
+#define ICON_X (-21.65f)
 #define ICON_Z (ROW_Z + 2.5f)
-#define PILL_X (-5.45f)
+#define PILL_X 9.32f
 #define PILL_SCALE 0.859375f
-#define TEXT_X 3.7f /* centre of the 512 px text surface: its left edge is 10 px (PAGE_TEXT_PAD) left of where the label starts */
+#define TEXT_X 4.58f /* centre of the 512 px text surface: its left edge is 10 px (PAGE_TEXT_PAD) left of where the label starts */
 #define BAR_H_PX 53.0f /* height of the row bar model at scale 0.8671875 */
 #define BAR_SCALE 0.8671875f
 #define BAR_LEFT_UNIT (-30.75003f) /* leftmost x of the row bar model */
 #define BAR_WIDTH_UNIT 59.0f
-/* the two boxes, in pixels: the rows, and under them the information (above the BACK marker, which is at y 367-435) */
-#define BOX_TOP_PX 66.0f
-#define BOX_PAD_PX 8.0f
-#define ROW_PITCH_PX 35.0f
+#define BAR_CAP_L (-28.0f) /* the rounded ends of the bar (bios_list.c): the middle between them can be shortened */
+#define BAR_CAP_R 27.5f
+/* the two boxes, in pixels */
+#define BOX_TOP_PX 48.0f
+#define BOX_PAD_PX 7.0f
+#define ROW_PITCH_PX 54.0f
 #define BOX_BOTTOM_PX (BOX_TOP_PX + 2.0f * BOX_PAD_PX + (float)BPAGE_SLOTS * ROW_PITCH_PX)
-#define INFO_TOP_PX (BOX_BOTTOM_PX + 8.0f)
-#define INFO_BOTTOM_PX 366.0f
-#define INFO_PAD_X_PX 36.0f /* the bar's rounded ends */
-#define ARROW_SCALE 0.7f
-#define ARROW_INSET_PX 30.0f /* from the box's right edge to the arrow's centre, and from its top / bottom */
+#define INFO_LEFT_PX 165.0f /* right of the BACK marker (x 90..150), under the rows, as the original's help box */
+#define INFO_RIGHT_PX 620.0f
+#define INFO_TOP_PX 340.0f
+#define INFO_BOTTOM_PX 432.0f
+#define INFO_PAD_L_PX 30.0f /* the bar's rounded ends */
+#define INFO_PAD_R_PX 24.0f
+#define ARROW_SCALE 0.6f
+#define ARROW_X_PX 590.0f /* over the pill's right end, on the first / last row */
 
 #define ID_BOX 0x1700
 #define ID_INFO 0x1701
@@ -169,7 +176,7 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
         set_hidden(box, 0);
     }
     if (info) {
-        set_pos(info, ANCHOR_X, info_y, ROW_Z);
+        set_pos(info, (INFO_LEFT_PX - 320.0f) / PX_PER_UNIT - BAR_LEFT_UNIT * BAR_SCALE, info_y, ROW_Z);
         info->scale_tw[0].cur = info->scale_tw[2].cur = BAR_SCALE;
         info->scale_tw[1].cur = BAR_SCALE;
         set_hidden(info, 0);
@@ -185,7 +192,7 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
         if (pill) {
             set_pos(pill, PILL_X, y, ROW_Z + 0.78f);
             pill->scale_tw[0].cur = pill->scale_tw[2].cur = PILL_SCALE;
-            pill->scale_tw[1].cur = PILL_SCALE * 0.9f * ROW_PITCH_PX / BAR_H_PX; /* a thin gap between the rows' pills */
+            pill->scale_tw[1].cur = PILL_SCALE;
             pill->var[1] = sel;
             set_hidden(pill, !on);
         }
@@ -200,10 +207,8 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
                     row_fn(user, row, &r);
                     icon_model(r.icon, &icon->model, &icon->motion, &has_motion);
                     icon->texlist = icon->model;
-                    /* the icons are made for rows 78 px apart: shrink them to this pitch */
-                    float k = ROW_PITCH_PX / 78.0f;
                     for (int a = 0; a < 3; a++) {
-                        icon->scale_tw[a].cur = (has_motion ? 0.9375f : DIGIT_SCALE) * k;
+                        icon->scale_tw[a].cur = has_motion ? 0.9375f : DIGIT_SCALE; /* as the original */
                     }
                     if (!has_motion) {
                         icon->flags &= ~(uint32_t)BVM_F_MOTION;
@@ -218,17 +223,17 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
             text->flags = on ? (text->flags | BVM_F_TEXT) : (text->flags & ~(uint32_t)BVM_F_TEXT);
         }
     }
-    /* the green arrows at the box's right edge, only when there are rows out of sight in that direction */
-    float ax = (bar_right_px() - ARROW_INSET_PX - 320.0f) / PX_PER_UNIT;
+    /* the green arrows over the pill's right end of the first / last row, only when there are rows out of sight that way */
+    float ax = (ARROW_X_PX - 320.0f) / PX_PER_UNIT;
     bvm_obj* up = bvm_find(vm, ID_UP);
     bvm_obj* down = bvm_find(vm, ID_DOWN);
     if (up) {
-        set_pos(up, ax, (240.0f - (BOX_TOP_PX + ARROW_INSET_PX)) / PX_PER_UNIT, ROW_Z + 2.0f);
+        set_pos(up, ax, row_y(0), ROW_Z + 2.0f);
         up->scale_tw[0].cur = up->scale_tw[1].cur = up->scale_tw[2].cur = ARROW_SCALE;
         set_hidden(up, p->top <= 0);
     }
     if (down) {
-        set_pos(down, ax, (240.0f - (BOX_BOTTOM_PX - ARROW_INSET_PX)) / PX_PER_UNIT, ROW_Z + 2.0f);
+        set_pos(down, ax, row_y(BPAGE_SLOTS - 1), ROW_Z + 2.0f);
         down->scale_tw[0].cur = down->scale_tw[1].cur = down->scale_tw[2].cur = ARROW_SCALE;
         set_hidden(down, p->top + BPAGE_SLOTS >= p->count);
     }
@@ -250,8 +255,8 @@ bpage_slot_at_px(const bpage* p, float x, float y) {
 
 void
 bpage_info_rect_px(float* x0, float* y0, float* x1, float* y1) {
-    *x0 = bar_left_px() + INFO_PAD_X_PX;
-    *x1 = bar_right_px() - INFO_PAD_X_PX;
+    *x0 = INFO_LEFT_PX + INFO_PAD_L_PX;
+    *x1 = INFO_RIGHT_PX - INFO_PAD_R_PX;
     *y0 = INFO_TOP_PX;
     *y1 = INFO_BOTTOM_PX;
 }
@@ -274,6 +279,13 @@ bpage_draw(bpage* p, const bscene_sink* sink) {
             const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
             /* grow the bars along y without squeezing their corners (as the game list's box) */
             m->scene.stretch_yc = m->scene.stretch_yd = m->scene.stretch_yx = 0.0f;
+            m->scene.stretch_on = o->id == ID_INFO; /* the information bar is shorter than the rows' */
+            if (o->id == ID_INFO) {
+                float want = (INFO_RIGHT_PX - INFO_LEFT_PX) / (PX_PER_UNIT * BAR_SCALE); /* model units */
+                m->scene.stretch_a = BAR_CAP_L;
+                m->scene.stretch_b = BAR_CAP_R;
+                m->scene.stretch_f = (BAR_CAP_R - BAR_CAP_L - (BAR_WIDTH_UNIT - want)) / (BAR_CAP_R - BAR_CAP_L);
+            }
             if (o->id == ID_BOX || o->id == ID_INFO) {
                 m->scene.stretch_yc = 0.72f;
                 m->scene.stretch_yx = BAR_LEFT_UNIT;
@@ -283,6 +295,7 @@ bpage_draw(bpage* p, const bscene_sink* sink) {
         }
     }
     m->scene.stretch_yc = m->scene.stretch_yd = m->scene.stretch_yx = 0.0f;
+    m->scene.stretch_on = 0;
     m->scene.parts = BSCENE_PART_ALL;
 }
 

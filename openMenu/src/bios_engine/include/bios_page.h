@@ -16,7 +16,7 @@
 extern "C" {
 #endif
 
-#define BPAGE_SLOTS 6
+#define BPAGE_SLOTS 5
 
 /* Row icons: the four BIOS settings icons, or a digit 0-9 as a placeholder. */
 #define BPAGE_ICON_BIOS(i) (i)        /* 0 language, 1 date/time, 2 sound, 3 other */

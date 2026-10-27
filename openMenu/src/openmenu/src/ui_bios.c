@@ -1080,23 +1080,23 @@ draw_about(void) {
     gfx_text("A: close", 144.0f, 316.0f, 0.7f, 0xFFA0A0A0u, 0);
 }
 
-/* Draw `text` at scale `scale` in at most `max_w` pixels: a longer text is cut and ends in "..". */
+/* Draw `text` in the menu font at its own size, in at most `max_w` pixels: a longer text is cut and ends in "..". */
 static void
-text_fitted(const char* text, float x, float y, float scale, uint32_t color, float max_w) {
+text_fitted(const char* text, float x, float y, uint32_t color, float max_w) {
     char cut[100], tmp[100];
     snprintf(cut, sizeof(cut), "%s", text);
-    if ((float)gfx_text_width(cut) * scale > max_w) {
+    if ((float)gfx_text_width(cut) > max_w) {
         size_t n = strlen(cut);
         while (n > 0) {
             cut[--n] = '\0';
             snprintf(tmp, sizeof(tmp), "%s..", cut);
-            if ((float)gfx_text_width(tmp) * scale <= max_w) {
+            if ((float)gfx_text_width(tmp) <= max_w) {
                 snprintf(cut, sizeof(cut), "%s", tmp);
                 break;
             }
         }
     }
-    gfx_text_scaled(cut, x, y, 0.5f, color, scale);
+    gfx_text(cut, x, y, 0.5f, color, 1);
 }
 
 /* The information bar under the box: the group and the row number, and what the selected setting does, inside the bar. */
@@ -1106,8 +1106,9 @@ draw_settings_info(void) {
     char line[48];
     bpage_info_rect_px(&x0, &y0, &x1, &y1);
     snprintf(line, sizeof(line), "%s  %d/%d", uis_group(page.cursor), page.cursor + 1, page.count);
-    text_fitted(line, x0, y0 + 8.0f, 0.8f, 0xFFB0B0B0u, x1 - x0);
-    text_fitted(uis_help(page.cursor), x0, y0 + 8.0f + 26.0f, 0.8f, 0xFFFFFFFFu, x1 - x0);
+    float top = y0 + (y1 - y0 - 2.0f * (float)GFX_LINE_H) * 0.5f; /* the two lines centred in the bar */
+    text_fitted(line, x0, top, 0xFFB0B0B0u, x1 - x0);
+    text_fitted(uis_help(page.cursor), x0, top + (float)GFX_LINE_H, 0xFFFFFFFFu, x1 - x0);
 }
 
 static void

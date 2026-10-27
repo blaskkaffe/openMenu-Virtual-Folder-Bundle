@@ -111,7 +111,7 @@ Version string is v1.7.1-ateam (the 1.7.1 features ported so far; this is not a 
 
 | Item | Status | Notes |
 |---|---|---|
-| Scrollable list, 6 rows in one tall box, 3D icon, separate information bar, green scroll arrows | Done in code, never seen on a screen | rows beyond the BIOS use digit icons until real icons exist |
+| Scrollable list, 5 rows in one tall box, 3D icon, separate information bar, green scroll arrows | Done in code, seen on the host preview only | rows beyond the BIOS use digit icons until real icons exist |
 | BIOS settings (language, clock, sound, auto start) | Done | written to flash as the BIOS does |
 | Background colour choice, dark mode | Done in code | Settings > Display > Background (BIOS blue, Green, Orange, Purple, Red, Grey) and Dark mode; `bg_palette.c` (host-tested) changes the gradient in `draw_frame`, the swirl and water layers keep their look. Kept in this menu's favorites file flags, not OPENMENU.SYS. Not compiled; colours are guesses to judge on a screen |
 | Online rows that belong in the Internet menu | Done in code | Player list refresh, VMU online status and Online time sync are on the Internet screen's Settings page (A cycles the value). Online features stays in Settings: the Internet screen only exists once it is on |

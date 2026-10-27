@@ -114,18 +114,20 @@ browser is opened after start-up. Later: genre filter (needs better genre data),
 ## Settings screen (sketch)
 
 Built from the game list's pieces (`bios_engine/bios_page`): one tall box (the row bar model grown along y, corners keep their
-radius) as wide as the original Settings rows, holding `BPAGE_SLOTS` = 6 rows (66-292 px, pitch 35 px), each with a 3D icon, a
-pill and a text line (label, then the value in a column of its own). Under it a second, separate bar (300-366 px, clear of the BACK
-marker) holds the information about the selected row, nothing else: the group and the row number, and the help line, written by
-`ui_bios.c` (`draw_settings_info`, scale 0.8, cut with ".." if it would not fit the bar). The original's help box is not used any more.
-When rows are out of sight the BIOS date editor's green arrows (scripts 0x3d / 0x3e) show at the box's right edge, top for rows above,
-bottom for rows below. Icons are the digit models 0-9 until real ones exist. Rows with more than two values open a popup list;
+radius), the width of the original Settings rows (x 40..619), holding `BPAGE_SLOTS` = 5 rows (48-332 px, pitch 54 px). Everything
+in a row is the original's size (icon, 45 px value pill at x 256..615, label from x 110, value from x 351), measured on the BIOS
+screen; only the rows are closer together than the original's 78 px. Under the box, where the original's help box is (x 165..620,
+y 340..432, right of the BACK marker), a second, separate bar holds the information about the selected row and nothing else: the
+group and the row number, and the help line, in the menu font at its own size, written by `ui_bios.c` (`draw_settings_info`, cut with
+".." if it would not fit; about 36 characters fit). The original's help box (model 34, which has the purple square) is not used.
+When rows are out of sight the BIOS date editor's green arrows (scripts 0x3d / 0x3e) show over the right end of the first (rows
+above) and last (rows below) pill. Icons are the digit models 0-9 until real ones exist. Rows with more than two values open a popup list;
 two-value rows toggle. Groups in order: BIOS (language, sound, auto start), Clock and date (date and time, clock format, memory card clock,
 clock extender, VMU time sync, Online time sync), Display (aspect ratio, background colour, dark mode), Game list, Starting games, System,
 Internet (Online features; the refresh, VMU status and Online time sync rows are also on the Internet screen's Settings page), Other.
 Rows are defined in `ui_settings.c` (label, group, help, save-file variable, choice names). Text column positions (`PAGE_TEXT_PAD`,
 `PAGE_VALUE_X` in `gfx.c`, `TEXT_X` in `bios_page.c`) and all box constants at the top of `bios_page.c` are guesses to be tuned on
-hardware; none of this has been seen on a screen (no BIOS image in the cloud session). Preview: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.
+hardware; seen on the host preview only (the text there is drawn from a label file, see bios_preview.c). Preview: `bios_preview dc_boot.bin out.ppm 90 <cursor row> -2`.
 
 ## Game browser (sketch)
 
