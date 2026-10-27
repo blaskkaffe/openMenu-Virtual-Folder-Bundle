@@ -19,10 +19,10 @@
 #define PILL_CAP_R 19.0f
 #define PILL_WIDTH_UNIT 36.9f
 /* The value pill is the original's, shortened from the left: it starts at x 304, where the longest label (17 characters at about
- * 10.7 px from x 110) ends, and keeps the original's right end (x 615). The value starts 12 px inside it. */
-#define PILL_LEFT_PX 304.0f
+ * 10.7 px, centred between x 100 and the pill) fits, and keeps the original's right end (x 615). The value starts 10 px inside it. */
+#define PILL_LEFT_PX BPAGE_PILL_LEFT_PX
 #define PILL_RIGHT_PX 615.0f
-#define TEXT_X 4.58f /* centre of the 512 px text surface: its left edge is 10 px (PAGE_TEXT_PAD) left of where the label starts */
+#define TEXT_X 0.0f /* the text object only gives the row's height: the app places the label and the value itself (BPAGE_LABEL_CX_PX) */
 #define BAR_H_PX 53.0f /* height of the row bar model at scale 0.8671875 */
 #define BAR_SCALE 0.8671875f
 #define BAR_LEFT_UNIT (-30.75003f) /* leftmost x of the row bar model */
@@ -40,10 +40,11 @@
 #define INFO_RIGHT_PX 621.8f
 #define INFO_TOP_PX 340.0f
 #define INFO_BOTTOM_PX 433.8f
-#define INFO_PAD_L_PX 14.0f
+#define INFO_TEXT_TOP_PAD_PX 9.0f /* the original's help text starts this far below the top of its pill */
 #define INFO_PAD_R_PX 14.0f
-#define ARROW_SCALE 0.6f
-#define ARROW_X_PX 590.0f /* over the pill's right end, on the first / last row */
+#define ARROW_SCALE 0.5f
+#define ARROW_X_PX 631.0f /* in the margin right of the box (which ends at x 621.8), not over it */
+#define ARROW_INSET_PX 12.0f /* the arrows' centres from the top / bottom of the box */
 
 #define ID_BOX 0x1700
 #define ID_INFO 0x1701
@@ -232,17 +233,17 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
             text->flags = on ? (text->flags | BVM_F_TEXT) : (text->flags & ~(uint32_t)BVM_F_TEXT);
         }
     }
-    /* the green arrows over the pill's right end of the first / last row, only when there are rows out of sight that way */
+    /* the green arrows at the top and bottom of the box, in the margin to its right, only when there are rows out of sight that way */
     float ax = (ARROW_X_PX - 320.0f) / PX_PER_UNIT;
     bvm_obj* up = bvm_find(vm, ID_UP);
     bvm_obj* down = bvm_find(vm, ID_DOWN);
     if (up) {
-        set_pos(up, ax, row_y(0), ROW_Z + 2.0f);
+        set_pos(up, ax, (240.0f - (BOX_TOP_PX + ARROW_INSET_PX)) / PX_PER_UNIT, ROW_Z + 2.0f);
         up->scale_tw[0].cur = up->scale_tw[1].cur = up->scale_tw[2].cur = ARROW_SCALE;
         set_hidden(up, p->top <= 0);
     }
     if (down) {
-        set_pos(down, ax, row_y(BPAGE_SLOTS - 1), ROW_Z + 2.0f);
+        set_pos(down, ax, (240.0f - (BOX_BOTTOM_PX - ARROW_INSET_PX)) / PX_PER_UNIT, ROW_Z + 2.0f);
         down->scale_tw[0].cur = down->scale_tw[1].cur = down->scale_tw[2].cur = ARROW_SCALE;
         set_hidden(down, p->top + BPAGE_SLOTS >= p->count);
     }
@@ -264,9 +265,9 @@ bpage_slot_at_px(const bpage* p, float x, float y) {
 
 void
 bpage_info_rect_px(float* x0, float* y0, float* x1, float* y1) {
-    *x0 = INFO_LEFT_PX + INFO_PAD_L_PX;
+    *x0 = BPAGE_VALUE_X_PX;
     *x1 = INFO_RIGHT_PX - INFO_PAD_R_PX;
-    *y0 = INFO_TOP_PX;
+    *y0 = INFO_TOP_PX + INFO_TEXT_TOP_PAD_PX;
     *y1 = INFO_BOTTOM_PX;
 }
 
@@ -275,10 +276,10 @@ bpage_scroll_thumb_px(const bpage* p, float* x, float* y, float* w, float* h) {
     if (p->count <= BPAGE_SLOTS) {
         return 0;
     }
-    /* between the arrows (their centres are on the first and last row), clear of their size (13.6 px at ARROW_SCALE) */
+    /* between the arrows, clear of their size */
     float arrow = 2.0f * ARROW_SCALE * PX_PER_UNIT;
-    float top = 240.0f - row_y(0) * PX_PER_UNIT + arrow * 0.5f + 4.0f;
-    float bottom = 240.0f - row_y(BPAGE_SLOTS - 1) * PX_PER_UNIT - arrow * 0.5f - 4.0f;
+    float top = BOX_TOP_PX + ARROW_INSET_PX + arrow * 0.5f + 4.0f;
+    float bottom = BOX_BOTTOM_PX - ARROW_INSET_PX - arrow * 0.5f - 4.0f;
     float len = bottom - top;
     float th = len * (float)BPAGE_SLOTS / (float)p->count;
     th = th < 14.0f ? 14.0f : (th > len * 0.5f ? len * 0.5f : th);

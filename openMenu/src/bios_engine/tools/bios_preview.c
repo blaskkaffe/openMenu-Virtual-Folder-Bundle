@@ -396,8 +396,8 @@ draw_label_text(const bvm_obj* o, float x, float y, int x0, int y0) {
     if (o->id >= BMENU_ID_ICON(0) && o->id < BMENU_ID_ICON(BMENU_ICONS)) { /* centred on the anchor */
         blit_text(l->a, (int)(x - (float)btext_width(l->a) / 2.0f), (int)(y - 13.0f), 0xFFFFFF);
     } else if (o->id >= BPAGE_TEXT_ID(0) && o->id < BPAGE_TEXT_ID(BPAGE_SLOTS)) { /* "label" and the value 250 px further */
-        blit_text(l->a, x0 + 10, y0, 0xFFFFFF);
-        blit_text(l->b, x0 + 216, y0, 0xFFFFFF);
+        blit_text(l->a, (int)(BPAGE_LABEL_CX_PX - (float)btext_width(l->a) / 2.0f), y0, 0xFFFFFF); /* as gfx.c */
+        blit_text(l->b, (int)BPAGE_VALUE_X_PX, y0, 0xFFFFFF);
     } else if (o->id >= BLIST_TEXT_ID(0) && o->id < BLIST_TEXT_ID(BLIST_MAX_SLOTS)) { /* a game list row: left aligned */
         blit_text(l->a, x0, y0, 0xFFFFFF);
     } else {

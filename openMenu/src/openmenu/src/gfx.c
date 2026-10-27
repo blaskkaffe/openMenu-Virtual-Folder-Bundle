@@ -38,8 +38,6 @@
 #define LABEL_CHARS 120 /* a label may hold several lines / columns, see sink_text */
 
 /* Settings page text lines (bios_page): left aligned, label then a value column */
-#define PAGE_TEXT_PAD 10.0f
-#define PAGE_VALUE_X 216.0f
 #define BG_Z 0.001f /* 1/w of the gradient quad: behind everything (the clouds are at ~0.0026) */
 #define TEXT_Z_BIAS 0.00002f
 
@@ -1202,9 +1200,9 @@ sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
     }
     const char* label = find_label(obj->id);
     if (label && obj->id >= BPAGE_TEXT_ID(0) && obj->id <= BPAGE_TEXT_ID(BPAGE_SLOTS - 1)) {
-        /* Settings page: left aligned in the text surface. "label\tvalue" puts the value in a
-         * second column. (The information under the box is written by ui_bios.c.) */
-        float x0 = x - (float)obj->text_w / 2.0f;
+        /* Settings page, as the original: "label\tvalue", the label centred in its column and the value left aligned 10 px
+         * inside the pill (x as in bios_page.h), both centred on the row's height. (The information under the box is written by
+         * ui_bios.c.) */
         float y0 = y - (float)obj->text_h / 2.0f;
         char part[LABEL_CHARS + 1];
         const char* p = label;
@@ -1219,9 +1217,9 @@ sink_text(void* user, const bvm_obj* obj, float x, float y, float invw) {
             float ly = y0 + (float)(line * GFX_LINE_H);
             if (tab) {
                 *tab = '\0';
-                gfx_text(tab + 1, x0 + PAGE_VALUE_X, ly, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, 1);
+                gfx_text(tab + 1, BPAGE_VALUE_X_PX, ly, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, 1);
             }
-            gfx_text(part, x0 + PAGE_TEXT_PAD, ly, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, 1);
+            gfx_text(part, BPAGE_LABEL_CX_PX - (float)gfx_text_width(part) / 2.0f, ly, invw + TEXT_Z_BIAS, 0xFFFFFFFFu, 1);
             p += n;
             if (*p == '\n') {
                 p++;

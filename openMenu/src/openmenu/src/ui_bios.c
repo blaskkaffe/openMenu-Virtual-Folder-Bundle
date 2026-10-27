@@ -1099,16 +1099,40 @@ text_fitted(const char* text, float x, float y, uint32_t color, float max_w) {
     gfx_text(cut, x, y, 0.5f, color, 1);
 }
 
-/* The information bar under the box: the group and the row number, and what the selected setting does, inside the bar. */
+/* The information under the box, as the original's help text: starting where the values do, 9 px below the top, in the menu font at its
+ * own size. A longer text goes on a second line (broken at a space) and is cut with ".." only if even that is too long. */
 static void
 draw_settings_info(void) {
     float x0, y0, x1, y1;
-    char line[48];
     bpage_info_rect_px(&x0, &y0, &x1, &y1);
-    snprintf(line, sizeof(line), "%s  %d/%d", uis_group(page.cursor), page.cursor + 1, page.count);
-    float top = y0 + (y1 - y0 - 2.0f * (float)GFX_LINE_H) * 0.5f; /* the two lines centred in the bar */
-    text_fitted(line, x0, top, 0xFFB0B0B0u, x1 - x0);
-    text_fitted(uis_help(page.cursor), x0, top + (float)GFX_LINE_H, 0xFFFFFFFFu, x1 - x0);
+    const char* help = uis_help(page.cursor);
+    char first[96];
+    snprintf(first, sizeof(first), "%s", help);
+    const char* rest = "";
+    if ((float)gfx_text_width(first) > x1 - x0) {
+        size_t n = strlen(first), cut = 0;
+        for (size_t i = 1; i < n; i++) { /* the last space that still leaves the first line inside the width */
+            char keep = first[i];
+            first[i] = '\0';
+            int fits = (float)gfx_text_width(first) <= x1 - x0;
+            first[i] = keep;
+            if (!fits) {
+                break;
+            }
+            if (first[i] == ' ') {
+                cut = i;
+            }
+        }
+        if (cut == 0) {
+            cut = n; /* no space to break at: the whole text on one line, cut below */
+        }
+        rest = help + cut + (cut < n ? 1 : 0);
+        first[cut] = '\0';
+    }
+    text_fitted(first, x0, y0, 0xFFFFFFFFu, x1 - x0);
+    if (*rest) {
+        text_fitted(rest, x0, y0 + (float)GFX_LINE_H, 0xFFFFFFFFu, x1 - x0);
+    }
 }
 
 static void

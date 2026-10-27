@@ -22,6 +22,12 @@ extern "C" {
 #define BPAGE_ICON_BIOS(i) (i)        /* 0 language, 1 date/time, 2 sound, 3 other */
 #define BPAGE_ICON_DIGIT(d) (10 + (d)) /* 3D digit model, until real icons exist */
 
+/* Where the text goes (pixels), copied from the original Settings screen (photo of the console): the label is centred between the icon
+ * (which ends at x 100) and the value pill, the value starts 10 px inside the pill, left aligned, both centred on the row's height. */
+#define BPAGE_PILL_LEFT_PX 304.0f /* the original's is 256.6; moved right so that a label of 17 characters fits before it */
+#define BPAGE_LABEL_CX_PX ((100.0f + BPAGE_PILL_LEFT_PX) * 0.5f)
+#define BPAGE_VALUE_X_PX (BPAGE_PILL_LEFT_PX + 10.0f) /* the help text starts here too, as in the original */
+
 /* Text object ids of the slot rows. The text of a row is "label\tvalue" (the value in a column of its own). */
 #define BPAGE_TEXT_ID(slot) (0x1407 + (slot))
 #define BPAGE_LABEL_MAX 96 /* room for a text line: label, tab, value */
