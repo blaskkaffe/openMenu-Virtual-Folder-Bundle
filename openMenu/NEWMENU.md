@@ -119,8 +119,9 @@ in a row is the original's size (icon, 45 px high value pill), measured on the B
 together than the original's 78 px, and the value pill starts at x 304 instead of 256 (it ends at 615 as the original) so that a label of up to
 17 characters does not run into it. Text as in the photo: the label is centred between the icon (ends at x 100) and the pill, the value is left aligned 10 px inside the pill (x 314), both centred on the row's height. The big box has the row bar's large rounded left end and small right corners. Under the box, where the original's help box is (x 187..622,
 y 340..434, the original's distance to the BACK marker; its corners are the help box's small ones, `small_left` in `bios_scene`), a second, separate bar holds the information about the selected row and nothing else: the
-group and the row number, and the help line, in the menu font at its own size, written by `ui_bios.c` (`draw_settings_info`, cut with
-".." if it would not fit; about 36 characters fit). The original's help box (model 34, which has the purple square) is not used.
+help line, as in the original: it starts where the values do (x 314), 9 px below the top of the bar, in the menu font at its own size, written
+by `ui_bios.c` (`draw_settings_info`; a longer text goes on a second line, cut with ".." only if that is too long as well). The original's
+help box (model 34, which is the purple square) is not used.
 When rows are out of sight the BIOS date editor's green arrows (scripts 0x3d / 0x3e) show at the top and bottom of the box, in the margin to its right (x 631, not over the box); a green scroll bar thumb (`bpage_scroll_thumb_px`, the arrows' colour, as wide as the arrow halfway up its
 height) moves between them with the cursor. The full list of rows and their lengths: `SETTINGS_LIST.md`. Icons are the digit models 0-9 until real ones exist. Rows with more than two values open a popup list;
 two-value rows toggle. Groups in order: BIOS (language, sound, auto start), Clock and date (date and time, clock format, memory card clock,
