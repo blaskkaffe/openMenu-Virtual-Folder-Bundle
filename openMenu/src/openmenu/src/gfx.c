@@ -39,7 +39,7 @@
 
 /* Settings page text lines (bios_page): left aligned, label then a value column */
 #define PAGE_TEXT_PAD 10.0f
-#define PAGE_VALUE_X 250.0f
+#define PAGE_VALUE_X 216.0f
 #define BG_Z 0.001f /* 1/w of the gradient quad: behind everything (the clouds are at ~0.0026) */
 #define TEXT_Z_BIAS 0.00002f
 

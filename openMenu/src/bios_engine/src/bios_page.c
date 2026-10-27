@@ -13,13 +13,20 @@
 #define ANCHOR_X 1.95f
 #define ICON_X (-21.65f)
 #define ICON_Z (ROW_Z + 2.5f)
-#define PILL_X 9.32f
 #define PILL_SCALE 0.859375f
+#define PILL_LEFT_UNIT (-17.5f) /* model 33's x extent -17.5 .. 19.4 */
+#define PILL_CAP_L (-17.1f)     /* its rounded ends (bios_list.c): the middle between them is shortened */
+#define PILL_CAP_R 19.0f
+#define PILL_WIDTH_UNIT 36.9f
+/* The value pill is the original's, shortened from the left: it starts at x 304, where the longest label (17 characters at about
+ * 10.7 px from x 110) ends, and keeps the original's right end (x 615). The value starts 12 px inside it. */
+#define PILL_LEFT_PX 304.0f
+#define PILL_RIGHT_PX 615.0f
 #define TEXT_X 4.58f /* centre of the 512 px text surface: its left edge is 10 px (PAGE_TEXT_PAD) left of where the label starts */
 #define BAR_H_PX 53.0f /* height of the row bar model at scale 0.8671875 */
 #define BAR_SCALE 0.8671875f
 #define BAR_LEFT_UNIT (-30.75003f) /* leftmost x of the row bar model */
-#define BAR_WIDTH_UNIT 59.0f
+#define BAR_WIDTH_UNIT 59.25f /* x -30.75 .. 28.5 */
 #define BAR_CAP_L (-28.0f) /* the rounded ends of the bar (bios_list.c): the middle between them can be shortened */
 #define BAR_CAP_R 27.5f
 /* the two boxes, in pixels */
@@ -27,12 +34,14 @@
 #define BOX_PAD_PX 7.0f
 #define ROW_PITCH_PX 54.0f
 #define BOX_BOTTOM_PX (BOX_TOP_PX + 2.0f * BOX_PAD_PX + (float)BPAGE_SLOTS * ROW_PITCH_PX)
-#define INFO_LEFT_PX 165.0f /* right of the BACK marker (x 90..150), under the rows, as the original's help box */
-#define INFO_RIGHT_PX 620.0f
+/* the original's help box (model 42): x -15.76 .. 28.5 on the fourth row's anchor, down to y -12.31, corner radius 1.0, so the same
+ * distance to the BACK marker (x 90..150, y 373..433) as the original */
+#define INFO_LEFT_PX 187.4f
+#define INFO_RIGHT_PX 621.8f
 #define INFO_TOP_PX 340.0f
-#define INFO_BOTTOM_PX 432.0f
-#define INFO_PAD_L_PX 30.0f /* the bar's rounded ends */
-#define INFO_PAD_R_PX 24.0f
+#define INFO_BOTTOM_PX 433.8f
+#define INFO_PAD_L_PX 14.0f
+#define INFO_PAD_R_PX 14.0f
 #define ARROW_SCALE 0.6f
 #define ARROW_X_PX 590.0f /* over the pill's right end, on the first / last row */
 
@@ -190,7 +199,7 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
         int sel = on && row == p->cursor && !p->back_selected;
         float y = row_y(s);
         if (pill) {
-            set_pos(pill, PILL_X, y, ROW_Z + 0.78f);
+            set_pos(pill, (PILL_LEFT_PX - 320.0f) / PX_PER_UNIT - PILL_LEFT_UNIT * PILL_SCALE, y, ROW_Z + 0.78f);
             pill->scale_tw[0].cur = pill->scale_tw[2].cur = PILL_SCALE;
             pill->scale_tw[1].cur = PILL_SCALE;
             pill->var[1] = sel;
@@ -261,6 +270,26 @@ bpage_info_rect_px(float* x0, float* y0, float* x1, float* y1) {
     *y1 = INFO_BOTTOM_PX;
 }
 
+int
+bpage_scroll_thumb_px(const bpage* p, float* x, float* y, float* w, float* h) {
+    if (p->count <= BPAGE_SLOTS) {
+        return 0;
+    }
+    /* between the arrows (their centres are on the first and last row), clear of their size (13.6 px at ARROW_SCALE) */
+    float arrow = 2.0f * ARROW_SCALE * PX_PER_UNIT;
+    float top = 240.0f - row_y(0) * PX_PER_UNIT + arrow * 0.5f + 4.0f;
+    float bottom = 240.0f - row_y(BPAGE_SLOTS - 1) * PX_PER_UNIT - arrow * 0.5f - 4.0f;
+    float len = bottom - top;
+    float th = len * (float)BPAGE_SLOTS / (float)p->count;
+    th = th < 14.0f ? 14.0f : (th > len * 0.5f ? len * 0.5f : th);
+    float at = p->count > 1 ? (float)p->cursor / (float)(p->count - 1) : 0.0f;
+    *w = arrow * 0.5f; /* the arrow's width halfway up its height */
+    *x = ARROW_X_PX - *w * 0.5f;
+    *h = th;
+    *y = top + (len - th) * at;
+    return 1;
+}
+
 /* the extra height of a bar of `height_px` pixels over the model's own, per side, in model units (bios_scene's stretch_yd) */
 static float
 grow_units(float height_px) {
@@ -279,7 +308,14 @@ bpage_draw(bpage* p, const bscene_sink* sink) {
             const bvm_obj* o = &m->vm.objs[m->vm.order[i]];
             /* grow the bars along y without squeezing their corners (as the game list's box) */
             m->scene.stretch_yc = m->scene.stretch_yd = m->scene.stretch_yx = 0.0f;
-            m->scene.stretch_on = o->id == ID_INFO; /* the information bar is shorter than the rows' */
+            m->scene.stretch_on = o->id == ID_INFO || (o->id >= ID_PILL(0) && o->id < ID_PILL(BPAGE_SLOTS)); /* both are shorter than the original's */
+            m->scene.small_left = o->id == ID_INFO; /* the information box has the help box's small corners all round */
+            if (m->scene.stretch_on && o->id != ID_INFO) {
+                float want = (PILL_RIGHT_PX - PILL_LEFT_PX) / (PX_PER_UNIT * PILL_SCALE);
+                m->scene.stretch_a = PILL_CAP_L;
+                m->scene.stretch_b = PILL_CAP_R;
+                m->scene.stretch_f = (PILL_CAP_R - PILL_CAP_L - (PILL_WIDTH_UNIT - want)) / (PILL_CAP_R - PILL_CAP_L);
+            }
             if (o->id == ID_INFO) {
                 float want = (INFO_RIGHT_PX - INFO_LEFT_PX) / (PX_PER_UNIT * BAR_SCALE); /* model units */
                 m->scene.stretch_a = BAR_CAP_L;
@@ -296,6 +332,7 @@ bpage_draw(bpage* p, const bscene_sink* sink) {
     }
     m->scene.stretch_yc = m->scene.stretch_yd = m->scene.stretch_yx = 0.0f;
     m->scene.stretch_on = 0;
+    m->scene.small_left = 0;
     m->scene.parts = BSCENE_PART_ALL;
 }
 

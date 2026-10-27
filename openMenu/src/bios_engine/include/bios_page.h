@@ -70,6 +70,11 @@ int bpage_row_in_slot(const bpage* p, int slot);
 /* The slot whose bar is under a point (pixels), -1 if none. */
 int bpage_slot_at_px(const bpage* p, float x, float y);
 
+/* The scroll bar's thumb (pixels): a green rectangle as wide as the arrows are halfway up, moving between them as the cursor goes
+ * down the list. Returns 0 when everything fits (no scroll bar). Draw it in the arrows' colour BPAGE_THUMB_ARGB over the pills. */
+#define BPAGE_THUMB_ARGB 0xFF629B6Eu
+int bpage_scroll_thumb_px(const bpage* p, float* x, float* y, float* w, float* h);
+
 /* The rectangle (pixels) inside the information bar that the caller's text must stay within: x0, y0, x1, y1. */
 void bpage_info_rect_px(float* x0, float* y0, float* x1, float* y1);
 

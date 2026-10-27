@@ -91,6 +91,9 @@ typedef struct bscene {
      * Points in the band that lie within 0.2 of the leftmost x yx are put on x = yx: a straight edge
      * (the row bar's rounded end has its apex a hair further out than the points next to it). */
     float stretch_yc, stretch_yd, stretch_yx;
+    /* Give the row bar (model 41) small corners on its left end too, the radius of its right end (the BIOS help box has
+     * them on all four): the rounded cap's 13 outline points move onto a flat edge with two corner arcs. */
+    int small_left;
     int no_decals; /* skip the polygons of texture 0: the pictures on the CD buttons */
     /* window panel mode (see bscene_draw_panel): the four corners of model 39 are moved apart */
     int panel_on;

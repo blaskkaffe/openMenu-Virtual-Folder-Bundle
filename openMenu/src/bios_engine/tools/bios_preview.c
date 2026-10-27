@@ -397,7 +397,7 @@ draw_label_text(const bvm_obj* o, float x, float y, int x0, int y0) {
         blit_text(l->a, (int)(x - (float)btext_width(l->a) / 2.0f), (int)(y - 13.0f), 0xFFFFFF);
     } else if (o->id >= BPAGE_TEXT_ID(0) && o->id < BPAGE_TEXT_ID(BPAGE_SLOTS)) { /* "label" and the value 250 px further */
         blit_text(l->a, x0 + 10, y0, 0xFFFFFF);
-        blit_text(l->b, x0 + 250, y0, 0xFFFFFF);
+        blit_text(l->b, x0 + 216, y0, 0xFFFFFF);
     } else if (o->id >= BLIST_TEXT_ID(0) && o->id < BLIST_TEXT_ID(BLIST_MAX_SLOTS)) { /* a game list row: left aligned */
         blit_text(l->a, x0, y0, 0xFFFFFF);
     } else {
@@ -1024,6 +1024,16 @@ main(int argc, char** argv) {
     } else if (script == -2) {
         bscene_draw_background(&menu.bg, &sink);
         bpage_draw(&page, &sink);
+        {   /* the scroll bar's thumb, as ui_bios draws it */
+            float tx, ty, tw, th;
+            if (g_autosort) frag_resolve();
+            if (bpage_scroll_thumb_px(&page, &tx, &ty, &tw, &th)) {
+                for (int yy = (int)ty; yy < (int)(ty + th); yy++)
+                    for (int xx = (int)tx; xx < (int)(tx + tw); xx++) {
+                        fb[yy][xx][0] = 0x62 / 255.0f; fb[yy][xx][1] = 0x9B / 255.0f; fb[yy][xx][2] = 0x6E / 255.0f;
+                    }
+            }
+        }
     } else if (script == -13) {
         bscene_draw_background(&menu.bg, &sink);
         bcd_draw(&cdp, &sink);

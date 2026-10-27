@@ -115,13 +115,15 @@ browser is opened after start-up. Later: genre filter (needs better genre data),
 
 Built from the game list's pieces (`bios_engine/bios_page`): one tall box (the row bar model grown along y, corners keep their
 radius), the width of the original Settings rows (x 40..619), holding `BPAGE_SLOTS` = 5 rows (48-332 px, pitch 54 px). Everything
-in a row is the original's size (icon, 45 px value pill at x 256..615, label from x 110, value from x 351), measured on the BIOS
-screen; only the rows are closer together than the original's 78 px. Under the box, where the original's help box is (x 165..620,
-y 340..432, right of the BACK marker), a second, separate bar holds the information about the selected row and nothing else: the
+in a row is the original's size (icon, 45 px high value pill, label from x 110), measured on the BIOS screen; only the rows are closer
+together than the original's 78 px, and the value pill starts at x 304 instead of 256 (it ends at 615 as the original) so that a label of up to
+17 characters does not run into it; the value starts at x 316. The big box has the row bar's large rounded left end and small right corners. Under the box, where the original's help box is (x 187..622,
+y 340..434, the original's distance to the BACK marker; its corners are the help box's small ones, `small_left` in `bios_scene`), a second, separate bar holds the information about the selected row and nothing else: the
 group and the row number, and the help line, in the menu font at its own size, written by `ui_bios.c` (`draw_settings_info`, cut with
 ".." if it would not fit; about 36 characters fit). The original's help box (model 34, which has the purple square) is not used.
 When rows are out of sight the BIOS date editor's green arrows (scripts 0x3d / 0x3e) show over the right end of the first (rows
-above) and last (rows below) pill. Icons are the digit models 0-9 until real ones exist. Rows with more than two values open a popup list;
+above) and last (rows below) pill, and a green scroll bar thumb (`bpage_scroll_thumb_px`, the arrows' colour, as wide as the arrow halfway up its
+height) moves between them with the cursor. The full list of rows and their lengths: `SETTINGS_LIST.md`. Icons are the digit models 0-9 until real ones exist. Rows with more than two values open a popup list;
 two-value rows toggle. Groups in order: BIOS (language, sound, auto start), Clock and date (date and time, clock format, memory card clock,
 clock extender, VMU time sync, Online time sync), Display (aspect ratio, background colour, dark mode), Game list, Starting games, System,
 Internet (Online features; the refresh, VMU status and Online time sync rows are also on the Internet screen's Settings page), Other.

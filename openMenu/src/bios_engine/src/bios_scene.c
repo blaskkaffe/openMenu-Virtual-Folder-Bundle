@@ -135,6 +135,7 @@ typedef struct {
     int stretch_on;
     float stretch_a, stretch_b, stretch_f;
     float stretch_yc, stretch_yd, stretch_yx;
+    int small_left;
     int no_decals, panel_on, fullbright;
     float panel_fx, panel_fy;
     uint32_t panel_accent;
@@ -256,6 +257,7 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* off
     k->stretch_yc = s->stretch_yc;
     k->stretch_yd = s->stretch_yd;
     k->stretch_yx = s->stretch_yx;
+    k->small_left = s->small_left;
     k->no_decals = s->no_decals;
     k->fullbright = s->fullbright;
     if (s->panel_on) {
@@ -677,6 +679,20 @@ draw_model:
                             int q = i / 37;
                             src.x += (q == 1 || q == 2) ? s->panel_fx : -s->panel_fx;
                             src.y += (q == 2 || q == 3) ? s->panel_fy : -s->panel_fy;
+                        }
+                        if (s->small_left && mesh->nverts == 23 && i < 13) { /* model 41: the left cap's outline points */
+                            /* corner arc of radius 1.0 as the right end's (offsets from the corner), then the straight edge */
+                            static const float arc[5][2] = {{0.0f, 0.0f}, {0.38f, 0.08f}, {0.71f, 0.29f}, {0.92f, 0.62f}, {1.0f, 1.0f}};
+                            const float xl = -30.75f, top = 2.75f;
+                            if (i >= 1 && i <= 5) {
+                                src.x = xl + 1.0f - arc[i - 1][0];
+                                src.y = top - arc[i - 1][1];
+                            } else if (i >= 7 && i <= 11) {
+                                src.x = xl + 1.0f - arc[11 - i][0];
+                                src.y = -(top - arc[11 - i][1]);
+                            } else if (i == 6) {
+                                src.x = xl;
+                            }
                         }
                         if (s->stretch_on) {
                             if (src.x > s->stretch_b) {

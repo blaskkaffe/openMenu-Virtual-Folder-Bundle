@@ -1114,6 +1114,12 @@ draw_settings_info(void) {
 static void
 draw_settings(void) {
     bpage_draw(&page, gfx_sink()); /* the green arrows for more rows above / below are part of it */
+    {
+        float tx, ty, tw, th; /* the scroll bar between the arrows */
+        if (bpage_scroll_thumb_px(&page, &tx, &ty, &tw, &th)) {
+            gfx_rect(tx, ty, tw, th, 0.5f, BPAGE_THUMB_ARGB);
+        }
+    }
     draw_settings_info();
     if (about_open) {
         draw_about();
