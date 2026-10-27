@@ -1042,7 +1042,7 @@ static void
 page_row(void* user, int index, bpage_row* out) {
     (void)user;
     int icon = uis_icon(index);
-    out->icon = icon >= 0 ? BPAGE_ICON_BIOS(icon) : BPAGE_ICON_DIGIT(index % 10); /* digits until real icons exist */
+    out->icon = icon >= 0 ? BPAGE_ICON_BIOS(icon) : BPAGE_ICON_DIGIT(index % 10); /* the numbers of UIS_ICON_* are those of BPAGE_ICON_*; digits for rows without an icon yet */
 }
 
 /* Text of the visible rows and of the help box, then the objects themselves. */

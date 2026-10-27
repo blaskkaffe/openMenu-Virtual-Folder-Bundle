@@ -18,9 +18,15 @@ extern "C" {
 
 #define BPAGE_SLOTS 5
 
-/* Row icons: the four BIOS settings icons, or a digit 0-9 as a placeholder. */
-#define BPAGE_ICON_BIOS(i) (i)        /* 0 language, 1 date/time, 2 sound, 3 other */
+/* Row icons: the four BIOS settings icons (with their idle motion), a digit 0-9 as a placeholder, or another of the BIOS's models, or one of
+ * bios_models.h, drawn without motion and scaled to the row. The numbers are also those of UIS_ICON_* in ui_settings.h. */
+#define BPAGE_ICON_BIOS(i) (i)        /* 0 language (lips), 1 date/time (clock), 2 sound (speaker), 3 other (question mark) */
 #define BPAGE_ICON_DIGIT(d) (10 + (d)) /* 3D digit model, until real icons exist */
+#define BPAGE_ICON_VMU 20              /* the memory card / VMU (ROM model 62) */
+#define BPAGE_ICON_PAD 21              /* the controller (ROM model 17) */
+#define BPAGE_ICON_GLOBE 22            /* the globe (built in) */
+#define BPAGE_ICON_PHONE 23            /* the telephone (built in) */
+#define BPAGE_ICON_CASE 24             /* the CD jewel case (built in) */
 
 /* Where the text goes (pixels), copied from the original Settings screen (photo of the console): the label is centred between the icon
  * (which ends at x 100) and the value pill, the value starts 10 px inside the pill, left aligned, both centred on the row's height. */

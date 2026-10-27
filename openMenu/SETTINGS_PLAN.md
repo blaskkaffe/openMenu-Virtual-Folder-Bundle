@@ -128,3 +128,14 @@ Proposal for sorting, to react to (not decided): a first sort by *when you touch
 - Two levels, but some settings may stay in the main box (to be seen).
 - **Clock and date** is one group: Date and time, Clock format, Memory card clock, Clock extender, VMU time sync, Online time sync (built in the
   current list; Online time sync is also on the Internet screen, the same setting shown in two places).
+
+## 8. Icons
+Models the BIOS has that fit (checked on the host with every ROM model 0-119): lips (43), clock (44), speaker (45), question mark (46), the
+memory card / VMU (62-70), the controller (17), the GD-ROM disc (61), the BACK marker (0), and in bios_models.h the globe, the phone and the
+jewel case. Rules set by the owner: time and clock = clock, sound = speaker, memory card / saving = VMU. Where a setting is two things
+("Memory card clock", "VMU time sync": clock and VMU; "VMU beep on save": speaker and VMU) the clock / speaker wins, since that is what the
+setting changes. Suggestions for the rest: Display (aspect ratio, background, dark mode): no screen model exists, build a small TV in
+`bios_models.c` like the phone, or the question mark until then; Game list: the GD-ROM disc (as the list's own discs) or the jewel case;
+Boot animation: the GD-ROM disc; Exit to BIOS: the BACK marker model; Online features and Internet screen rows: the globe (phone for the
+connection / ISP rows later); Card defaults, Performance test, About, Auto start: the question mark (the BIOS's "Other"); mouse and
+controller speeds, when they come: the controller.

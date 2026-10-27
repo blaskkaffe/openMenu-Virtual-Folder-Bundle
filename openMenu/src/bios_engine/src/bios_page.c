@@ -1,10 +1,11 @@
 /* bios_page: see bios_page.h. */
 #include "bios_page.h"
 
+#include "bios_models.h"
+
 #define PRIO 0x1000
 #define PX_PER_UNIT 11.32f /* 4000 / 353.5: pixels per world unit at the rows' depth */
 #define ROW_Z (-353.515625f)
-#define DIGIT_SCALE 0.4f /* the digit models are much larger than the icons */
 
 /* Layout in world units (screen centre = 0,0) and pixels, measured on the original Settings screen: the row bars span x 40..619,
  * the value pill (model 33, unscaled) x 256..615 and 45 px high, the icons are centred on x 75, the labels start at x 110 and the
@@ -70,19 +71,28 @@ row_y(int slot) {
     return (240.0f - centre_px) / PX_PER_UNIT + ((float)(BPAGE_SLOTS - 1) * 0.5f - (float)slot) * ROW_PITCH_PX / PX_PER_UNIT;
 }
 
-/* BIOS icon k: model 43+k with motion 14+k. Digit d: model 21+d (no motion). */
+/* The model of an icon, its motion (0: none) and the scale that makes it as big as the BIOS icons (about 40 px): BIOS icon k is model 43+k with
+ * motion 14+k at 0.9375, a digit d model 21+d. The other models differ in size, so each has its own scale. */
 static void
-icon_model(int icon, uint16_t* model, uint16_t* motion, int* has_motion) {
+icon_model(int icon, uint16_t* model, uint16_t* motion, float* scale) {
+    *motion = 0;
     if (icon >= 10 && icon <= 19) {
         *model = (uint16_t)(21 + icon - 10);
-        *motion = 0;
-        *has_motion = 0;
-    } else {
-        int k = icon < 0 || icon > 3 ? 3 : icon;
-        *model = (uint16_t)(43 + k);
-        *motion = (uint16_t)(14 + k);
-        *has_motion = 1;
+        *scale = 0.4f;
+        return;
     }
+    switch (icon) {
+        case BPAGE_ICON_VMU: *model = 62; *scale = 0.31f; return;
+        case BPAGE_ICON_PAD: *model = 17; *scale = 0.55f; return;
+        case BPAGE_ICON_GLOBE: *model = BMODEL_GLOBE; *scale = 0.4f; return;
+        case BPAGE_ICON_PHONE: *model = BMODEL_PHONE; *scale = 0.42f; return;
+        case BPAGE_ICON_CASE: *model = BMODEL_CASE_WHITE; *scale = 0.38f; return;
+        default: break;
+    }
+    int k = icon < 0 || icon > 3 ? 3 : icon;
+    *model = (uint16_t)(43 + k);
+    *motion = (uint16_t)(14 + k);
+    *scale = 0.9375f;
 }
 
 static void
@@ -213,15 +223,17 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
                 set_pos(icon, ICON_X, y, ICON_Z);
                 if (row_fn) {
                     bpage_row r = {0};
-                    int has_motion;
+                    float scale;
                     row_fn(user, row, &r);
-                    icon_model(r.icon, &icon->model, &icon->motion, &has_motion);
+                    icon_model(r.icon, &icon->model, &icon->motion, &scale);
                     icon->texlist = icon->model;
                     for (int a = 0; a < 3; a++) {
-                        icon->scale_tw[a].cur = has_motion ? 0.9375f : DIGIT_SCALE; /* as the original */
+                        icon->scale_tw[a].cur = scale; /* the BIOS icons at the original's size */
                     }
-                    if (!has_motion) {
+                    if (!icon->motion) {
                         icon->flags &= ~(uint32_t)BVM_F_MOTION;
+                    } else {
+                        icon->flags |= BVM_F_MOTION; /* a row that showed a model without motion before */
                     }
                 }
             }

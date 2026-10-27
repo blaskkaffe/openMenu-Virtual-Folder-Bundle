@@ -534,7 +534,15 @@ demo_fill(const bios_rom* rom) {
 static void
 demo_row(void* user, int index, bpage_row* out) {
     (void)user;
-    out->icon = index < 4 ? BPAGE_ICON_BIOS(index) : BPAGE_ICON_DIGIT(index - 4);
+    static int env_icons[16], env_n = -1; /* BIOS_PREVIEW_ICONS="1,2,20,...": the icon of each row */
+    if (env_n < 0) {
+        env_n = 0;
+        for (const char* e = getenv("BIOS_PREVIEW_ICONS"); e && *e && env_n < 16;) {
+            env_icons[env_n++] = atoi(e);
+            e = strchr(e, ',') ? strchr(e, ',') + 1 : NULL;
+        }
+    }
+    out->icon = index < env_n ? env_icons[index] : index < 4 ? BPAGE_ICON_BIOS(index) : BPAGE_ICON_DIGIT(index - 4);
 }
 
 static double bench_area, bench_tris, bench_tex_area, bench_vtx_count;
