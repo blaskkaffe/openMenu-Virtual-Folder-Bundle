@@ -110,6 +110,8 @@ exchange(int fd, const struct sockaddr_in* addr, time_t* utc) {
 
 static void*
 sync_main(void* param) {
+    (void)param;
+    thd_set_prio(thd_get_current(), PRIO_DEFAULT + 4); /* below the menu: a connection or a fetch never takes the frame's time */
     struct sockaddr_in addr;
     time_t utc = 0;
     int fd;

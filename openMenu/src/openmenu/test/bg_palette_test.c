@@ -26,6 +26,13 @@ main(void) {
         bg_palette_apply(i, 1, &t, &b);
         CHECK((t >> 24) == 0xFF && (b & 0xFF) <= 0x60);
     }
+    CHECK(bg_palette_wave_tint(0, 0) == 0xFFFFFFu);
+    CHECK(bg_palette_wave_tint(0, 1) == 0x5F5F5Fu); /* 255 * 3 / 8 */
+    {
+        uint32_t g = bg_palette_wave_tint(1, 0); /* green: the green channel is the largest */
+        CHECK(((g >> 8) & 0xFF) == 255 && ((g >> 16) & 0xFF) < 255 && (g & 0xFF) < 255);
+    }
+    CHECK(bg_palette_bar_dark() >> 24 == 0xFF);
     printf(failures ? "%d failures\n" : "bg_palette ok\n", failures);
     return failures != 0;
 }

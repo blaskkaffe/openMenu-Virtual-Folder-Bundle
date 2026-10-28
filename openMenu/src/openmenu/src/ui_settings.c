@@ -246,6 +246,17 @@ uis_background(uint32_t* top, uint32_t* bottom) {
     bg_palette_apply((int)((f & FORK_BG_MASK) >> FORK_BG_SHIFT), (f & FORK_FLAG_DARK) != 0, top, bottom);
 }
 
+int
+uis_dark(void) {
+    return (favorites_flags() & FORK_FLAG_DARK) != 0;
+}
+
+uint32_t
+uis_wave_tint(void) {
+    unsigned f = favorites_flags();
+    return bg_palette_wave_tint((int)((f & FORK_BG_MASK) >> FORK_BG_SHIFT), (f & FORK_FLAG_DARK) != 0);
+}
+
 const char*
 uis_value(int row) {
     static char date[24];

@@ -649,6 +649,7 @@ run_fetch(void) {
 static void*
 fetch_main(void* param) {
     (void)param;
+    thd_set_prio(thd_get_current(), PRIO_DEFAULT + 4); /* below the menu: a connection or a fetch never takes the frame's time */
     run_fetch();
     return NULL;
 }

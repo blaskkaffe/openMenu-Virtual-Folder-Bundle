@@ -9,7 +9,7 @@ it rewrites that file. Both are what this branch uses.
 1. In the Card Manager's folder, open `tools/openMenu/menu_data` (on macOS, `DEFAULTS.INI` lives in the Card Manager's
    Application Support folder instead).
 2. Replace `1ST_READ.BIN` with this branch's build (the CI artifact `1ST_READ.BIN`). Keep a copy of Derek's to go back.
-3. `NOWO.PVR`, `NOWB.PVR` and `CNET.PVR` (the letters of the online header logos) belong there too; they are in the Card Manager's `menu_data` folder already.
+3. The letters of the online header logos are inside the program now: no extra files.
    Optional: put a `LOGO.PVR` there for your own header logo (`tools/bios-logo/biologo.py convert logo.png LOGO.PVR`).
 4. Optional: add a `[BIOSMENU]` section to `DEFAULTS.INI` (below).
 5. Save the card as usual. Updating openMenu from inside the Card Manager puts Derek's `1ST_READ.BIN` back: repeat step 2.

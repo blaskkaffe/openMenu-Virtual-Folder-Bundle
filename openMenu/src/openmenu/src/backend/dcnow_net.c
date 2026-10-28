@@ -786,6 +786,7 @@ run_lost(void) {
 static void*
 worker_main(void* param) {
     (void)param;
+    thd_set_prio(thd_get_current(), PRIO_DEFAULT + 4); /* below the menu: a connection or a fetch never takes the frame's time */
     switch (worker_job) {
         case JOB_HANGUP: run_hangup(); break;
         case JOB_AUTOSTART: run_autostart(); break;
