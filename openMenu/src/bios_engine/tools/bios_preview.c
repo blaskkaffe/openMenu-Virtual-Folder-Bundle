@@ -35,6 +35,7 @@
 #include "bios_surface.h"
 #include "bios_filescr.h"
 #include "bios_text.h"
+#include "bg_palette.h"
 
 #define W 640
 #define H 480
@@ -661,6 +662,13 @@ main(int argc, char** argv) {
     static bdt dt;
     bmenu_init(&menu, &rom, NULL);
     bsurf_init(&rom);
+    /* BIOS_PREVIEW_BG=<palette index> and BIOS_PREVIEW_DARK=1 as the Settings rows (needs bg_palette.c in the build) */
+    int pv_bg = getenv("BIOS_PREVIEW_BG") ? atoi(getenv("BIOS_PREVIEW_BG")) : 0, pv_dark = getenv("BIOS_PREVIEW_DARK") != NULL;
+    bscene_set_background_tint(bg_palette_wave_tint(pv_bg, pv_dark));
+    if (pv_dark) {
+        menu.scene.header_bar_argb = bg_palette_bar_dark();
+        bsurf_clock_light(1);
+    }
     { /* the header clock as ui_bios prints it (fx_debug_hex_text) */
         bsurf* hs = bsurf_get(BMENU_ID_HEADER, 256, 32);
         bsurf_clock_text(hs, 40, 16, "10/10/2026 10:27");
@@ -840,6 +848,7 @@ main(int argc, char** argv) {
     }
     uint32_t top, bottom;
     dcbg_gradient(&menu.bg, &top, &bottom);
+    bg_palette_apply(pv_bg, pv_dark, &top, &bottom);
     if (getenv("BIOS_PREVIEW_FLAT")) { /* flat grey, no cloud layers: for comparing the models with a reference render */
         top = bottom = 0xFF808080u;
         menu.bg.swirl.cols = menu.bg.water.cols = 0;

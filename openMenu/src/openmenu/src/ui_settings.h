@@ -72,3 +72,6 @@ int uis_apply_card_defaults(void);
 
 /* The menu background: the BIOS gradient (top and bottom, ARGB) changed by the Background and Dark mode rows. */
 void uis_background(uint32_t* top, uint32_t* bottom);
+/* Dark mode and the colour of the background's waves (see bg_palette.h): the header bar turns dark grey, the clock white. */
+int uis_dark(void);
+uint32_t uis_wave_tint(void);

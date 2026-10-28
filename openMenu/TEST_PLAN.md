@@ -76,7 +76,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 - [ ] Above the clock, same font: a lamp (grey off, yellow connecting, green online, red failed) and, once the list is in, "DCNow! n DCNet n".
       Nothing with Online features Off. Right-aligned to the clock, not clipped with 3-digit counts.
 - [ ] Logo, offline: the normal BIOS logo (PAL console: blue swirl). With your own LOGO.PVR nothing changes in any state.
-- [ ] While connecting the swirl turns about its own centre, once in about 1.2 s, wordmark still; it starts with the dial and stops on connect/fail.
+- [ ] While connecting the logo stays the normal one (no turning swirl).
 - [ ] Online on Dreamcast Now!: "Now!" in the swirl's colour right after "Dreamcast" (not overlapping the clock, not cut off).
 - [ ] Online through a DreamPi with DCNET selected: the swirl with "DCNET" over the wordmark's place, same size and baseline as "Dreamcast".
       "Now!" shows right away, also without the DreamPi add-on; with it the logo changes to "DCNET" when the add-on reports that network.
@@ -154,7 +154,7 @@ recognised without a DreamPi (a setting Auto / DCNow! / DCNET, or a test of the 
 Check the log: `OM logo: NOWO n NOWB n CNET n` (are the three .PVR files on the disc image?) and `OM logo: mode m (shown, state, network, ...)`
 (state must be 2 = online for mode 1; the setting Online features must not be Off).
 
-Freeze on B while connecting or loading online data (not offline): the main screen is drawn with a logo mode then (3 = swirl turning, 1 = Now!), code
+Freeze on B while connecting or loading online data (not offline): the main screen is drawn with a logo mode then (1 = Now!), code
 that is new on this branch. A test build with `-DOM_NO_LOGO_MODES` keeps the logo plain. If the freeze is gone with it, the logo code (gfx.c:
 build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the connection or fetch threads (the `OM B:` and `OM logo:` lines say which).
 

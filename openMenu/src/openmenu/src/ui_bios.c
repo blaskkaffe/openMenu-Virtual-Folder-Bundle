@@ -165,23 +165,21 @@ static dbglog_sample last_sample;
 static char status_line[64];
 static char logo_line[64]; /* logo mode, link state and the .PVR files, in the X debug overlay */
 
-/* The logo at the left of the bar follows the connection: the plain logo, the swirl turning while connecting, "Now!" behind it on
- * Dreamcast Now!, "DCNET" on DCNET. Every frame, so the turning starts when the dial does. */
+/* The logo at the left of the bar follows the connection: the plain logo, "Now!" behind it on Dreamcast Now!, "DCNET" on DCNET.
+ * While connecting, and while a DreamPi has not yet said which network it has, it stays the plain logo. Every frame. */
 static void
 update_logo_mode(void) {
     online_header oh;
     online_header_get(&oh);
-    int mode = !oh.shown ? 0 : oh.state == 1 ? 3 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1;
-#ifdef OM_NO_LOGO_MODES /* test build: the header logo never changes, to see whether the freeze on B while online comes from it */
+    int mode = !oh.shown ? 0 : oh.state != 2 || oh.pi_pending ? 0 : oh.network == 2 ? 2 : 1;
+#ifdef OM_NO_LOGO_MODES /* test build: the header logo never changes */
     mode = 0;
 #endif
     static int last_mode = -1;
     if (mode != last_mode) { /* why the logo is what it is: shown, link state (0 none 1 connecting 2 online 3 failed), DreamPi network */
-        printf("OM logo: mode %d (shown %d, state %d, network %d)\n", mode, oh.shown, oh.state, oh.network);
+        printf("OM logo: mode %d (shown %d, state %d, network %d, pi_pending %d)\n", mode, oh.shown, oh.state, oh.network, oh.pi_pending);
         last_mode = mode;
     }
-    snprintf(logo_line, sizeof(logo_line), "logo %d  shown %d state %d net %d  PVR %d", mode, oh.shown, oh.state, oh.network,
-             gfx_logo_texts_loaded());
     gfx_set_logo_mode(mode);
 }
 
@@ -204,12 +202,14 @@ update_clock(void) {
         snprintf(counts, sizeof(counts), "DCNow! %d DCNet %d", oh.dcnow, oh.dcnet);
     }
     char key[64];
-    snprintf(key, sizeof(key), "%s|%s", text, counts);
+    int dark = uis_dark();
+    snprintf(key, sizeof(key), "%s|%s|%d", text, counts, dark);
     static char shown[64];
     static uint32_t shown_serial;
     bsurf* s = bsurf_get(BMENU_ID_HEADER, 256, 32);
     if (s && (strcmp(shown, key) != 0 || s->serial != shown_serial)) {
         bsurf_clear(s);
+        bsurf_clock_light(dark); /* white on the dark bar */
         bsurf_clock_text(s, 40, 16, text);
         if (counts[0]) {
             int text_w = (int)strlen(counts) * 11;
@@ -1348,6 +1348,11 @@ draw_frame(void) {
     gfx_set_aspect(sf_aspect[0] == ASPECT_WIDE);
     dcbg_gradient(&menu.bg, &top, &bottom);
     uis_background(&top, &bottom);
+    bscene_set_background_tint(uis_wave_tint());
+    gfx_set_dark(uis_dark());
+    if (uis_dark() != (menu.scene.header_bar_argb != 0)) { /* the cached header drawing has this in its key */
+        menu.scene.header_bar_argb = uis_dark() ? bg_palette_bar_dark() : 0;
+    }
     {
         uint32_t border = blend_color(START_COLOR, 0xFF000000u, fade_step < 0 ? 0 : fade_step);
         vid_border_color((int)((border >> 16) & 0xFF), (int)((border >> 8) & 0xFF), (int)(border & 0xFF));

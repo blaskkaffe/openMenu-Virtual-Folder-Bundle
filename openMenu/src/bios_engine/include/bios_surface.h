@@ -52,6 +52,8 @@ void bsurf_tiny_number(bsurf* s, int x, int y, int value, int width);
 /* FUN_8C021E60: the date and time of the header bar in its own small font: 16x16 glyphs with 16 levels of alpha
  * (0x8C071AB0), black, 11 pixels apart. Draws digits, ' ', '.', '/' and ':'. */
 void bsurf_clock_text(bsurf* s, int x, int y, const char* str);
+/* The clock text is black by default; on 1 it is white (dark mode, where the header bar is dark grey). Takes effect with the next text drawn. */
+void bsurf_clock_light(int light);
 
 /* A wide (JIS) glyph, e.g. 0x2222 / 0x2223, the empty and the filled box. */
 void bsurf_jis(bsurf* s, int x, int y, unsigned jis);

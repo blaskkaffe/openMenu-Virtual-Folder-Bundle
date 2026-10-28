@@ -71,8 +71,7 @@ logo is used. `tools/bios-logo/biologo.py` makes the file: `convert logo.png LOG
 (any PNG, scaled to 128x32, transparency kept) and `extract dc_boot.bin logo.png` saves the
 BIOS logo as a starting point. `BIOS_PREVIEW_LOGO=LOGO.PVR bios_preview ...` shows it on a PC.
 A fully transparent picture hides the logo.
-Online modes (not with a `LOGO.PVR` of your own): while connecting the swirl turns (a turn in 72 frames, the wordmark stays; the swirl is
-drawn as its own rotated quad by `gfx_logo_badge`); once connected the swirl stops and the logo changes to the one for the network. The logo does not wait for the DreamPi add-on: it shows "Now!" at once and changes to "DCNET" only if the add-on reports that network. Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
+Online modes (not with a `LOGO.PVR` of your own): the logo stays plain while connecting (a turning swirl was tried and taken out); once connected it changes to the one for the network. The logo does not wait for the DreamPi add-on: it shows "Now!" at once and changes to "DCNET" only if the add-on reports that network. Connected to Dreamcast Now! the BIOS logo gets "Now!" behind it in the swirl's colour (orange, blue on PAL)
 (`gfx_logo_badge`); connected through a DreamPi that has DCNET selected the wordmark is replaced by "DCNET" next to the swirl
 (`gfx_set_logo_mode`, a 128x32 picture built from the ROM's logo, so a PAL console keeps its blue swirl). The letters are three small .PVR files (64x32) on the menu disc next to LOGO.PVR: `NOWO.PVR` (orange) and `NOWB.PVR` (blue) "Now!", picked by the swirl's hue, and `CNET.PVR` (grey). The soft edges are baked in (an edge pixel is lighter than the bar, as in the BIOS logo) and they are drawn untinted. They hold
 nothing of the BIOS logo: "Now!" is simply drawn after the logo, and for DCNET the menu crops the ROM's logo to the swirl and its own D while it runs

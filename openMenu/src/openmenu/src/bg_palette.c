@@ -35,3 +35,28 @@ bg_palette_apply(int index, int dark, uint32_t* top, uint32_t* bottom) {
         *bottom = dim(*bottom);
     }
 }
+
+uint32_t
+bg_palette_wave_tint(int index, int dark) {
+    uint32_t r = 255, g = 255, b = 255;
+    if (index > 0 && index < BG_PALETTE_COUNT) {
+        /* the BIOS gradient ends in 0x4060C0: the ratio of each channel of the new colour to it, the largest channel brought to full */
+        uint32_t bot = palette[index].bottom;
+        float fr = (float)((bot >> 16) & 0xFF) / 64.0f, fg = (float)((bot >> 8) & 0xFF) / 96.0f, fb = (float)(bot & 0xFF) / 192.0f;
+        float mx = fr > fg ? (fr > fb ? fr : fb) : (fg > fb ? fg : fb);
+        r = (uint32_t)(255.0f * fr / mx);
+        g = (uint32_t)(255.0f * fg / mx);
+        b = (uint32_t)(255.0f * fb / mx);
+    }
+    if (dark) {
+        r = r * 3 / 8;
+        g = g * 3 / 8;
+        b = b * 3 / 8;
+    }
+    return r << 16 | g << 8 | b;
+}
+
+uint32_t
+bg_palette_bar_dark(void) {
+    return 0xFF3C3C40u;
+}

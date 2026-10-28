@@ -123,6 +123,7 @@ bscene_project(nj_vec3 p, float* sx, float* sy, float* invw) {
 #define CACHE_VERTS 12288 /* vertices of the kept strips */
 #define CACHE_RUNS 2048   /* kept strips */
 #define CACHE_ENTRIES 128
+#define HEADER_MODEL 7 /* the header bar (BMENU_HEADER_MODEL) */
 
 typedef struct {
     uint32_t flags;
@@ -139,6 +140,7 @@ typedef struct {
     int no_decals, panel_on, fullbright;
     float panel_fx, panel_fy;
     uint32_t panel_accent;
+    uint32_t header_bar_argb;
     int ovr_n;
     struct {
         int node, poly;
@@ -265,6 +267,9 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* off
         k->panel_fx = s->panel_fx;
         k->panel_fy = s->panel_fy;
         k->panel_accent = s->panel_accent;
+    }
+    if (o->model == HEADER_MODEL) {
+        k->header_bar_argb = s->header_bar_argb;
     }
     for (int i = 0; i < s->ovr_n && i < BSCENE_OVR_MAX; i++) {
         if (s->ovr[i].model == o->model) {
@@ -765,6 +770,10 @@ draw_model:
                             }
                         }
                     }
+                    if (!forced && s->header_bar_argb && o->model == HEADER_MODEL && poly->tex < 0) {
+                        forced_argb = s->header_bar_argb; /* dark mode: the bar's grey */
+                        forced = 1;
+                    }
                     const fcolour mat = material(diffuse, offs);
                     uint32_t poly_argb = poly->has_diffuse ? pack(mat) : 0;
                     if (s->panel_on && p == 0) {
@@ -904,6 +913,24 @@ bscene_draw_objects(bscene* s, const bvm* vm, const bscene_sink* sink) {
     }
 }
 
+static uint32_t background_tint = 0xFFFFFFu;
+
+void
+bscene_set_background_tint(uint32_t rgb) {
+    background_tint = rgb ? (rgb & 0xFFFFFFu) : 0xFFFFFFu;
+}
+
+static uint32_t
+tinted(uint32_t argb) {
+    if (background_tint == 0xFFFFFFu) {
+        return argb;
+    }
+    uint32_t r = ((argb >> 16) & 0xFF) * ((background_tint >> 16) & 0xFF) / 255u;
+    uint32_t g = ((argb >> 8) & 0xFF) * ((background_tint >> 8) & 0xFF) / 255u;
+    uint32_t b = (argb & 0xFF) * (background_tint & 0xFF) / 255u;
+    return (argb & 0xFF000000u) | r << 16 | g << 8 | b;
+}
+
 static void
 draw_mesh(const dcbg_mesh* m, const dcbg_obj* o, const bscene_sink* sink) {
     dcbg_vertex out[(DCBG_MAX_COLS + 1) * (DCBG_MAX_ROWS + 1)];
@@ -927,7 +954,7 @@ draw_mesh(const dcbg_mesh* m, const dcbg_obj* o, const bscene_sink* sink) {
                     v[k].invw = src->invw;
                     v[k].u = src->u;
                     v[k].v = src->v;
-                    v[k].argb = src->argb;
+                    v[k].argb = tinted(src->argb);
                     v[k].oargb = 0;
                 }
                 sink->triangle(sink->user, v, tex);

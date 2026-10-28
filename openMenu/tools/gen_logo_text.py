@@ -135,7 +135,22 @@ def baked_text(mask, width, colour):
     return img
 
 
+def flat_text(mask, width, colour):
+    """The letters for the dark header bar (dark mode): the colour as it is, the coverage as the alpha, so the edges blend into the bar and
+    not into white."""
+    img = Image.new('RGBA', (width, 32), colour + (0,))
+    px = img.load()
+    m = mask.load()
+    for y in range(32):
+        for x in range(mask.size[0]):
+            a = int(round(m[x, y] / 255.0 * 15))
+            if a:
+                px[x, y] = colour + (a * 17,)
+    return img
+
+
 GREY = (68, 68, 68)       # the wordmark's colour
+LIGHT = (205, 205, 208)   # the wordmark's colour on the dark bar
 ORANGE = (238, 68, 0)     # the NTSC swirl
 BLUE = (68, 119, 187)     # the PAL swirl (what the menu's blue swirl comes to)
 
@@ -145,14 +160,16 @@ if __name__ == '__main__':
     # CNET starts 1.5 px right of where the wordmark's D ends (the D's bowl reaches column 44.9; the menu draws CNET.PVR from column 46)
     cnet = render([C, N, E, T], 64, [1.5, 1.5, 1.5, 0], x0=1.2)
     now = render([N, o, w, bang], 64, [1.5, 1.2, 1.4, 0], x0=0.8)
-    pics = {'CNET.PVR': baked_text(cnet, 64, GREY), 'NOWO.PVR': baked_text(now, 64, ORANGE), 'NOWB.PVR': baked_text(now, 64, BLUE)}
+    pics = {'CNET.PVR': baked_text(cnet, 64, GREY), 'NOWO.PVR': baked_text(now, 64, ORANGE), 'NOWB.PVR': baked_text(now, 64, BLUE),
+            # the same for dark mode (dark grey header bar)
+            'CNETD.PVR': flat_text(cnet, 64, LIGHT), 'NOWOD.PVR': flat_text(now, 64, ORANGE), 'NOWBD.PVR': flat_text(now, 64, (96, 150, 225))}
     os.makedirs(outdir, exist_ok=True)
     for name, img in pics.items():
         write_pvr(img, os.path.join(outdir, name))
         print('wrote', os.path.join(outdir, name), img.size)
     prev = os.environ.get('GEN_PREVIEW_DIR')
     if prev:
-        sheet = Image.new('RGB', (64 * 3 + 8, 32), (170, 170, 170))
+        sheet = Image.new('RGB', (68 * len(pics), 32), (170, 170, 170))
         for k, name in enumerate(pics):
             img = pics[name]
             sheet.paste(img.convert('RGB'), (k * 68, 0), img.getchannel('A'))

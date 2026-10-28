@@ -193,6 +193,13 @@ bsurf_tiny_number(bsurf* s, int x, int y, int value, int width) {
 
 #include "bios_clock_letters.inc"
 
+static int clock_light;
+
+void
+bsurf_clock_light(int light) {
+    clock_light = light != 0;
+}
+
 void
 bsurf_clock_text(bsurf* s, int x, int y, const char* str) {
     if (!s || !str || !clock_glyphs) {
@@ -225,7 +232,7 @@ bsurf_clock_text(bsurf* s, int x, int y, const char* str) {
                 int px = x + c;
                 if (px >= 0 && px < s->w) {
                     /* (b & 0xF0) * -0x100 - 0x1000: alpha 15 - b / 16, black */
-                    s->px[py * s->w + px] = (uint16_t)((15 - (src[r * 16 + c] >> 4)) << 12);
+                    s->px[py * s->w + px] = (uint16_t)(((15 - (src[r * 16 + c] >> 4)) << 12) | (clock_light ? 0x0FFFu : 0u));
                 }
             }
         }
