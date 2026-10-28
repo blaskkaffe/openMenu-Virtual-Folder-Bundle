@@ -771,6 +771,109 @@ gfx_rrect(float x, float y, float w, float h, float r, float z, uint32_t argb) {
     }
 }
 
+/* ---- PS2-style menu ------------------------------------------------------------------------ */
+
+#define PS2_MAX_TEXTURES 64
+
+static rom_tex ps2_texes[PS2_MAX_TEXTURES];
+static int ps2_ntex;
+static int ps2_art_fallback = -1;       /* pack texture shown on a cube while its game picture loads */
+static art_entry* ps2_art[PS2_ART_SLOTS]; /* the picture of each slot, this frame */
+static int ps2_hdr_valid;
+static const void* ps2_last_key;
+static int ps2_last_blend;
+
+int
+gfx_ps2_load(const ps2_pack* pack) {
+    ps2_ntex = pack->ntex < PS2_MAX_TEXTURES ? pack->ntex : PS2_MAX_TEXTURES;
+    for (int i = 0; i < ps2_ntex; i++) {
+        const ps2_tex_info* t = &pack->tex[i];
+        size_t size = (size_t)t->w * (size_t)t->h * 2u;
+        rom_tex* g = &ps2_texes[i];
+        memset(g, 0, sizeof(*g));
+        g->ptr = pvr_mem_malloc(size);
+        if (!g->ptr) {
+            continue;
+        }
+        pvr_txr_load(t->pixels, g->ptr, size);
+        g->w = t->w;
+        g->h = t->h;
+        g->fmt = PVR_TXRFMT_NONTWIDDLED | (t->fmt == PS2_FMT_RGB565 ? PVR_TXRFMT_RGB565
+                                                                     : (t->fmt == PS2_FMT_ARGB1555 ? PVR_TXRFMT_ARGB1555 : PVR_TXRFMT_ARGB4444));
+        g->valid = 1;
+    }
+    ps2_art_fallback = ps2_pack_find_tex(pack, "TBFNOR");
+    return 0;
+}
+
+static void
+ps2_header(const rom_tex* tex, int blend) {
+    const void* key = tex ? (const void*)tex->ptr : NULL;
+    if (ps2_hdr_valid && key == ps2_last_key && blend == ps2_last_blend) {
+        return;
+    }
+    pvr_poly_cxt_t cxt;
+    if (tex) {
+        pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY, tex->fmt, tex->w, tex->h, tex->ptr, PVR_FILTER_BILINEAR);
+    } else {
+        pvr_poly_cxt_col(&cxt, PVR_LIST_TR_POLY);
+    }
+    cxt.gen.culling = PVR_CULLING_NONE;
+    cxt.blend.src = PVR_BLEND_SRCALPHA;
+    cxt.blend.dst = blend == PS2_BLEND_ADD ? PVR_BLEND_ONE : PVR_BLEND_INVSRCALPHA;
+    /* the menu draws back to front: no depth test, nothing written */
+    cxt.depth.comparison = PVR_DEPTHCMP_ALWAYS;
+    cxt.depth.write = PVR_DEPTHWRITE_DISABLE;
+    submit_header(&cxt);
+    ps2_last_key = key;
+    ps2_last_blend = blend;
+    ps2_hdr_valid = 1;
+}
+
+static void
+ps2_bind_art(void* user, int slot, const char* product) {
+    (void)user;
+    if (slot >= 0 && slot < PS2_ART_SLOTS) {
+        ps2_art[slot] = art_get(product, 0);
+    }
+}
+
+static void
+ps2_sink_tri(void* user, const ps2_vtx v[3], int tex, int blend) {
+    (void)user;
+    if (!(v[0].argb >> 24) && !(v[1].argb >> 24) && !(v[2].argb >> 24)) {
+        return; /* fully transparent */
+    }
+    const rom_tex* t = NULL;
+    if (tex >= PS2_TEX_ART) {
+        int slot = tex - PS2_TEX_ART;
+        if (slot < PS2_ART_SLOTS && ps2_art[slot] && ps2_art[slot]->tex.valid) {
+            t = &ps2_art[slot]->tex;
+        } else if (ps2_art_fallback >= 0 && ps2_texes[ps2_art_fallback].valid) {
+            t = &ps2_texes[ps2_art_fallback];
+        } else {
+            return;
+        }
+    } else if (tex >= 0) {
+        if (tex >= ps2_ntex || !ps2_texes[tex].valid) {
+            return;
+        }
+        t = &ps2_texes[tex];
+    }
+    tri_count++;
+    ps2_header(t, blend);
+    for (int i = 0; i < 3; i++) {
+        send_vertex(v[i].x, v[i].y, v[i].z, v[i].u, v[i].v, v[i].argb, i == 2);
+    }
+}
+
+static const ps2_sink the_ps2_sink = {NULL, ps2_sink_tri, ps2_bind_art};
+
+const ps2_sink*
+gfx_ps2_sink(void) {
+    return &the_ps2_sink;
+}
+
 /* ---- Frames ------------------------------------------------------------------------------ */
 
 void
@@ -797,6 +900,8 @@ gfx_begin_frame(uint32_t top, uint32_t bottom) {
 
     pvr_list_begin(PVR_LIST_TR_POLY);
     hdr_valid = 0;
+    ps2_hdr_valid = 0;
+    memset(ps2_art, 0, sizeof(ps2_art));
 }
 
 void

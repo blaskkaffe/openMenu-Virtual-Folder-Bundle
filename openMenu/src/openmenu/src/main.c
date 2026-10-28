@@ -23,6 +23,7 @@
 #include <openmenu_settings.h>
 
 #include "ui_bios.h"
+#include "ui_ps2.h"
 #include "video.h"
 #include "ui_fallback.h"
 
@@ -52,6 +53,9 @@ main(int argc, char* argv[]) {
         list_folder_init();
         list_set_folder_root(); /* folders first; sorted as the Sort setting says */
     }
+
+    /* PS2-style menu if PS2.PAK is on the disc (it does not need the BIOS ROM, only its sounds) */
+    ui_ps2_run(rom_err == BIOS_ROM_OK ? &rom : NULL);
 
     if (rom_err == BIOS_ROM_OK) {
         ui_bios_run(&rom); /* only returns if the PVR cannot be set up */

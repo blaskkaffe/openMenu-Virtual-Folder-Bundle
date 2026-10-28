@@ -20,6 +20,7 @@ set(OPENMENU_SOURCES
         src/ui_bios.c
         src/ui_fallback.c
         src/ui_list.c
+        src/ui_ps2.c
         src/ui_settings.c
         src/video.c
         src/backend/gdemu_sdk.c
@@ -42,6 +43,7 @@ target_link_libraries(openmenu
         PRIVATE
         bios_engine
         bios_rom
+        ps2_engine
         crayon_savefile
         ini
         openmenu_settings

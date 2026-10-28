@@ -52,3 +52,15 @@ void gfx_art_box(const char* product, float x, float y, float w, float h, float 
 /* Game list row `slot`: show its title through a window of `window_px` pixels, moved left by
  * `offset_px` (a scrolling title). window_px 0 shows the title as it is. */
 void gfx_set_row_scroll(int slot, int window_px, int offset_px);
+
+/* ---- PS2-style menu ---------------------------------------------------------------------- */
+
+#include <ps2_draw.h>
+#include <ps2_pack.h>
+
+/* Upload the textures of the pack (pixels in a 32-byte aligned buffer) to video memory. Call
+ * after gfx_init(). Returns 0 on success. */
+int gfx_ps2_load(const ps2_pack* pack);
+
+/* Triangle sink of the PS2 menu: pack textures, game pictures (ICON.DAT) and additive blending. */
+const ps2_sink* gfx_ps2_sink(void);
