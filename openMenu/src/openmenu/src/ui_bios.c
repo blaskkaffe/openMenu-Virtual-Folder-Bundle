@@ -78,7 +78,7 @@ set_icon_labels(void) {
     }
     /* and the icon is the globe (it turns while selected), not the music note */
     if (sf_dcnow[0] != DCNOW_OFF) {
-        bmenu_set_icon_model(&menu, ICON_MUSIC, BMODEL_GLOBE, 1.1f, -11.2f, -11.0f);
+        bmenu_set_icon_model(&menu, ICON_MUSIC, BMODEL_GLOBE, 0.9f, -10.97f, -9.99f);
     } else {
         bmenu_set_icon_model(&menu, ICON_MUSIC, 0, 1.0f, 0.0f, 0.0f);
     }
