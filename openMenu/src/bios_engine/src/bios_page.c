@@ -3,6 +3,8 @@
 
 #include "bios_models.h"
 
+#include <math.h>
+
 #define PRIO 0x1000
 #define PX_PER_UNIT 11.32f /* 4000 / 353.5: pixels per world unit at the rows' depth */
 #define ROW_Z (-353.515625f)
@@ -82,7 +84,7 @@ icon_model(int icon, uint16_t* model, uint16_t* motion, float* scale) {
         return;
     }
     switch (icon) {
-        case BPAGE_ICON_VMU: *model = 62; *scale = 0.31f; return;
+        case BPAGE_ICON_VMU: *model = 1; *motion = 1; *scale = 0.34f; return; /* the main menu's VMU, with its LCD screen */
         case BPAGE_ICON_PAD: *model = 17; *scale = 0.55f; return;
         case BPAGE_ICON_GLOBE: *model = BMODEL_GLOBE; *scale = 0.4f; return;
         case BPAGE_ICON_PHONE: *model = BMODEL_PHONE; *scale = 0.42f; return;
@@ -93,6 +95,31 @@ icon_model(int icon, uint16_t* model, uint16_t* motion, float* scale) {
     *model = (uint16_t)(43 + k);
     *motion = (uint16_t)(14 + k);
     *scale = 0.9375f;
+}
+
+/* Models whose origin is not their centre: how far down (world units, at scale 1) the picture has to move to sit on the row's middle. */
+static float
+icon_dy(int icon) {
+    return icon == BPAGE_ICON_VMU ? -7.5f : 0.0f;
+}
+
+/* Frames each slot's row has been selected (0: not selected): the icons animate only while their row is selected, as in the BIOS. */
+static int icon_age[BPAGE_SLOTS];
+
+/* The models without a motion of their own move by turning a little while selected, in the manner of the BIOS icons (a short loop that
+ * starts when the row is selected): returns the angle in degrees about *axis (0 x, 1 y, 2 z). */
+static float
+icon_turn(int icon, int age, int* axis) {
+    const float two_pi = 6.2831853f;
+    *axis = 1;
+    switch (icon) {
+        case BPAGE_ICON_GLOBE: return (float)(age % 180) * 2.0f; /* the earth turns once in 3 s */
+        case BPAGE_ICON_PHONE: /* rings: a quick shake in bursts */
+            *axis = 2;
+            return (age % 60) < 36 ? 9.0f * sinf((float)age * 0.9f) : 0.0f;
+        case BPAGE_ICON_CASE: return 35.0f * sinf((float)age * two_pi / 120.0f);
+        default: return 25.0f * sinf((float)age * two_pi / 100.0f); /* the controller and the rest: a slow sway */
+    }
 }
 
 static void
@@ -219,6 +246,9 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
         if (icon) {
             icon->var[0] = sel;
             set_hidden(icon, !on);
+            if (!on) {
+                icon_age[s] = 0;
+            }
             if (on) {
                 set_pos(icon, ICON_X, y, ICON_Z);
                 if (row_fn) {
@@ -226,6 +256,7 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
                     float scale;
                     row_fn(user, row, &r);
                     icon_model(r.icon, &icon->model, &icon->motion, &scale);
+                    set_pos(icon, ICON_X, y + icon_dy(r.icon) * scale, ICON_Z);
                     icon->texlist = icon->model;
                     for (int a = 0; a < 3; a++) {
                         icon->scale_tw[a].cur = scale; /* the BIOS icons at the original's size */
@@ -234,6 +265,27 @@ bpage_sync(bpage* p, bpage_row_fn row_fn, void* user) {
                         icon->flags &= ~(uint32_t)BVM_F_MOTION;
                     } else {
                         icon->flags |= BVM_F_MOTION; /* a row that showed a model without motion before */
+                    }
+                    /* only the selected row's icon animates */
+                    icon_age[s] = sel ? icon_age[s] + 1 : 0;
+                    if (icon->motion) {
+                        if (sel) {
+                            if (icon_age[s] == 1) {
+                                icon->motion_tw.cur = 0.5f; /* starts from the beginning each time */
+                            }
+                            icon->motion_tw.step = 0.5f;
+                        } else {
+                            icon->motion_tw.cur = 0.0f;
+                            icon->motion_tw.step = 0.0f;
+                        }
+                    } else {
+                        int axis;
+                        float deg = sel ? icon_turn(r.icon, icon_age[s], &axis) : (axis = 1, 0.0f);
+                        for (int a = 0; a < 3; a++) {
+                            icon->rot_tw[a].step = 0;
+                            icon->rot_tw[a].frames = 0;
+                            icon->rot_tw[a].cur = a == axis ? (int32_t)(deg * 65536.0f / 360.0f) : 0;
+                        }
                     }
                 }
             }

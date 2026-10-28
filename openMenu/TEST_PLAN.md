@@ -182,3 +182,8 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 - [ ] A LOGO.PVR of your own: left as it is in dark mode too (the bar is still dark).
 - [ ] No turning swirl while connecting: the logo stays plain until online.
 - [ ] Start-up with Auto-Connect: the stutter in the first seconds should be less (connection threads run below the menu). Compare the `HITCH` count right after boot with Online features Off and On.
+
+## Settings icons
+- [ ] Only the selected row's icon animates (the BIOS lips, clock, speaker, question mark play their own motion from the start each time the row is selected; the rest sit still).
+- [ ] The icons we added animate too while selected, with a small turn: controller sways, globe turns, telephone shakes in bursts, jewel case sways, the others sway.
+- [ ] The VMU icon is the main menu's VMU with its LCD screen (and its own motion), centred on the row, not too big. Check the colour: it may look pale.
