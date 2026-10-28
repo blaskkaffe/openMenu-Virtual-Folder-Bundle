@@ -174,3 +174,11 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
   the thread when it has ended; a start during that time is queued).
 - Test: B at once on Events / News while loading, then open them again (must load); B out of the case viewer right after turning it, with and
   without `-DOM_MUTE_CANCEL`.
+
+## Dark mode, logo and start-up (this round)
+- [ ] Settings > Display > Dark mode On: the header bar is dark grey, the clock and the player counts white, the "Dreamcast" wordmark light grey (swirl unchanged),
+      the waves of the background dimmed and in the hue of the chosen background colour (Green: green waves; BIOS blue: blue). Off: everything as the BIOS.
+- [ ] Dark mode with Dreamcast Now! / DCNET online: "Now!" and "CNET" readable on the dark bar (NOWOD/NOWBD/CNETD.PVR on the disc; without them the logo is left alone).
+- [ ] A LOGO.PVR of your own: left as it is in dark mode too (the bar is still dark).
+- [ ] No turning swirl while connecting: the logo stays plain until online.
+- [ ] Start-up with Auto-Connect: the stutter in the first seconds should be less (connection threads run below the menu). Compare the `HITCH` count right after boot with Online features Off and On.
