@@ -83,8 +83,45 @@ bmenu_move(bmenu* m, bmenu_dir dir) {
 }
 
 void
+bmenu_set_icon_model(bmenu* m, int icon, uint16_t model, float scale, float dx, float dy) {
+    if (icon >= 0 && icon < BMENU_ICONS) {
+        m->icon_model[icon].model = model;
+        m->icon_model[icon].scale = scale;
+        m->icon_model[icon].dx = dx;
+        m->icon_model[icon].dy = dy;
+    }
+}
+
+/* The icons with another model: both layers of the icon take it, without the script's motion; it turns about its vertical axis while selected. */
+static void
+apply_icon_models(bmenu* m) {
+    for (int i = 0; i < BMENU_ICONS; i++) {
+        if (!m->icon_model[i].model) {
+            continue;
+        }
+        const int age = m->selected == i ? ++m->icon_model[i].selected_frames : (m->icon_model[i].selected_frames = 0);
+        const int32_t turn = (int32_t)((age % 180) * (65536.0f / 180.0f)); /* once in three seconds */
+        for (int layer = 0; layer < 2; layer++) {
+            bvm_obj* o = bvm_find(&m->vm, (uint16_t)(BMENU_ID_ICON(i) + layer * 0x100));
+            if (!o) {
+                continue;
+            }
+            o->model = o->texlist = m->icon_model[i].model;
+            o->motion = 0;
+            o->flags &= ~(uint32_t)BVM_F_MOTION;
+            o->model_scale = m->icon_model[i].scale;
+            o->pos[0] += m->icon_model[i].dx;
+            o->pos[1] += m->icon_model[i].dy;
+            o->rot_tw[1].step = 0;
+            o->rot_tw[1].cur = o->rot[1] = age ? turn : 0;
+        }
+    }
+}
+
+void
 bmenu_update(bmenu* m) {
     bvm_update(&m->vm);
+    apply_icon_models(m);
     dcbg_step(&m->bg);
     m->frames++;
 }

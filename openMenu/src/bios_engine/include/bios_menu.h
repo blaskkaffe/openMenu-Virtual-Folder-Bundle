@@ -45,7 +45,16 @@ typedef struct bmenu {
      * the objects are then sent in their own order. 0 (presort): they go through the CPU sorter instead,
      * far to near by triangle, which is close but not exact where the parts of a model overlap. */
     int hw_autosort;
+    /* A main menu icon drawn with another model (the Music icon is a globe while the Internet is on): model 0 = the script's own. The
+     * model has no motion of its own, so it turns while its icon is selected. */
+    struct {
+        uint16_t model;
+        float scale, dx, dy; /* size, and where the model's middle is moved to (world units) */
+        int selected_frames;
+    } icon_model[BMENU_ICONS];
 } bmenu;
+
+void bmenu_set_icon_model(bmenu* m, int icon, uint16_t model, float scale, float dx, float dy);
 
 void bmenu_init(bmenu* m, const bios_rom* rom, const bvm_host* host);
 void bmenu_free(bmenu* m);

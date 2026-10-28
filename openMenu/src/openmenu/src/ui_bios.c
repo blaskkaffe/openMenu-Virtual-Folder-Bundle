@@ -20,6 +20,7 @@
 #include "qr.h"
 #include <bios_case.h>
 #include <bios_menu.h>
+#include <bios_models.h>
 #include <bios_datetime.h>
 #include <bios_list.h>
 #include <bios_page.h>
@@ -64,6 +65,8 @@ enum { ICON_PLAY, ICON_FILE, ICON_MUSIC, ICON_SETTINGS };
 #define GFX_MAIN_AUTOSORT 1
 #endif
 
+static bmenu menu; /* (defined here for set_icon_labels; the same object further down) */
+
 static const char* const icon_names[BMENU_ICONS] = {"Play", "File", "Music", "Settings"};
 
 /* The main menu's icon labels: the Music icon is "Internet" while the online features are on, manual or automatic
@@ -72,6 +75,12 @@ static void
 set_icon_labels(void) {
     for (int i = 0; i < BMENU_ICONS; i++) {
         gfx_set_label((uint16_t)BMENU_ID_ICON(i), i == ICON_MUSIC && sf_dcnow[0] != DCNOW_OFF ? "Internet" : icon_names[i]);
+    }
+    /* and the icon is the globe (it turns while selected), not the music note */
+    if (sf_dcnow[0] != DCNOW_OFF) {
+        bmenu_set_icon_model(&menu, ICON_MUSIC, BMODEL_GLOBE, 1.1f, -11.2f, -11.0f);
+    } else {
+        bmenu_set_icon_model(&menu, ICON_MUSIC, 0, 1.0f, 0.0f, 0.0f);
     }
 }
 
@@ -122,7 +131,6 @@ blend_color(uint32_t from, uint32_t to, int t) {
 #define NOTICE_Y_PANEL 424.0f
 #define FPS_Y 376.0f
 
-static bmenu menu;
 static screen_t screen;
 static bpage page;
 static blist glist;                 /* the game list screen */

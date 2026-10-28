@@ -32,6 +32,7 @@ has no right panel; real text/art only on the PVR path (hardware).
 - Dark mode (Settings > Display): the background palette dims (`bg_palette.c`), the header bar turns dark grey (`bscene.header_bar_argb`: the untextured polygons of header model 7), the clock text is white (`bsurf_clock_light`), the waves of the background take the hue of the chosen background colour and the dimming (`bscene_set_background_tint`, `bg_palette_wave_tint`: the ROM's clouds picture 7 is blue), and the BIOS logo's wordmark is drawn light (`gfx_set_dark`, built at run time). Host-rendered with `bios_preview` (`BIOS_PREVIEW_BG=n`, `BIOS_PREVIEW_DARK=1`, build with `openmenu/src/bg_palette.c -Iopenmenu/src`); the gfx and app side are not compiled.
 - Worker threads (connection, fetches, time sync, DreamPi link) run at `PRIO_DEFAULT + 4`, below the menu, so Auto-Connect does not take frame time at start-up.
 - Settings page icons (`bios_page.c`): only the selected row's icon animates (`icon_age`; BIOS icons by their motion from frame 0.5 with step 0.5, others by `icon_turn`, a small turn about one axis); the VMU icon is ROM model 1 (the main menu's VMU, with LCD, motion 1) moved down by `icon_dy`. Host-rendered with `BIOS_PREVIEW_ICONS=20,21,22,23,24 bios_preview ... <row> -2`.
+- Main menu icon models: `bmenu_set_icon_model` (the Music icon is the BIOS-style globe while Online is on; `bvm_obj.model_scale`, offset dx/dy, turns while selected; preview with `BIOS_PREVIEW_GLOBE=<scale> GX= GY=`).
 - `BVM_MAX_OBJECTS` is 128 (13 rows need it).
 
 ## Open items

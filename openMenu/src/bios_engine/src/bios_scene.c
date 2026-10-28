@@ -604,7 +604,8 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
         draw_object_panel(s, o, sink);
     }
 
-    float scl[3] = {o->scale_tw[0].cur, o->scale_tw[1].cur, o->scale_tw[2].cur};
+    const float ms = o->model_scale > 0.0f ? o->model_scale : 1.0f;
+    float scl[3] = {o->scale_tw[0].cur * ms, o->scale_tw[1].cur * ms, o->scale_tw[2].cur * ms};
     nj_mat4 obj_m;
     nj_mat_object(&obj_m, o->pos, scl, o->rot);
     /* constant material (a, r, g, b offsets), and the screen transition's fade */
