@@ -244,6 +244,8 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* off
     k->motion = (o->flags & BVM_F_MOTION) ? o->motion : 0;
     k->texlist = o->texlist;
     memcpy(k->pos, o->pos, sizeof(k->pos));
+    k->pos[0] += o->model_off[0];
+    k->pos[1] += o->model_off[1];
     memcpy(k->rot, o->rot, sizeof(k->rot));
     memcpy(k->scl, scl, sizeof(k->scl));
     if (offs) {
@@ -607,7 +609,8 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
     const float ms = o->model_scale > 0.0f ? o->model_scale : 1.0f;
     float scl[3] = {o->scale_tw[0].cur * ms, o->scale_tw[1].cur * ms, o->scale_tw[2].cur * ms};
     nj_mat4 obj_m;
-    nj_mat_object(&obj_m, o->pos, scl, o->rot);
+    const float mpos[3] = {o->pos[0] + o->model_off[0], o->pos[1] + o->model_off[1], o->pos[2]};
+    nj_mat_object(&obj_m, mpos, scl, o->rot);
     /* constant material (a, r, g, b offsets), and the screen transition's fade */
     float eoff[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     const float* offs = NULL;
@@ -899,7 +902,15 @@ model_done:
     if ((s->parts & BSCENE_PART_TEXT) && (o->flags & BVM_F_TEXT) && o->text_w > 0 && o->text_h > 0 && sink->text) {
         /* text_surface_draw (0x8C014D78) projects the surface's offset through the object's matrix: the offset is scaled and
          * turned with the object, then moved to its place */
-        nj_vec3 anchor = nj_mat_apply(&obj_m, (nj_vec3){o->text_off[0], o->text_off[1], 0.0f});
+        /* (a model that was moved or resized for its icon, see model_off / model_scale, leaves its caption where it was) */
+        nj_mat4 text_m;
+        if (o->model_scale > 0.0f || o->model_off[0] != 0.0f || o->model_off[1] != 0.0f) {
+            const float tscl[3] = {o->scale_tw[0].cur, o->scale_tw[1].cur, o->scale_tw[2].cur};
+            nj_mat_object(&text_m, o->pos, tscl, o->rot);
+        } else {
+            text_m = obj_m;
+        }
+        nj_vec3 anchor = nj_mat_apply(&text_m, (nj_vec3){o->text_off[0], o->text_off[1], 0.0f});
         float sx, sy, iw;
         if (bscene_project(anchor, &sx, &sy, &iw)) {
             sink->text(sink->user, o, sx, sy, iw);

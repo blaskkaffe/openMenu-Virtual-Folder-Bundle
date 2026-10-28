@@ -110,8 +110,8 @@ apply_icon_models(bmenu* m) {
             o->motion = 0;
             o->flags &= ~(uint32_t)BVM_F_MOTION;
             o->model_scale = m->icon_model[i].scale;
-            o->pos[0] += m->icon_model[i].dx;
-            o->pos[1] += m->icon_model[i].dy;
+            o->model_off[0] = m->icon_model[i].dx; /* the model moves, its caption does not */
+            o->model_off[1] = m->icon_model[i].dy;
             o->rot_tw[1].step = 0;
             o->rot_tw[1].cur = o->rot[1] = age ? turn : 0;
         }

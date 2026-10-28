@@ -74,6 +74,7 @@ typedef struct bvm_obj {
     bvm_ftween pos_tw[3];
     bvm_itween rot_tw[3];
     bvm_ftween scale_tw[3]; /* only .cur is used */
+    float model_off[2];     /* the model is drawn this far (world units, x y) from the object's position; the caption text stays on the position */
     float model_scale;      /* multiplies the scale when drawn (0: 1): for models made at another size than the script expects */
     bvm_ftween motion_tw;   /* current motion frame (.cur), loops at .target back to var[7] */
 
