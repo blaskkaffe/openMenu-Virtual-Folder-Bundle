@@ -60,7 +60,7 @@ static const bios_rom* g_rom;
 static rom_tex rom_texes[MAX_TEXTURES];
 static int num_rom_texes;
 static rom_tex logo_tex;
-static rom_tex logo_dcnet_tex;  /* the BIOS logo cropped to its swirl (mode 2: swirl + the D; CNET.PVR is drawn after it) */
+static rom_tex logo_dcnet_tex;  /* the BIOS logo cropped to its swirl (mode 2: swirl + the D; "CNET" is drawn after it) */
 static float logo_ox, logo_oy; /* top left of the header logo's quad this frame (it slides in with the bar) */
 static int logo_seen;
 static int logo_mode;           /* see gfx_set_logo_mode */
@@ -630,7 +630,7 @@ static rom_tex* get_rom_texture_uncached(bscene_texref ref);
 #define LOGO_W 128
 #define LOGO_H 32
 #define LOGO_SWIRL_W 29 /* columns of the logo texture that are the swirl; the wordmark starts at 30 */
-#define LOGO_D_END 46 /* the wordmark's D ends here; CNET.PVR's letters start (the D is kept from the BIOS logo) */
+#define LOGO_D_END 46 /* the wordmark's D ends here; "CNET" starts (the D is kept from the BIOS logo) */
 
 static void
 upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
@@ -652,66 +652,47 @@ upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
     g->valid = 1;
 }
 
-/* A .PVR file of the menu disc into `g` (the same way as LOGO.PVR). */
+#include "logo_letters.inc"
+
+/* One 64x32 ARGB4444 picture from a coverage mask. Light bar (`dark` 0): the colour mixed with white by (1 - coverage), as the BIOS
+ * logo's own edge pixels are (c*colour + (1-c)*255). Dark bar: the colour as it is, the coverage as the alpha. */
 static void
-load_pvr_file(const char* path, rom_tex* g) {
-    file_t fd = fs_open(path, O_RDONLY);
-    if (fd == FILEHND_INVALID) {
-        return;
+make_letters(const uint8_t* mask, unsigned rgb, int dark, rom_tex* out) {
+    unsigned short px[64 * 32];
+    for (int i = 0; i < 64 * 32; i++) {
+        unsigned a = mask[i], v = 0;
+        if (a) {
+            v = a << 12;
+            for (int ch = 0; ch < 3; ch++) {
+                unsigned t = (rgb >> (16 - 8 * ch)) & 0xFF;
+                unsigned n = dark ? (t + 8) / 17 : (a * t + (15 - a) * 255 + 127) / 255; /* the nearest of the 16 levels */
+                v |= n << (8 - 4 * ch);
+            }
+        }
+        px[i] = (unsigned short)v;
     }
-    ssize_t size = fs_total(fd);
-    uint8_t* buf = (size > 0 && size <= MAX_LOGO_FILE) ? (uint8_t*)malloc((size_t)size) : NULL;
-    if (buf && fs_read(fd, buf, (size_t)size) != size) {
-        free(buf);
-        buf = NULL;
-    }
-    fs_close(fd);
-    if (!buf) {
-        return;
-    }
-    bios_texture t;
-    if (bios_texture_parse(buf, (size_t)size, &t) == 0) {
-        upload_texture(&t, g);
-    }
-    free(buf);
+    upload_argb4444(px, 64, 32, out);
 }
 
-/* The letters of the online logos: CNET.PVR (grey, drawn after the BIOS logo's own D) and NOWO.PVR / NOWB.PVR (orange / blue "Now!"),
- * next to LOGO.PVR. They are drawn as they are (the soft edges are baked in) and hold nothing of the BIOS logo.
- * Without them the logo stays as it is in the online modes. */
-static rom_tex logo_now_tex[2]; /* [0] orange, [1] blue */
-static rom_tex logo_dcnet_text_tex;
-/* the same for dark mode (the header bar is dark grey, the wordmark light): NOWOD/NOWBD/CNETD.PVR, and the ROM logo with a light wordmark */
-static rom_tex logo_now_dark_tex[2], logo_cnet_dark_tex, logo_dark_tex, logo_dcnet_dark_tex;
-static int logo_dark;
-static unsigned logo_swirl_rgb = 0xFFFFFF; /* the swirl's colour, 0xRRGGBB: picks the orange or the blue "Now!" */
-
+/* The letters of the online logos are in the program (logo_letters.inc, hand-drawn by tools/gen_logo_text.py): "CNET" after the
+ * BIOS logo's own D, and "Now!" behind it, orange or blue as the swirl, each for the light and the dark header bar. They hold nothing
+ * of the BIOS logo. */
 void
 gfx_load_logo_texts(void) {
-    if (!logo_now_tex[0].valid) {
-        load_pvr_file("/cd/NOWO.PVR", &logo_now_tex[0]);
+    if (logo_dcnet_text_tex.valid) {
+        return;
     }
-    if (!logo_now_tex[1].valid) {
-        load_pvr_file("/cd/NOWB.PVR", &logo_now_tex[1]);
-    }
-    if (!logo_dcnet_text_tex.valid) {
-        load_pvr_file("/cd/CNET.PVR", &logo_dcnet_text_tex);
-    }
-    if (!logo_now_dark_tex[0].valid) {
-        load_pvr_file("/cd/NOWOD.PVR", &logo_now_dark_tex[0]);
-    }
-    if (!logo_now_dark_tex[1].valid) {
-        load_pvr_file("/cd/NOWBD.PVR", &logo_now_dark_tex[1]);
-    }
-    if (!logo_cnet_dark_tex.valid) {
-        load_pvr_file("/cd/CNETD.PVR", &logo_cnet_dark_tex);
-    }
-    printf("OM logo: NOWO %d NOWB %d CNET %d (/cd/*.PVR loaded)\n", logo_now_tex[0].valid, logo_now_tex[1].valid, logo_dcnet_text_tex.valid);
+    make_letters(logo_mask_cnet, 0x444444u, 0, &logo_dcnet_text_tex);
+    make_letters(logo_mask_cnet, 0xCDCDD0u, 1, &logo_cnet_dark_tex);
+    make_letters(logo_mask_now, 0xEE4400u, 0, &logo_now_tex[0]);
+    make_letters(logo_mask_now, 0x4477BBu, 0, &logo_now_tex[1]);
+    make_letters(logo_mask_now, 0xEE4400u, 1, &logo_now_dark_tex[0]);
+    make_letters(logo_mask_now, 0x6096E1u, 1, &logo_now_dark_tex[1]);
 }
 
 int
 gfx_logo_texts_loaded(void) {
-    return logo_now_tex[0].valid | logo_now_tex[1].valid << 1 | logo_dcnet_text_tex.valid << 2;
+    return (logo_now_tex[0].valid ? 1 : 0) | (logo_now_tex[1].valid ? 2 : 0) | (logo_dcnet_text_tex.valid ? 4 : 0);
 }
 
 /* Pictures made from the ROM's logo while the menu runs (nothing of it is kept anywhere): the swirl with the wordmark's D, the

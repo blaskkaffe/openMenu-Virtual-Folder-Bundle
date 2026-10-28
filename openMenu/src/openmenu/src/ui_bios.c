@@ -163,7 +163,7 @@ static int report_page; /* 0 off, 1 the table of the debug log, 2 the QR code wi
 static dbglog_sample last_sample;
 
 static char status_line[64];
-static char logo_line[64]; /* logo mode, link state and the .PVR files, in the X debug overlay */
+static char logo_line[64]; /* logo mode, link state, network and the letters made, in the X debug overlay */
 
 /* The logo at the left of the bar follows the connection: the plain logo, "Now!" behind it on Dreamcast Now!, "DCNET" on DCNET.
  * While connecting, and while a DreamPi has not yet said which network it has, it stays the plain logo. Every frame. */
@@ -180,6 +180,7 @@ update_logo_mode(void) {
         printf("OM logo: mode %d (shown %d, state %d, network %d, pi_pending %d)\n", mode, oh.shown, oh.state, oh.network, oh.pi_pending);
         last_mode = mode;
     }
+    snprintf(logo_line, sizeof(logo_line), "logo %d  link %d  net %d  letters %d", mode, oh.state, oh.network, gfx_logo_texts_loaded());
     gfx_set_logo_mode(mode);
 }
 
@@ -2418,7 +2419,7 @@ ui_bios_run(const bios_rom* rom) {
     dbglog_boot("gfx", (unsigned)timer_ms_gettime64());
 
     gfx_load_logo("/cd/LOGO.PVR"); /* optional replacement of the Dreamcast logo */
-    gfx_load_logo_texts(); /* NOWO/NOWB/CNET.PVR: the letters of the online logos */
+    gfx_load_logo_texts(); /* the letters of the online logos, made from the embedded masks */
     dbglog_boot("logo", (unsigned)timer_ms_gettime64());
     /* game info (players, VMU blocks) comes from META.DAT on the menu disc; db_load_DAT needs it */
     file_t meta_fd = fs_open("/cd/META.DAT", O_RDONLY);

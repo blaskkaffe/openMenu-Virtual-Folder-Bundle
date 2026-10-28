@@ -33,15 +33,15 @@ const bscene_sink* gfx_sink(void);
  * otherwise the BIOS logo stays. */
 int gfx_load_logo(const char* path);
 
-/* The header logo follows the online mode (the BIOS logo only: a LOGO.PVR of your own is left as it is): 0 the normal logo, 1 "Now!" (NOWO/NOWB.PVR) added
- * behind it (connected to Dreamcast Now!), 2 the logo cropped to swirl + D with "CNET" (CNET.PVR) after the D (mode 3 no longer exists). The extra
+/* The header logo follows the online mode (the BIOS logo only: a LOGO.PVR of your own is left as it is): 0 the normal logo, 1 "Now!" added
+ * behind it (connected to Dreamcast Now!), 2 the logo cropped to swirl + D with "CNET" after the D (mode 3 no longer exists). The extra
  * pictures of modes 1 and 2 are drawn by gfx_logo_badge(), once per frame on the main menu. */
 void gfx_set_logo_mode(int mode);
-/* Dark mode: the header bar is dark grey, so the BIOS logo's wordmark (and CNET / Now!) are drawn light (NOWOD/NOWBD/CNETD.PVR; a LOGO.PVR of your own is left as it is). */
+/* Dark mode: the header bar is dark grey, so the BIOS logo's wordmark (and CNET / Now!) are drawn light (a LOGO.PVR of your own is left as it is). */
 void gfx_set_dark(int dark);
-/* NOWO.PVR, NOWB.PVR and CNET.PVR of the menu disc: the letters of modes 1 and 2 (without them those modes leave the logo alone). */
+/* The letters of modes 1 and 2 ("Now!" orange / blue, "CNET", light and dark bar), made from the masks in logo_letters.inc: nothing is read from the disc. */
 void gfx_load_logo_texts(void);
-/* Which of NOWO, NOWB and CNET.PVR were loaded: bits 0, 1, 2 (for the debug line). */
+/* Which pictures exist: bits 0 "Now!" orange, 1 "Now!" blue, 2 "CNET" (for the debug line). */
 int gfx_logo_texts_loaded(void);
 void gfx_logo_badge(void);
 

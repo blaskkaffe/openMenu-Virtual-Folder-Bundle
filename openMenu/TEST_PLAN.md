@@ -15,7 +15,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 
 ## 1. Disc / card contents and settings to prepare
 
-- [ ] Menu disc has `NOWO.PVR`, `NOWB.PVR` and `CNET.PVR` next to `LOGO.PVR` (the Card Manager's `tools/openMenu/menu_data` folder has them), `EMPTY.VMU`,
+- [ ] Menu disc has `EMPTY.VMU` (the online logo letters are inside the program),
       `META.DAT`, `ICON.DAT`, `BOX.DAT`, `DISC.DAT`.
 - [ ] A card with: a folder tree, 10+ games, at least one multi-disc game (Compact mode), one PSX disc, a game without art, a browser disc,
       homebrew (type "other").
@@ -80,7 +80,7 @@ Mark a line `[x]` when it passes, `[-]` with a note when it half works.
 - [ ] Online on Dreamcast Now!: "Now!" in the swirl's colour right after "Dreamcast" (not overlapping the clock, not cut off).
 - [ ] Online through a DreamPi with DCNET selected: the swirl with "DCNET" over the wordmark's place, same size and baseline as "Dreamcast".
       "Now!" shows right away, also without the DreamPi add-on; with it the logo changes to "DCNET" when the add-on reports that network.
-- [ ] Without NOWO/NOWB/CNET.PVR on the disc the logo stays as it is online (no crash).
+- [ ] The online logos need no files: "Now!" / "CNET" show with only LOGO.PVR (or none) on the disc.
 - [ ] Compare the letters with the real wordmark at 1:1 on a CRT: weight, height, baseline (known: baseline about 1 px high, strokes lighter than
       the wordmark's own).
 
@@ -151,7 +151,7 @@ build with `-DOM_MUTE_CANCEL` (sound.c) leaves out the CANCEL sound: if the free
 Open: Flycast uses DCNET, but the player lists are DCNow!'s, and with no DreamPi nothing tells the menu which network it is on
 (`dreampi_link_network()` is 0). Decision so far: "Now!" is the default whenever the network is not known. Figure out whether DCNET can be
 recognised without a DreamPi (a setting Auto / DCNow! / DCNET, or a test of the connection). Also: in Flycast no logo change is visible at all.
-Check the log: `OM logo: NOWO n NOWB n CNET n` (are the three .PVR files on the disc image?) and `OM logo: mode m (shown, state, network, ...)`
+Check the X debug overlay line `logo m  link s  net n  letters b` (letters 7 = all made) and the log `OM logo: mode m (shown, state, network, ...)`
 (state must be 2 = online for mode 1; the setting Online features must not be Off).
 
 Freeze on B while connecting or loading online data (not offline): the main screen is drawn with a logo mode then (1 = Now!), code
@@ -178,7 +178,7 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 ## Dark mode, logo and start-up (this round)
 - [ ] Settings > Display > Dark mode On: the header bar is dark grey, the clock and the player counts white, the "Dreamcast" wordmark light grey (swirl unchanged),
       the waves of the background dimmed and in the hue of the chosen background colour (Green: green waves; BIOS blue: blue). Off: everything as the BIOS.
-- [ ] Dark mode with Dreamcast Now! / DCNET online: "Now!" and "CNET" readable on the dark bar (NOWOD/NOWBD/CNETD.PVR on the disc; without them the logo is left alone).
+- [ ] Dark mode with Dreamcast Now! / DCNET online: "Now!" and "CNET" readable on the dark bar.
 - [ ] A LOGO.PVR of your own: left as it is in dark mode too (the bar is still dark).
 - [ ] No turning swirl while connecting: the logo stays plain until online.
 - [ ] Start-up with Auto-Connect: the stutter in the first seconds should be less (connection threads run below the menu). Compare the `HITCH` count right after boot with Online features Off and On.
