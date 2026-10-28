@@ -140,8 +140,8 @@ h_get(void* u, int i, ps2_game_entry* e) {
 static int
 h_nav(void* u, int nav) {
     (void)u;
-    if (nav == PS2_NAV_NEXT || nav == PS2_NAV_PAGE_NEXT) {
-        if (cursor < count - 1) cursor += nav == PS2_NAV_NEXT ? 1 : 3;
+    if (nav == PS2_NAV_NEXT || nav == PS2_NAV_ROW_NEXT) {
+        if (cursor < count - 1) cursor += nav == PS2_NAV_NEXT ? 1 : 5;
         if (cursor > count - 1) cursor = count - 1;
         return PS2_NAVR_CHANGED;
     }
@@ -159,14 +159,10 @@ static int h_set_count(void* u) { (void)u; return 3; }
 static const char* h_set_label(void* u, int r) { (void)u; (void)r; return "Setting"; }
 static const char* h_set_text(void* u, int r) { (void)u; (void)r; return "text"; }
 static const char* h_set_value(void* u, int r) { (void)u; return settings[r] ? "On" : "Off"; }
-static int h_set_choices(void* u, int r) { (void)u; return r == 2 ? 4 : 2; }
-static const char* h_set_choice_name(void* u, int r, int c) { (void)u; (void)r; (void)c; return "choice"; }
-static int h_set_get(void* u, int r) { (void)u; return settings[r]; }
-static void h_set_set(void* u, int r, int c) { (void)u; settings[r] = c; }
-static int h_set_popup(void* u, int r) { (void)u; return r == 2; }
 static void h_set_change(void* u, int r, int d) { (void)u; settings[r] = (settings[r] + d + 2) % 2; }
 static int h_set_leave(void* u) { (void)u; left_settings++; return 0; }
 static int h_card(void* u, int s) { (void)u; return s == 0; }
+static const char* h_version(void* u) { (void)u; return "OpenMenu test"; }
 
 static unsigned total_tris;
 static int bad_vertex;
@@ -234,14 +230,10 @@ main(void) {
     host.set_group = h_set_text;
     host.set_help = h_set_text;
     host.set_value = h_set_value;
-    host.set_choice_count = h_set_choices;
-    host.set_choice_name = h_set_choice_name;
-    host.set_get = h_set_get;
-    host.set_set = h_set_set;
-    host.set_opens_popup = h_set_popup;
     host.set_change = h_set_change;
     host.set_leave = h_set_leave;
     host.memcard_present = h_card;
+    host.version = h_version;
     ps2_sink sink = {NULL, tri, bind_art};
 
     static ps2_ui ui;
@@ -252,6 +244,10 @@ main(void) {
     CHECK(ui.screen == PS2_SCREEN_MAIN && !ui.transitioning);
     run(&ui, 0.7f);
     draw_all(&ui);
+
+    /* triangle on the main menu shows the version */
+    ps2_ui_button(&ui, PS2_BTN_Y);
+    CHECK(ui.notice_t > 0.0f && !strcmp(ui.notice, "OpenMenu test"));
 
     /* Browser -> devices -> disc -> games */
     ps2_ui_button(&ui, PS2_BTN_A);
@@ -267,7 +263,7 @@ main(void) {
     CHECK(cursor == 1);
     run(&ui, 0.5f);
     draw_all(&ui);
-    CHECK(fabsf(ui.game_pos - 1.0f) < 0.01f); /* the row of cubes has caught up with the cursor */
+    CHECK(fabsf(ui.grid_top - (float)ui.grid_target) < 0.01f); /* the grid has caught up with the cursor */
 
     /* start a game: the animation runs, then the host launches */
     ps2_ui_button(&ui, PS2_BTN_A);
@@ -299,22 +295,22 @@ main(void) {
     CHECK(ui.screen == PS2_SCREEN_MAIN);
 
     /* settings: toggle, open a popup, leave (saves) */
-    ps2_ui_button(&ui, PS2_BTN_RIGHT);
+    ps2_ui_button(&ui, PS2_BTN_DOWN);
     CHECK(ui.main_sel == 1);
     ps2_ui_button(&ui, PS2_BTN_A);
     run(&ui, 0.6f);
     CHECK(ui.screen == PS2_SCREEN_SETTINGS);
     draw_all(&ui);
-    ps2_ui_button(&ui, PS2_BTN_A);
+    ps2_ui_button(&ui, PS2_BTN_A); /* A and up/down change the value of the picked setting */
     CHECK(settings[0] == 1);
+    ps2_ui_button(&ui, PS2_BTN_UP);
+    CHECK(settings[0] == 0);
+    ps2_ui_button(&ui, PS2_BTN_RIGHT); /* turn the ring to the next setting */
+    CHECK(ui.settings_cursor == 1);
     ps2_ui_button(&ui, PS2_BTN_DOWN);
-    ps2_ui_button(&ui, PS2_BTN_DOWN);
-    ps2_ui_button(&ui, PS2_BTN_A);
-    CHECK(ui.popup);
+    CHECK(settings[1] == 1);
+    run(&ui, 0.5f);
     draw_all(&ui);
-    ps2_ui_button(&ui, PS2_BTN_DOWN);
-    ps2_ui_button(&ui, PS2_BTN_A);
-    CHECK(!ui.popup && settings[2] == 1);
     ps2_ui_button(&ui, PS2_BTN_B);
     run(&ui, 0.6f);
     CHECK(left_settings == 1 && ui.screen == PS2_SCREEN_MAIN);

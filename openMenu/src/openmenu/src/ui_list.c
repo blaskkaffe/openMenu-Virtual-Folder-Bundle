@@ -189,6 +189,24 @@ move_cursor(int delta) {
     }
 }
 
+int
+uil_move(int delta) {
+    int before = cursor;
+    move_cursor(delta);
+    return cursor != before;
+}
+
+int
+uil_disc_next(void) {
+    const gd_item* it = uil_item(cursor);
+    if (!is_set(it)) {
+        return 0;
+    }
+    load_members(it);
+    disc_idx = (disc_idx + 1) % member_count;
+    return 1;
+}
+
 uil_result
 uil_button(button_t btn, const gd_item** launch) {
     const gd_item* item = uil_item(cursor);

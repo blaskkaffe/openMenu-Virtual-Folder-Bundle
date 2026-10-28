@@ -28,7 +28,8 @@ typedef enum {
     PS2_BTN_RIGHT,
     PS2_BTN_A,     /* enter / start */
     PS2_BTN_B,     /* back */
-    PS2_BTN_X,     /* options: recently played */
+    PS2_BTN_X,     /* square: recently played */
+    PS2_BTN_Y,     /* triangle: version / next disc of a set */
     PS2_BTN_START
 } ps2_btn;
 
@@ -38,13 +39,16 @@ typedef enum { PS2_SFX_CURSOR, PS2_SFX_CONFIRM, PS2_SFX_CANCEL, PS2_SFX_ENTER, P
 typedef enum {
     PS2_NAV_PREV,       /* one game back */
     PS2_NAV_NEXT,       /* one game on */
-    PS2_NAV_PAGE_PREV,  /* previous disc of a set, else a page back */
-    PS2_NAV_PAGE_NEXT,
+    PS2_NAV_ROW_PREV,   /* one row of the grid back (PS2_GRID_COLS games) */
+    PS2_NAV_ROW_NEXT,
+    PS2_NAV_DISC,       /* next disc of a multi-disc set */
     PS2_NAV_ENTER,      /* open a folder or start the game */
     PS2_NAV_BACK        /* leave a folder; at the top level the list is left */
 } ps2_nav;
 
 typedef enum { PS2_NAVR_NONE, PS2_NAVR_CHANGED, PS2_NAVR_LAUNCH, PS2_NAVR_EXIT } ps2_nav_result;
+
+#define PS2_GRID_COLS 5
 
 typedef struct ps2_game_entry {
     char name[64];
@@ -76,16 +80,12 @@ typedef struct ps2_host {
     const char* (*set_group)(void* user, int row);
     const char* (*set_help)(void* user, int row);
     const char* (*set_value)(void* user, int row);
-    int (*set_choice_count)(void* user, int row);
-    const char* (*set_choice_name)(void* user, int row, int choice);
-    int (*set_get)(void* user, int row);
-    void (*set_set)(void* user, int row, int choice);
-    int (*set_opens_popup)(void* user, int row);
-    void (*set_change)(void* user, int row, int delta);
+    void (*set_change)(void* user, int row, int delta);  /* next / previous value (wraps) */
     int (*set_leave)(void* user);                        /* save; returns 0 on success */
     /* misc */
     int (*memcard_present)(void* user, int slot);        /* slot 0 or 1 */
-    void (*clock_text)(void* user, char* out, size_t n);
+    void (*clock_text)(void* user, char* out, size_t n); /* "YYYY/MM/DD HH:MM:SS" */
+    const char* (*version)(void* user);                  /* shown with the triangle button on the main menu */
     void (*sfx)(void* user, int sfx);
 } ps2_host;
 
@@ -125,15 +125,16 @@ typedef struct ps2_ui {
     float game_pos;    /* eased cursor of the game row */
     int game_count_seen;
     char game_folder_seen[64];
-    int settings_cursor, settings_top;
-    int popup;         /* settings choice popup open */
-    int popup_sel;
+    int settings_cursor;
+    float settings_pos; /* eased cursor of the ring of settings cubes */
+    int grid_target;    /* first visible row of the cube grid */
+    float grid_top;     /* ... eased */
     int recent_open, recent_sel;
     float launch_t;    /* >0 while the launch animation runs */
     int launching;
     char notice[64];
     float notice_t;
-    char clock[24];
+    char clock[32];
     float clock_t;
 } ps2_ui;
 

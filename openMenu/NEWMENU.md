@@ -137,3 +137,45 @@ blocks and disc count (`draw_button_text` in `ui_bios.c`); they are free for oth
 Disc colour: a game without icon art shows the BIOS disc of its region, chosen from the serial number
 (`serial_region.c`): PAL (Sega MK + 7 digits, third party ...D, ...D50, ...N50) gets the blue disc,
 everything else the red one - the same pairing the BIOS uses (blue on European consoles).
+
+## PS2-style menu (branch PS2)
+
+A second front end that copies the look of the PS2 OSD instead of the Dreamcast BIOS, laid out
+after screenshots of the real menu. It is used when `PS2.PAK` is in the root of the openMenu disc
+image (next to `OPENMENU.INI`); without it the BIOS-style menu above starts as before. The pack
+holds PS2 textures, icon models and the PS2 font, so the user makes it from their own PS2 BIOS
+export and it is never committed (`PS2.PAK` is in `.gitignore`):
+`tools/ps2-assets/ps2pack.py ps2bios_export.zip PS2.PAK`.
+
+Screens (`src/ps2_engine/src/ps2_ui.c`, portable C, shared by the console and the PC preview):
+
+- Main menu: black, a ring of seven glowing balls turning on the left, the list on the right
+  (Browser in blue, Settings in grey). Up/Down pick, A enters, Y shows the version.
+- Browser: the grey panel of the PS2 memory card browser with Memory Card 1, Memory Card 2 and Disc.
+  A memory card opens "No data" (the card is only detected, not read yet).
+- Disc: the same panel with the games as a perspective grid of cubes (5 columns, 4 rows visible,
+  scrolling by row), the picked cube lit and turning with a white glow, the game's `ICON.DAT` picture
+  on its faces (the generic data cube while it loads). Folders are the darker cube. D-pad moves,
+  A opens a folder / starts the game (cube flies up, white fade; Settings > Launch animation turns
+  it off), B back, X recently played, Y next disc of a multi-disc set.
+- Settings: purple screen with a ring of glass cubes, one per openMenu setting (`ui_settings.c`):
+  Left/Right turn the ring, Up/Down (or A) change the value shown on the right, B saves and leaves.
+
+Animation runs on seconds, not frames (a time accumulator), as in `TIMINGS.md` of the PS2 export:
+the PS2 BIOS counts video fields, 50 Hz PAL and 60 Hz NTSC last the same time. Screen changes take
+0.5 s (the browser's 30 NTSC / 25 PAL fields), the start fade 0.55 s (PS2LOGO's 33 / 28 fields).
+
+Code: `ps2_engine` (pack reader `ps2_pack`, drawing `ps2_draw`: quads, PS2 font text, lit and sorted
+icon models; the screens `ps2_ui`), `openmenu/src/ui_ps2.c` (host side: game list, settings, launch,
+sound, controller), `gfx.c` (`gfx_ps2_*`: pack textures in video memory, additive blending, game
+pictures). The menu draws back to front without depth test.
+
+Preview without hardware (needs your `PS2.PAK`; `-DBUILD_PC=ON` builds it, or
+`gcc -Iinclude src/*.c tools/ps2_preview.c -lm` in `src/ps2_engine`):
+`ps2_preview PS2.PAK out.ppm [main|devices|games|card|settings] [seconds] [selection] [popup]`.
+Host test: `test/ps2_engine_test.c` builds a synthetic pack and drives every screen.
+
+Not verified on hardware: layout numbers, glow strengths and colours are matched by eye to three
+screenshots (main menu, memory card browser, System Configuration); the PS2's own animation curves
+were not recoverable and are approximated. Memory cards are only detected. The PS2 sounds are not
+used, the menu plays the Dreamcast BIOS sounds.

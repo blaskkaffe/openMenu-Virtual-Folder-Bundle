@@ -24,7 +24,7 @@ static const ps2_pack* g_pack;
 
 /* ---- Fake host data ---------------------------------------------------------------------- */
 
-static int g_cursor, g_count = 30;
+static int g_cursor, g_count = 62;
 static int g_set_values[8];
 
 static const char* const game_names[] = {"Sonic Adventure", "Shenmue", "Crazy Taxi 2", "Skies of Arcadia Disc 1", "Jet Set Radio",
@@ -90,14 +90,9 @@ static const char* h_set_label(void* u, int r) { (void)u; return set_labels[r]; 
 static const char* h_set_group(void* u, int r) { (void)u; return set_groups[r]; }
 static const char* h_set_help(void* u, int r) { (void)u; return set_help[r]; }
 static const char* h_set_value(void* u, int r) { (void)u; return set_choices[g_set_values[r] & 3]; }
-static int h_set_choice_count(void* u, int r) { (void)u; (void)r; return 4; }
-static const char* h_set_choice_name(void* u, int r, int c) { (void)u; (void)r; return set_choices[c & 3]; }
-static int h_set_get(void* u, int r) { (void)u; return g_set_values[r]; }
-static void h_set_set(void* u, int r, int c) { (void)u; g_set_values[r] = c; }
-static int h_set_popup(void* u, int r) { (void)u; return r == 5; }
 static void h_set_change(void* u, int r, int d) { (void)u; g_set_values[r] += d; }
 static int h_memcard(void* u, int s) { (void)u; return s == 0; }
-static void h_clock(void* u, char* out, size_t n) { (void)u; snprintf(out, n, "%s", "28/10/2026  14:05"); }
+static void h_clock(void* u, char* out, size_t n) { (void)u; snprintf(out, n, "%s", "2026/10/28 14:05:09"); }
 
 /* ---- Rasteriser ---------------------------------------------------------------------------- */
 
@@ -272,11 +267,6 @@ main(int argc, char** argv) {
     host.set_group = h_set_group;
     host.set_help = h_set_help;
     host.set_value = h_set_value;
-    host.set_choice_count = h_set_choice_count;
-    host.set_choice_name = h_set_choice_name;
-    host.set_get = h_set_get;
-    host.set_set = h_set_set;
-    host.set_opens_popup = h_set_popup;
     host.set_change = h_set_change;
     host.memcard_present = h_memcard;
     host.clock_text = h_clock;
@@ -301,12 +291,12 @@ main(int argc, char** argv) {
     ui.card_slot = sel & 1;
     ui.game_pos = (float)g_cursor;
     ui.settings_cursor = screen == PS2_SCREEN_SETTINGS ? sel : 0;
+    ui.settings_pos = (float)ui.settings_cursor;
     if (popup) {
-        ui.popup = screen == PS2_SCREEN_SETTINGS;
-        ui.popup_sel = 1;
         ui.recent_open = screen == PS2_SCREEN_GAMES;
-        if (ui.popup) ui.settings_cursor = 5;
     }
+    ui.grid_target = g_cursor / PS2_GRID_COLS > 3 ? g_cursor / PS2_GRID_COLS - 3 : 0;
+    ui.grid_top = (float)ui.grid_target;
     for (float t = 0; t < seconds; t += 1.0f / 60.0f) {
         ps2_ui_update(&ui, 1.0f / 60.0f);
     }

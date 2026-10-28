@@ -110,12 +110,20 @@ h_game_get(void* user, int index, ps2_game_entry* out) {
 static int
 h_game_nav(void* user, int nav) {
     (void)user;
-    static const button_t map[] = {BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT, BTN_A, BTN_B};
-    if (nav < 0 || nav >= (int)(sizeof(map) / sizeof(map[0]))) {
-        return PS2_NAVR_NONE;
-    }
     const gd_item* game = NULL;
-    uil_result r = uil_button(map[nav], &game);
+    switch (nav) {
+        case PS2_NAV_ROW_PREV: return uil_move(-PS2_GRID_COLS) ? PS2_NAVR_CHANGED : PS2_NAVR_NONE;
+        case PS2_NAV_ROW_NEXT: return uil_move(PS2_GRID_COLS) ? PS2_NAVR_CHANGED : PS2_NAVR_NONE;
+        case PS2_NAV_DISC: return uil_disc_next() ? PS2_NAVR_CHANGED : PS2_NAVR_NONE;
+        default: break;
+    }
+    static const button_t map[] = {BTN_UP, BTN_DOWN};
+    uil_result r;
+    if (nav == PS2_NAV_PREV || nav == PS2_NAV_NEXT) {
+        r = uil_button(map[nav == PS2_NAV_NEXT], &game);
+    } else {
+        r = uil_button(nav == PS2_NAV_ENTER ? BTN_A : BTN_B, &game);
+    }
     switch (r) {
         case UIL_LAUNCH:
             launch_game = game;
@@ -200,11 +208,6 @@ static const char* h_set_label(void* u, int r) { (void)u; return uis_label(r); }
 static const char* h_set_group(void* u, int r) { (void)u; return uis_group(r); }
 static const char* h_set_help(void* u, int r) { (void)u; return uis_help(r); }
 static const char* h_set_value(void* u, int r) { (void)u; return uis_value(r); }
-static int h_set_choice_count(void* u, int r) { (void)u; return uis_choice_count(r); }
-static const char* h_set_choice_name(void* u, int r, int c) { (void)u; return uis_choice_name(r, c); }
-static int h_set_get(void* u, int r) { (void)u; return uis_get(r); }
-static void h_set_set(void* u, int r, int c) { (void)u; uis_set(r, c); }
-static int h_set_opens_popup(void* u, int r) { (void)u; return uis_opens_popup(r); }
 static void h_set_change(void* u, int r, int d) { (void)u; uis_change(r, d); }
 
 static int
@@ -231,8 +234,18 @@ h_clock_text(void* user, char* out, size_t n) {
     time_t now = time(NULL);
     struct tm* t = gmtime(&now); /* the console's clock holds local time */
     if (t) {
-        snprintf(out, n, "%02d/%02d/%04d  %02d:%02d", t->tm_mday, t->tm_mon + 1, t->tm_year + 1900, t->tm_hour, t->tm_min);
+        snprintf(out, n, "%04d/%02d/%02d %02d:%02d:%02d", t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
     }
+}
+
+static const char*
+h_version(void* user) {
+    (void)user;
+#ifdef OPENMENU_BUILD_VERSION
+    return "OpenMenu " OPENMENU_BUILD_VERSION;
+#else
+    return "OpenMenu";
+#endif
 }
 
 static void
@@ -255,6 +268,7 @@ to_ps2(button_t b) {
         case BTN_B: return PS2_BTN_B;
         case BTN_X: return PS2_BTN_X;
         case BTN_START: return PS2_BTN_START;
+        case BTN_Y: return PS2_BTN_Y;
         default: return PS2_BTN_NONE;
     }
 }
@@ -283,15 +297,11 @@ ui_ps2_run(const bios_rom* rom) {
     host.set_group = h_set_group;
     host.set_help = h_set_help;
     host.set_value = h_set_value;
-    host.set_choice_count = h_set_choice_count;
-    host.set_choice_name = h_set_choice_name;
-    host.set_get = h_set_get;
-    host.set_set = h_set_set;
-    host.set_opens_popup = h_set_opens_popup;
     host.set_change = h_set_change;
     host.set_leave = h_set_leave;
     host.memcard_present = h_memcard_present;
     host.clock_text = h_clock_text;
+    host.version = h_version;
     host.sfx = h_sfx;
     /* nothing has touched the PVR yet: if anything is missing the caller can still use the BIOS-style menu */
     if (ps2_ui_init(&ui, &pack, &host, gfx_ps2_sink()) != 0 || gfx_init(NULL) != 0 || gfx_ps2_load(&pack) != 0) {
