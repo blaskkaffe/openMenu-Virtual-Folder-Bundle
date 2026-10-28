@@ -27,6 +27,7 @@ extern "C" {
 #define BPAGE_ICON_GLOBE 22            /* the globe (built in) */
 #define BPAGE_ICON_PHONE 23            /* the telephone (built in) */
 #define BPAGE_ICON_CASE 24             /* the CD jewel case (built in) */
+#define BPAGE_ICON_DISC 25             /* the GD-ROM disc (ROM model 61) */
 
 /* Where the text goes (pixels), copied from the original Settings screen (photo of the console): the label is centred between the icon
  * (which ends at x 100) and the value pill, the value starts 10 px inside the pill, left aligned, both centred on the row's height. */

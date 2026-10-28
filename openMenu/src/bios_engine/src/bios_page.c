@@ -85,6 +85,7 @@ icon_model(int icon, uint16_t* model, uint16_t* motion, float* scale) {
     }
     switch (icon) {
         case BPAGE_ICON_VMU: *model = 1; *motion = 1; *scale = 0.34f; return; /* the main menu's VMU, with its LCD screen */
+        case BPAGE_ICON_DISC: *model = 61; *scale = 0.14f; return;
         case BPAGE_ICON_PAD: *model = 17; *scale = 0.55f; return;
         case BPAGE_ICON_GLOBE: *model = BMODEL_GLOBE; *scale = 0.4f; return;
         case BPAGE_ICON_PHONE: *model = BMODEL_PHONE; *scale = 0.42f; return;

@@ -39,7 +39,7 @@ int uis_action(int row);
 
 /* Icon of a row: UIS_ICON_*, or -1 for a placeholder digit. The numbers are those of BPAGE_ICON_* in bios_page.h (a row's icon is
  * handed to the page as it is). Which kind of setting gets which icon: clock and date, anything with a time: the clock; sound: the
- * speaker; memory card, VMU and saving: the VMU; the BIOS language: the lips; the rest: the question mark or none yet. */
+ * speaker; memory card, VMU and saving: the VMU; games and discs: the GD-ROM disc; controllers and mice: the controller; the BIOS language: the lips; the rest: the question mark or none yet. */
 enum {
     UIS_ICON_LANGUAGE = 0, /* the lips */
     UIS_ICON_CLOCK = 1,
@@ -48,7 +48,8 @@ enum {
     UIS_ICON_VMU = 20,
     UIS_ICON_PAD = 21,     /* the controller */
     UIS_ICON_GLOBE = 22,
-    UIS_ICON_PHONE = 23
+    UIS_ICON_PHONE = 23,
+    UIS_ICON_DISC = 25     /* the GD-ROM disc */
 };
 int uis_icon(int row);
 
