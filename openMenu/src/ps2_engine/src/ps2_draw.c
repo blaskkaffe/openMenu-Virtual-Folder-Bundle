@@ -6,7 +6,7 @@
 #include "ps2_draw.h"
 
 #define MAX_MODEL_TRIS 256
-#define CAMERA_DIST 9.0f /* model units between the eye and the model's centre plane */
+#define CAMERA_DIST 9.0f /* default distance in model units between the eye and the model's centre plane */
 #define DRAW_Z 0.5f
 
 void
@@ -97,6 +97,32 @@ ps2d_sprite(ps2_draw* d, int tex, float cx, float cy, float w, float h, float an
         q[i] = vtx(d, cx + px * c - py * s, cy + px * s + py * c, (cxs[i] + 0.5f) * su, (cys[i] + 0.5f) * sv, argb);
     }
     emit_quad(d, q, tex, blend);
+}
+
+void
+ps2d_quad4(ps2_draw* d, int tex, const float x[4], const float y[4], const float u[4], const float v[4], const uint32_t argb[4],
+           int blend) {
+    float su, sv;
+    pic_uv(d, tex, &su, &sv);
+    ps2_vtx q[4];
+    for (int i = 0; i < 4; i++) {
+        q[i] = vtx(d, x[i], y[i], u[i] * su, v[i] * sv, argb[i]);
+    }
+    emit_quad(d, q, tex, blend);
+}
+
+void
+ps2d_line(ps2_draw* d, float x0, float y0, float x1, float y1, float width, uint32_t argb, int blend) {
+    float dx = x1 - x0, dy = y1 - y0, len = sqrtf(dx * dx + dy * dy);
+    if (len < 0.01f) {
+        return;
+    }
+    float nx = -dy / len * width * 0.5f, ny = dx / len * width * 0.5f;
+    float xs[4] = {x0 + nx, x0 - nx, x1 + nx, x1 - nx};
+    float ys[4] = {y0 + ny, y0 - ny, y1 + ny, y1 - ny};
+    float z[4] = {0, 0, 0, 0};
+    uint32_t c[4] = {argb, argb, argb, argb};
+    ps2d_quad4(d, PS2_TEX_NONE, xs, ys, z, z, c, blend);
 }
 
 void
@@ -233,6 +259,7 @@ ps2d_model(ps2_draw* d, int model, const ps2_model_view* mv) {
     }
     float cy_ = cosf(mv->yaw), sy = sinf(mv->yaw), cp = cosf(mv->pitch), sp = sinf(mv->pitch);
     float cr = cosf(mv->roll), sr = sinf(mv->roll);
+    float cam = mv->dist > 0.0f ? mv->dist : CAMERA_DIST;
     /* light from the upper left front */
     const float lx = -0.35f, ly = 0.55f, lz = 0.76f;
 
@@ -258,8 +285,8 @@ ps2d_model(ps2_draw* d, int model, const ps2_model_view* mv) {
             float nx2 = nx * cr - ny2 * sr;
             ny2 = nx * sr + ny2 * cr;
             nx = nx2;
-            float depth = CAMERA_DIST - z2; /* distance from the eye */
-            float persp = CAMERA_DIST / depth;
+            float depth = cam - z2; /* distance from the eye */
+            float persp = cam / depth;
             int i = t * 3 + k;
             pv[i].x = mv->cx + x1 * mv->scale * persp;
             pv[i].y = mv->cy - y2 * mv->scale * persp;
@@ -328,4 +355,70 @@ ps2d_model(ps2_draw* d, int model, const ps2_model_view* mv) {
         emit(d, out, mv->tex, PS2_BLEND_ALPHA);
     }
     return nkeys;
+}
+
+/* ---- Glass cube ------------------------------------------------------------------------- */
+
+void
+ps2d_glass_cube(ps2_draw* d, const ps2_glass* g) {
+    static const int face[6][4] = {{0, 1, 3, 2}, {4, 6, 7, 5}, {0, 4, 5, 1}, {2, 3, 7, 6}, {0, 2, 6, 4}, {1, 5, 7, 3}};
+    static const float nrm[6][3] = {{0, 0, -1}, {0, 0, 1}, {0, -1, 0}, {0, 1, 0}, {-1, 0, 0}, {1, 0, 0}};
+    float cy_ = cosf(g->yaw), sy = sinf(g->yaw), cp = cosf(g->pitch), sp = sinf(g->pitch), cr = cosf(g->roll), sr = sinf(g->roll);
+    float cam = g->dist > 0.0f ? g->dist : CAMERA_DIST;
+    float px[8], py[8], pz[8];
+    for (int i = 0; i < 8; i++) {
+        float x = (i & 1) ? 1.0f : -1.0f, y = (i & 2) ? 1.0f : -1.0f, z = (i & 4) ? 1.0f : -1.0f;
+        float x1 = x * cy_ + z * sy, z1 = -x * sy + z * cy_;
+        float y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+        float x2 = x1 * cr - y2 * sr;
+        y2 = x1 * sr + y2 * cr;
+        float persp = cam / (cam - z2);
+        px[i] = g->cx + x2 * g->scale * persp;
+        py[i] = g->cy - y2 * g->scale * persp;
+        pz[i] = z2;
+    }
+    struct {
+        float depth, nz;
+        int f;
+    } order[6];
+    for (int f = 0; f < 6; f++) {
+        float nx = nrm[f][0] * cy_ + nrm[f][2] * sy, nz1 = -nrm[f][0] * sy + nrm[f][2] * cy_;
+        float ny2 = nrm[f][1] * cp - nz1 * sp, nz2 = nrm[f][1] * sp + nz1 * cp;
+        (void)nx;
+        (void)ny2;
+        order[f].nz = nz2;
+        order[f].f = f;
+        order[f].depth = (pz[face[f][0]] + pz[face[f][1]] + pz[face[f][2]] + pz[face[f][3]]) / 4.0f;
+    }
+    for (int i = 1; i < 6; i++) { /* far to near */
+        int j = i;
+        float dd = order[i].depth, nn = order[i].nz;
+        int ff = order[i].f;
+        while (j > 0 && order[j - 1].depth > dd) {
+            order[j] = order[j - 1];
+            j--;
+        }
+        order[j].depth = dd;
+        order[j].nz = nn;
+        order[j].f = ff;
+    }
+    for (int k = 0; k < 6; k++) {
+        int f = order[k].f;
+        uint32_t c = order[k].nz > 0.0f ? g->front : g->back;
+        float xs[4] = {px[face[f][0]], px[face[f][1]], px[face[f][3]], px[face[f][2]]};
+        float ys[4] = {py[face[f][0]], py[face[f][1]], py[face[f][3]], py[face[f][2]]};
+        float z[4] = {0, 0, 0, 0};
+        /* a little shading by the facing so the faces can be told apart */
+        float shade = 0.75f + 0.25f * fabsf(order[k].nz);
+        uint32_t cc = ps2_argb((int)(c >> 24), (int)(((c >> 16) & 255) * shade), (int)(((c >> 8) & 255) * shade), (int)((c & 255) * shade));
+        uint32_t cs[4] = {cc, cc, cc, cc};
+        ps2d_quad4(d, PS2_TEX_NONE, xs, ys, z, z, cs, PS2_BLEND_ALPHA);
+    }
+    static const int edges[12][2] = {{0, 1}, {1, 3}, {3, 2}, {2, 0}, {4, 5}, {5, 7}, {7, 6}, {6, 4}, {0, 4}, {1, 5}, {3, 7}, {2, 6}};
+    for (int e = 0; e < 12; e++) {
+        int a = edges[e][0], b = edges[e][1];
+        float depth = (pz[a] + pz[b]) * 0.5f;
+        float f = depth > 0.0f ? 1.0f : 0.55f; /* the far edges seen through the glass are dimmer */
+        ps2d_line(d, px[a], py[a], px[b], py[b], g->edge_w, ps2_fade(g->edge, f), PS2_BLEND_ALPHA);
+    }
 }

@@ -65,6 +65,11 @@ void ps2d_quad(ps2_draw* d, int tex, float x0, float y0, float x1, float y1, flo
                uint32_t argb, int blend);
 /* Whole picture of a texture centred on (cx, cy), w x h pixels, turned by `angle` radians. */
 void ps2d_sprite(ps2_draw* d, int tex, float cx, float cy, float w, float h, float angle, uint32_t argb, int blend);
+/* Quad with free corners (top-left, top-right, bottom-left, bottom-right), a colour and a uv each. */
+void ps2d_quad4(ps2_draw* d, int tex, const float x[4], const float y[4], const float u[4], const float v[4], const uint32_t argb[4],
+                int blend);
+/* Straight line of `width` pixels between two points. */
+void ps2d_line(ps2_draw* d, float x0, float y0, float x1, float y1, float width, uint32_t argb, int blend);
 /* Flat quad with a vertical colour gradient */
 void ps2d_gradient(ps2_draw* d, float x, float y, float w, float h, uint32_t top, uint32_t bottom, int blend);
 /* Flat quad with a horizontal colour gradient */
@@ -88,12 +93,23 @@ typedef struct ps2_model_view {
     float scale;       /* pixels per model unit */
     float yaw, pitch;  /* radians */
     float roll;        /* radians, turn about the view axis (applied last) */
+    float dist;        /* camera distance in model units (0 = default); larger is flatter */
     float y_offset;    /* model-space shift applied before rotating (centres a model that stands on y = 0) */
     uint32_t tint;     /* ARGB multiplier */
     int tex;           /* texture index, PS2_TEX_ART + slot, or PS2_TEX_NONE */
     int planar_uv;     /* box models: map the whole texture on every face (game pictures) */
     float spec;        /* strength of the highlight on shiny parts (0 = none) */
 } ps2_model_view;
+
+/* A cube of glass, side 2 units: faces seen from the outside in `front`, the inside faces
+ * (visible through the glass) in `back`, and the 12 edges in `edge`. */
+typedef struct ps2_glass {
+    float cx, cy, scale, yaw, pitch, roll, dist;
+    uint32_t front, back, edge;
+    float edge_w;
+} ps2_glass;
+
+void ps2d_glass_cube(ps2_draw* d, const ps2_glass* g);
 
 /* Draw model `model` (pack index). Returns the number of triangles sent. */
 int ps2d_model(ps2_draw* d, int model, const ps2_model_view* v);

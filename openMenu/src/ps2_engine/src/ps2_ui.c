@@ -144,6 +144,8 @@ arrive(ps2_ui* ui) {
     } else if (ui->screen == PS2_SCREEN_SETTINGS) {
         ui->settings_cursor = 0;
         ui->settings_pos = 0.0f;
+        ui->cfg_prev = 0;
+        ui->cfg_fade = 1.0f;
         ui->cfg_hide = 0;
         ui->cfg_hidden = 0.0f;
     }
@@ -296,6 +298,8 @@ button_settings(ps2_ui* ui, ps2_btn b) {
     if (b == PS2_BTN_LEFT || b == PS2_BTN_RIGHT) {
         int next = row + (b == PS2_BTN_LEFT ? -1 : 1);
         if (next >= 0 && next < n) {
+            ui->cfg_prev = row;
+            ui->cfg_fade = 0.0f;
             ui->settings_cursor = next;
             sfx(ui, PS2_SFX_CURSOR);
         }
@@ -359,6 +363,7 @@ ps2_ui_update(ps2_ui* ui, float dt) {
     ui->main_pos = ease_to(ui->main_pos, (float)ui->main_sel, dt);
     ui->dev_pos = ease_to(ui->dev_pos, (float)ui->dev_sel, dt);
     ui->settings_pos = ease_to(ui->settings_pos, (float)ui->settings_cursor, dt);
+    ui->cfg_fade = clampf(ui->cfg_fade + dt / 0.4f, 0.0f, 1.0f);
     ui->cfg_hidden = clampf(ui->cfg_hidden + (ui->cfg_hide ? dt : -dt), 0.0f, 1.0f); /* about 1 s, measured */
     if (ui->screen == PS2_SCREEN_GAMES && ui->host.game_cursor) {
         int count = ui->host.game_count(ui->host.user);
@@ -633,12 +638,12 @@ draw_picker_backdrop(ps2_ui* ui, const char* tag, const char* name, const char* 
 /* An icon seen face on, as in the picker: dark, or lit with a white glow on its label when picked */
 static void
 draw_picker_icon(ps2_ui* ui, int model, int tex, float x, float y, float scale, int selected, float pitch) {
-    ps2_model_view mv = {.cx = x, .cy = y, .scale = scale, .yaw = 0.0f, .pitch = pitch, .roll = model == ui->id.m_card ? PI_F : 0.0f, .tint = selected ? 0xFFA8A8A8u : 0xFF484848u,
-                         .tex = tex};
+    ps2_model_view mv = {.cx = x, .cy = y, .scale = scale, .yaw = 0.0f, .pitch = pitch, .roll = model == ui->id.m_card ? PI_F : 0.0f,
+                         .dist = 16.0f, .tint = selected ? 0xFF5A5A5Au : 0xFF383838u, .tex = tex};
     ps2d_model(&ui->draw, model, &mv);
     if (selected) {
         float pulse = 0.85f + 0.15f * sinf(ui->time * 3.0f);
-        ps2d_sprite(&ui->draw, ui->id.glow2, x, y + 3.0f, scale * 3.0f, scale * 2.2f, 0.0f, ps2_argb((int)(255.0f * pulse), 255, 255, 255), PS2_BLEND_ADD);
+        ps2d_sprite(&ui->draw, ui->id.glow2, x, y + scale * 0.45f, scale * 2.6f, scale * 2.0f, 0.0f, ps2_argb((int)(255.0f * pulse), 255, 255, 255), PS2_BLEND_ADD);
     }
 }
 
@@ -656,7 +661,7 @@ draw_devices(ps2_ui* ui) {
         if (i == DEV_DISC) {
             draw_picker_icon(ui, ui->id.m_disc, ui->id.t_disc, x, Y(276.0f), 25.0f, i == ui->dev_sel, 1.2f);
         } else {
-            draw_picker_icon(ui, ui->id.m_card, ui->id.t_card, x, Y(276.0f), 27.0f, i == ui->dev_sel, 1.5f);
+            draw_picker_icon(ui, ui->id.m_card, ui->id.t_card, x, Y(276.0f), 27.0f, i == ui->dev_sel, 1.0f);
         }
     }
     hint_t hints[] = {{SYM_CROSS, "Enter", 235.0f}, {SYM_CIRCLE, "Back", 357.0f}};
@@ -799,13 +804,22 @@ draw_recent(ps2_ui* ui) {
 
 /* ---- Drawing: settings ------------------------------------------------------------------ */
 
-#define CFG_CX 322.0f
-#define CFG_CY Y(250.0f)
+#define CFG_CX 300.0f /* the dark eye the bars radiate from, reference pixels */
+#define CFG_CY 262.0f
+#define CFG_SLOTS 5
 
-/* Where the five visible cubes sit (reference pixels): they zig-zag down the left side, the picked
- * one in the middle. */
-static const float cube_slot_x[5] = {205.0f, 85.0f, 212.0f, 90.0f, 208.0f};
-static const float cube_slot_y[5] = {115.0f, 190.0f, 255.0f, 322.0f, 392.0f};
+/* The cubes sit still at these places (measured, reference pixels) and only tumble; the picked
+ * setting is the one whose cube is lit blue. */
+static const float cube_slot_x[CFG_SLOTS] = {205.0f, 85.0f, 212.0f, 90.0f, 208.0f};
+static const float cube_slot_y[CFG_SLOTS] = {110.0f, 190.0f, 255.0f, 320.0f, 392.0f};
+
+/* A soft rod of blue glass seen from the side */
+static void
+draw_rod(ps2_ui* ui, float x, float y, float len, float width, float angle, uint32_t body, uint32_t core) {
+    ps2_draw* d = &ui->draw;
+    ps2d_sprite(d, ui->id.blur, x, y, len * 1.7f, width * 2.6f, angle, body, PS2_BLEND_ALPHA);
+    ps2d_sprite(d, ui->id.blur, x, y, len * 1.1f, width * 1.2f, angle, core, PS2_BLEND_ALPHA);
+}
 
 static void
 draw_settings_background(ps2_ui* ui) {
@@ -813,32 +827,58 @@ draw_settings_background(ps2_ui* ui) {
     float t = ui->time;
     float y0 = Y(62.0f), h = Y(388.0f);
     ps2d_gradient(d, VIEW_X, y0, VIEW_W, h, 0xFF5B4F8Cu, 0xFF2B2150u, PS2_BLEND_ALPHA);
-    /* about twelve long rounded bars of blue glass radiating from the middle, turning slowly */
-    for (int i = 0; i < 12; i++) {
-        float a = t * 0.07f + (float)i * (2.0f * PI_F / 12.0f) + 0.25f * rnd(i, 1);
-        float r = 120.0f + 90.0f * rnd(i, 2);
-        float len = 95.0f + 70.0f * rnd(i, 3);
-        uint32_t c = i == 4 ? ps2_argb(230, 110, 220, 255) : ps2_argb(150, 30, 60 + (int)(60.0f * rnd(i, 4)), 190);
-        float bx = CFG_CX + cosf(a) * r, by = CFG_CY + sinf(a) * r * 0.85f;
-        ps2d_sprite(d, ui->id.blur, bx, by, len * 1.3f, 46.0f, a, c, PS2_BLEND_ADD);
-        ps2d_sprite(d, ui->id.glow2, bx, by, len * 0.8f, 26.0f, a, ps2_fade(c, 0.7f), PS2_BLEND_ADD);
+    /* a dark patch in the middle, where the bars come from */
+    ps2d_sprite(d, ui->id.glow2, CFG_CX + 40.0f, Y(CFG_CY), 380.0f, 300.0f, 0.0f, 0x90140C30u, PS2_BLEND_ALPHA);
+    /* long rods of dark blue glass radiating from the eye, turning very slowly */
+    for (int i = 0; i < 14; i++) {
+        float a = t * 0.05f + (float)i * (2.0f * PI_F / 14.0f) + 0.2f * rnd(i, 1);
+        float r = 105.0f + 95.0f * rnd(i, 2);
+        float len = 85.0f + 75.0f * rnd(i, 3);
+        float width = 20.0f + 12.0f * rnd(i, 4);
+        draw_rod(ui, CFG_CX + 40.0f + cosf(a) * r, Y(CFG_CY) + sinf(a) * r * 0.8f, len, width, a, ps2_argb(255, 30, 70, 150 + (int)(30.0f * rnd(i, 5))),
+                 ps2_argb(230, 60, 120, 190));
     }
-    /* the dark eye with its ring of small lights */
-    ps2d_sprite(d, ui->id.glow2, CFG_CX, CFG_CY, 150.0f, 130.0f, 0.0f, 0xD0100820u, PS2_BLEND_ALPHA);
-    for (int i = 0; i < 9; i++) {
-        float a = 1.2f + (float)i * 0.28f + t * 0.3f;
-        draw_orb(ui, CFG_CX - 20.0f + 62.0f * cosf(a), CFG_CY + 30.0f + 40.0f * sinf(a), 3.2f + 0.3f * (float)i, 0.8f);
+    /* the one bright bar of light at the upper right */
+    draw_rod(ui, 415.0f, Y(154.0f), 105.0f, 24.0f, -0.42f, ps2_argb(235, 150, 225, 255), ps2_argb(220, 215, 245, 255));
+    ps2d_sprite(d, ui->id.glow2, 415.0f, Y(154.0f), 150.0f, 70.0f, -0.42f, 0x5078B4FFu, PS2_BLEND_ADD);
+    /* the arc of small lights around the eye, with its orb */
+    for (int i = 0; i < 10; i++) {
+        float a = 2.0f + (float)i * 0.22f + 0.15f * sinf(t * 0.5f);
+        draw_orb(ui, CFG_CX - 10.0f + 66.0f * cosf(a), Y(CFG_CY) + 24.0f + 44.0f * sinf(a), 2.4f + 0.45f * (float)i, 0.8f);
     }
 }
 
-/* One cube of glass; the picked one is solid blue */
+/* One cube of glass; the picked one is lit blue */
 static void
-draw_glass_cube(ps2_ui* ui, float x, float y, float scale, float phase, int selected, float fade) {
-    uint32_t tint = selected ? ps2_argb(235, 40, 130, 255) : ps2_argb(175, 135, 125, 190);
-    ps2_model_view mv = {.cx = x, .cy = y, .scale = scale, .yaw = ui->time * 0.5f + phase, .pitch = 0.45f + 0.3f * sinf(ui->time * 0.4f + phase),
-                         .roll = 0.5f * sinf(ui->time * 0.3f + phase * 2.0f), .y_offset = -1.04f, .tint = ps2_fade(tint, fade), .tex = PS2_TEX_NONE,
-                         .spec = selected ? 0.5f : 0.3f};
-    ps2d_model(&ui->draw, ui->id.m_cube, &mv);
+draw_glass_cube(ps2_ui* ui, float x, float y, float phase, int selected, float fade) {
+    ps2_glass g = {.cx = x, .cy = y, .scale = selected ? 28.0f : 26.0f,
+                   .yaw = ui->time * 0.5f + phase, .pitch = 0.5f + 0.35f * sinf(ui->time * 0.37f + phase),
+                   .roll = 0.45f * sinf(ui->time * 0.29f + phase * 2.0f), .dist = 9.0f,
+                   .front = selected ? ps2_argb(185, 30, 120, 255) : ps2_argb(120, 150, 140, 190),
+                   .back = selected ? ps2_argb(200, 10, 50, 200) : ps2_argb(160, 18, 10, 48),
+                   .edge = selected ? ps2_argb(255, 130, 215, 255) : ps2_argb(225, 215, 205, 250), .edge_w = selected ? 2.4f : 2.0f};
+    g.front = ps2_fade(g.front, fade);
+    g.back = ps2_fade(g.back, fade);
+    g.edge = ps2_fade(g.edge, fade);
+    ps2d_glass_cube(&ui->draw, &g);
+}
+
+static void
+draw_cfg_text(ps2_ui* ui, int row, float alpha) {
+    ps2_draw* d = &ui->draw;
+    float keep = d->alpha;
+    d->alpha = keep * alpha;
+    const float fit = 330.0f;
+    const char* label = ui->host.set_label(ui->host.user, row);
+    const char* value = ui->host.set_value(ui->host.user, row);
+    float w = ps2d_text_width(d, label, 1.1f);
+    float sc = w > fit ? 1.1f * fit / w : 1.1f;
+    text_at(ui, label, 443.0f, Y(274.0f), sc, COL_CYAN, PS2_TEXT_CENTER);
+    w = ps2d_text_width(d, value, 1.1f);
+    sc = w > fit ? 1.1f * fit / w : 1.1f;
+    text_at(ui, value, 443.0f, Y(316.0f), sc, COL_VALUE, PS2_TEXT_CENTER);
+    text_at(ui, ui->host.set_help(ui->host.user, row), 443.0f, Y(356.0f), 0.55f, 0xFFC8C0E0u, PS2_TEXT_CENTER);
+    d->alpha = keep;
 }
 
 static void
@@ -850,23 +890,22 @@ draw_settings(ps2_ui* ui) {
 
     draw_settings_background(ui);
     if (n > 0) {
+        /* five cubes at fixed places; with more settings the five stand for a window of them */
+        int top = n > CFG_SLOTS ? (int)clampf((float)(ui->settings_cursor - CFG_SLOTS / 2), 0.0f, (float)(n - CFG_SLOTS)) : 0;
+        int slots = n < CFG_SLOTS ? n : CFG_SLOTS;
         for (int pass = 0; pass < 2; pass++) { /* the picked cube last */
-            for (int i = 0; i < n; i++) {
-                float rel = (float)i - ui->settings_pos;
-                if (fabsf(rel) > 2.6f || (fabsf(rel) < 0.5f) != (pass == 1)) {
+            for (int k = 0; k < slots; k++) {
+                int sel = top + k == ui->settings_cursor;
+                if (sel != (pass == 1)) {
                     continue;
                 }
-                float u = clampf(rel + 2.0f, 0.0f, 4.0f);
-                int k = (int)u;
-                if (k > 3) k = 3;
-                float f = u - (float)k;
-                float x = cube_slot_x[k] + (cube_slot_x[k + 1] - cube_slot_x[k]) * f;
-                float y = Y(cube_slot_y[k] + (cube_slot_y[k + 1] - cube_slot_y[k]) * f);
-                float fade = clampf(2.6f - fabsf(rel), 0.0f, 1.0f);
-                draw_glass_cube(ui, x, y, 29.0f + (i == ui->settings_cursor ? 3.0f : 0.0f), (float)i * 1.3f, i == ui->settings_cursor, fade);
+                draw_glass_cube(ui, cube_slot_x[k], Y(cube_slot_y[k]), (float)k * 1.7f, sel, 1.0f);
             }
         }
     }
+    /* the scene lives in the viewport; everything above and below it is black */
+    ps2d_rect(d, 0.0f, 0.0f, 640.0f, Y(62.0f), 0xFF000000u);
+    ps2d_rect(d, 0.0f, Y(450.0f), 640.0f, 480.0f - Y(450.0f), 0xFF000000u);
     if (ui->clock[0]) { /* "YYYY/MM/DD HH:MM:SS": the date at the left, the time at the right */
         char date[16], time_s[16];
         const char* sp = strchr(ui->clock, ' ');
@@ -881,15 +920,11 @@ draw_settings(ps2_ui* ui) {
     d->alpha = keep * ui_fade;
     text_at(ui, "Settings", 443.0f, Y(221.0f), MENU_ITEM_SCALE, COL_YELLOW, PS2_TEXT_CENTER);
     if (n > 0) {
-        float fit = 330.0f;
-        text_at(ui, "", 443.0f, Y(274.0f), 1.0f, COL_CYAN, PS2_TEXT_CENTER);
-        float w = ps2d_text_width(d, ui->host.set_label(ui->host.user, ui->settings_cursor), 1.1f);
-        float sc = w > fit ? 1.1f * fit / w : 1.1f;
-        text_at(ui, ui->host.set_label(ui->host.user, ui->settings_cursor), 443.0f, Y(274.0f), sc, COL_CYAN, PS2_TEXT_CENTER);
-        w = ps2d_text_width(d, ui->host.set_value(ui->host.user, ui->settings_cursor), 1.1f);
-        sc = w > fit ? 1.1f * fit / w : 1.1f;
-        text_at(ui, ui->host.set_value(ui->host.user, ui->settings_cursor), 443.0f, Y(316.0f), sc, COL_VALUE, PS2_TEXT_CENTER);
-        text_at(ui, ui->host.set_help(ui->host.user, ui->settings_cursor), 443.0f, Y(356.0f), 0.55f, 0xFFC8C0E0u, PS2_TEXT_CENTER);
+        /* the old text fades out while the new one fades in */
+        if (ui->cfg_fade < 1.0f && ui->cfg_prev != ui->settings_cursor && ui->cfg_prev < n) {
+            draw_cfg_text(ui, ui->cfg_prev, 1.0f - ui->cfg_fade);
+        }
+        draw_cfg_text(ui, ui->settings_cursor, ui->cfg_fade < 1.0f && ui->cfg_prev != ui->settings_cursor ? ui->cfg_fade : 1.0f);
         draw_arrow(ui, 2, 616.0f, Y(264.0f), 22.0f, 0xFFB8B8C8u); /* up/down change the value */
         draw_arrow(ui, 3, 616.0f, Y(286.0f), 22.0f, 0xFFB8B8C8u);
     }

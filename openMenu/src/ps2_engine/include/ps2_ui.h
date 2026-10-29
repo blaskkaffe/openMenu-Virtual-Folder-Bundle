@@ -127,6 +127,8 @@ typedef struct ps2_ui {
     char game_folder_seen[64];
     int settings_cursor;
     float settings_pos; /* eased cursor of the ring of settings cubes */
+    int cfg_prev;       /* the setting shown before the last change (its text fades out) */
+    float cfg_fade;     /* 0..1 progress of that cross-fade */
     int cfg_hide;       /* square pressed: only the scene, date and clock stay */
     float cfg_hidden;   /* ... faded in over a second */
     int grid_target;    /* first visible row of the cube grid */
