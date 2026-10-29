@@ -87,6 +87,7 @@ typedef struct ps2_model_view {
     float cx, cy;      /* screen position of the model's centre */
     float scale;       /* pixels per model unit */
     float yaw, pitch;  /* radians */
+    float roll;        /* radians, turn about the view axis (applied last) */
     float y_offset;    /* model-space shift applied before rotating (centres a model that stands on y = 0) */
     uint32_t tint;     /* ARGB multiplier */
     int tex;           /* texture index, PS2_TEX_ART + slot, or PS2_TEX_NONE */

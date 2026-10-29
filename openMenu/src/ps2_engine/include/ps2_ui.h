@@ -94,10 +94,10 @@ typedef enum {
     PS2_SCREEN_DEVICES,
     PS2_SCREEN_GAMES,
     PS2_SCREEN_CARD,
-    PS2_SCREEN_SETTINGS
+    PS2_SCREEN_SETTINGS,
+    PS2_SCREEN_VERSION
 } ps2_screen;
 
-#define PS2_UI_IDS 40
 
 typedef struct ps2_ui {
     const ps2_pack* pack;
@@ -127,6 +127,8 @@ typedef struct ps2_ui {
     char game_folder_seen[64];
     int settings_cursor;
     float settings_pos; /* eased cursor of the ring of settings cubes */
+    int cfg_hide;       /* square pressed: only the scene, date and clock stay */
+    float cfg_hidden;   /* ... faded in over a second */
     int grid_target;    /* first visible row of the cube grid */
     float grid_top;     /* ... eased */
     int recent_open, recent_sel;

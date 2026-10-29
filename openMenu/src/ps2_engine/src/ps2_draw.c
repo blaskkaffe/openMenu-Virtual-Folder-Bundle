@@ -232,6 +232,7 @@ ps2d_model(ps2_draw* d, int model, const ps2_model_view* mv) {
         ntris = MAX_MODEL_TRIS;
     }
     float cy_ = cosf(mv->yaw), sy = sinf(mv->yaw), cp = cosf(mv->pitch), sp = sinf(mv->pitch);
+    float cr = cosf(mv->roll), sr = sinf(mv->roll);
     /* light from the upper left front */
     const float lx = -0.35f, ly = 0.55f, lz = 0.76f;
 
@@ -249,8 +250,14 @@ ps2d_model(ps2_draw* d, int model, const ps2_model_view* mv) {
             /* yaw about the vertical axis, then pitch about the horizontal one */
             float x1 = x * cy_ + z * sy, z1 = -x * sy + z * cy_;
             float y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+            float x2 = x1 * cr - y2 * sr;
+            y2 = x1 * sr + y2 * cr;
+            x1 = x2;
             float nx = v[3] * cy_ + v[5] * sy, nz1 = -v[3] * sy + v[5] * cy_;
             float ny2 = v[4] * cp - nz1 * sp, nz2 = v[4] * sp + nz1 * cp;
+            float nx2 = nx * cr - ny2 * sr;
+            ny2 = nx * sr + ny2 * cr;
+            nx = nx2;
             float depth = CAMERA_DIST - z2; /* distance from the eye */
             float persp = CAMERA_DIST / depth;
             int i = t * 3 + k;

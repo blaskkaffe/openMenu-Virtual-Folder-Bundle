@@ -9,7 +9,7 @@
 
 /* Timings (seconds). The PS2 BIOS counts video fields; its browser waits 30 NTSC / 25 PAL fields
  * for a transition, which is half a second, and the logo fades in over 33 / 28 fields (0.55 s). */
-#define SCREEN_TRANSITION 0.5f
+#define SCREEN_TRANSITION 1.1f /* measured in PCSX2: main menu <-> System Configuration fades take 1.1 s */
 #define BOOT_FADE 0.55f
 #define LAUNCH_TIME 0.7f
 #define NOTICE_TIME 2.5f
@@ -19,9 +19,15 @@
 
 #define COL_WHITE 0xFFFFFFFFu
 #define COL_GREY 0xFFB4B4B4u
-#define COL_BLUE 0xFF3C8CFFu   /* selected entry of the main menu */
-#define COL_CYAN 0xFF2CB4F0u   /* setting name */
-#define COL_YELLOW 0xFFEEDC28u /* screen title of the configuration */
+#define COL_BLUE 0xFF3CB9F0u   /* selected entry (measured: 60,185,240) */
+#define COL_CYAN 0xFF3CB9F0u
+#define COL_YELLOW 0xFFE8E23Cu /* screen titles (232,226,60) */
+#define COL_ITEM_GREY 0xFF808080u
+#define COL_VALUE 0xFFE8E8E8u
+
+/* The reference frames are 640x512 (PAL); this screen is 640x480. */
+#define Y(v) ((v) * 0.9375f)
+#define TEXT_TOP 21.0f /* distance from the top of a font cell to the middle of the capitals, at scale 1 */
 
 typedef enum { MAIN_BROWSER, MAIN_SETTINGS, MAIN_COUNT } main_item;
 typedef enum { DEV_CARD1, DEV_CARD2, DEV_DISC, DEV_COUNT } dev_item;
@@ -138,6 +144,8 @@ arrive(ps2_ui* ui) {
     } else if (ui->screen == PS2_SCREEN_SETTINGS) {
         ui->settings_cursor = 0;
         ui->settings_pos = 0.0f;
+        ui->cfg_hide = 0;
+        ui->cfg_hidden = 0.0f;
     }
 }
 
@@ -169,8 +177,16 @@ button_main(ps2_ui* ui, ps2_btn b) {
         sfx(ui, PS2_SFX_ENTER);
         go(ui, ui->main_sel == MAIN_BROWSER ? PS2_SCREEN_DEVICES : PS2_SCREEN_SETTINGS);
     } else if (b == PS2_BTN_Y) {
-        sfx(ui, PS2_SFX_CONFIRM);
-        notice(ui, ui->host.version ? ui->host.version(ui->host.user) : "OpenMenu");
+        sfx(ui, PS2_SFX_ENTER);
+        go(ui, PS2_SCREEN_VERSION);
+    }
+}
+
+static void
+button_version(ps2_ui* ui, ps2_btn b) {
+    if (b == PS2_BTN_B) {
+        sfx(ui, PS2_SFX_CANCEL);
+        go(ui, PS2_SCREEN_MAIN);
     }
 }
 
@@ -286,6 +302,9 @@ button_settings(ps2_ui* ui, ps2_btn b) {
     } else if (n > 0 && (b == PS2_BTN_UP || b == PS2_BTN_DOWN || b == PS2_BTN_A)) {
         ui->host.set_change(ui->host.user, row, b == PS2_BTN_UP ? -1 : 1);
         sfx(ui, PS2_SFX_CONFIRM);
+    } else if (b == PS2_BTN_X) { /* square: Display, hides the text and shows the bare scene */
+        ui->cfg_hide = !ui->cfg_hide;
+        sfx(ui, PS2_SFX_CONFIRM);
     } else if (b == PS2_BTN_B || b == PS2_BTN_START) {
         if (ui->host.set_leave && ui->host.set_leave(ui->host.user) != 0) {
             sfx(ui, PS2_SFX_ERROR);
@@ -308,6 +327,7 @@ ps2_ui_button(ps2_ui* ui, ps2_btn b) {
         case PS2_SCREEN_GAMES: button_games(ui, b); break;
         case PS2_SCREEN_CARD: button_card(ui, b); break;
         case PS2_SCREEN_SETTINGS: button_settings(ui, b); break;
+        case PS2_SCREEN_VERSION: button_version(ui, b); break;
         default: break;
     }
 }
@@ -339,6 +359,7 @@ ps2_ui_update(ps2_ui* ui, float dt) {
     ui->main_pos = ease_to(ui->main_pos, (float)ui->main_sel, dt);
     ui->dev_pos = ease_to(ui->dev_pos, (float)ui->dev_sel, dt);
     ui->settings_pos = ease_to(ui->settings_pos, (float)ui->settings_cursor, dt);
+    ui->cfg_hidden = clampf(ui->cfg_hidden + (ui->cfg_hide ? dt : -dt), 0.0f, 1.0f); /* about 1 s, measured */
     if (ui->screen == PS2_SCREEN_GAMES && ui->host.game_cursor) {
         int count = ui->host.game_count(ui->host.user);
         char folder[64] = "";
@@ -408,22 +429,39 @@ draw_symbol(ps2_ui* ui, int which, float x, float y, float size) {
 typedef struct {
     int glyph;
     const char* text;
+    float x; /* left edge of the symbol; 0 = place it centred with the others */
 } hint_t;
 
-/* Button hints along the bottom, each a symbol and a word */
+/* Text whose capitals are centred on y (the reference measurements are centres) */
 static void
-draw_hints(ps2_ui* ui, const hint_t* hints, int n, float centre) {
+text_at(ps2_ui* ui, const char* str, float x, float cy, float scale, uint32_t argb, int align) {
+    ps2d_text(&ui->draw, str, x, cy - TEXT_TOP * scale, scale, argb, align);
+}
+
+#define HINT_Y Y(474.0f)
+#define HINT_SCALE 0.8f
+
+/* Button hints along the bottom, each a symbol and a word; hints with an x go where the PS2 puts
+ * them (measured), the others are spread around the centre. */
+static void
+draw_hints(ps2_ui* ui, const hint_t* hints, int n) {
     ps2_draw* d = &ui->draw;
-    const float gap = 44.0f, sym = 24.0f;
+    const float sym = 22.0f, gap = 40.0f;
+    int free_n = 0;
     float total = 0.0f;
     for (int i = 0; i < n; i++) {
-        total += sym + 6.0f + ps2d_text_width(d, hints[i].text, 0.5f) + (i + 1 < n ? gap : 0.0f);
+        if (hints[i].x <= 0.0f) {
+            total += sym + 6.0f + ps2d_text_width(d, hints[i].text, HINT_SCALE) + (free_n++ ? gap : 0.0f);
+        }
     }
-    float x = centre - total / 2.0f;
+    float x = 320.0f - total / 2.0f;
     for (int i = 0; i < n; i++) {
-        draw_symbol(ui, hints[i].glyph, x, 428.0f, sym);
-        ps2d_text(d, hints[i].text, x + sym + 6.0f, 426.0f, 0.5f, COL_WHITE, PS2_TEXT_LEFT);
-        x += sym + 6.0f + ps2d_text_width(d, hints[i].text, 0.5f) + gap;
+        float hx = hints[i].x > 0.0f ? hints[i].x : x;
+        draw_symbol(ui, hints[i].glyph, hx, HINT_Y - sym / 2.0f, sym);
+        text_at(ui, hints[i].text, hx + sym + 4.0f, HINT_Y, HINT_SCALE, COL_WHITE, PS2_TEXT_LEFT);
+        if (hints[i].x <= 0.0f) {
+            x += sym + 6.0f + ps2d_text_width(d, hints[i].text, HINT_SCALE) + gap;
+        }
     }
 }
 
@@ -438,36 +476,67 @@ draw_arrow(ps2_ui* ui, int which, float cx, float cy, float size, uint32_t argb)
 
 /* ---- Drawing: main menu ----------------------------------------------------------------- */
 
-#define RING_X 232.0f
-#define RING_Y 232.0f
-#define MENU_X 420.0f
+#define RING_X 262.0f
+#define RING_Y Y(262.0f)
+#define RING_R 58.0f
+#define MENU_ITEM_X 442.0f
+#define MENU_ITEM_SCALE 1.12f
 
-/* The seven glowing balls turning around a circle (the PS2 main menu) */
+/* The ring of seven glowing balls that tumbles in space: a circle turned about two axes, the
+ * balls bunch up and spread on it, and a faint trail marks it (main menu and version screen). */
+static void
+draw_orb_ring(ps2_ui* ui) {
+    float t = ui->time;
+    float tilt_x = 0.5f + 0.4f * sinf(t * 0.45f), tilt_z = t * 0.28f;
+    float cx_ = cosf(tilt_x), sx_ = sinf(tilt_x), cz = cosf(tilt_z), sz = sinf(tilt_z);
+    for (int i = 0; i < 48; i++) { /* trail */
+        float a = (float)i * (2.0f * PI_F / 48.0f);
+        float x = RING_R * cosf(a), y = RING_R * sinf(a) * cx_;
+        float px = x * cz - y * sz, py = x * sz + y * cz;
+        ps2d_sprite(&ui->draw, ui->id.glow2, RING_X + px, RING_Y + py, 16.0f, 16.0f, 0.0f, ps2_argb(26, 40, 90, 255), PS2_BLEND_ADD);
+    }
+    for (int i = 0; i < 7; i++) {
+        float a = t * 0.7f + (float)i * (2.0f * PI_F / 7.0f) + 0.5f * sinf(t * 0.8f + (float)i * 0.9f);
+        float x = RING_R * cosf(a), y = RING_R * sinf(a) * cx_, depth = RING_R * sinf(a) * sx_;
+        float px = x * cz - y * sz, py = x * sz + y * cz;
+        float size = 11.0f + 3.0f * (depth / RING_R);
+        draw_orb(ui, RING_X + px, RING_Y + py, size, 0.8f + 0.2f * (depth / RING_R));
+    }
+}
+
 static void
 draw_main(ps2_ui* ui) {
     static const char* const names[MAIN_COUNT] = {"Browser", "Settings"};
-    ps2_draw* d = &ui->draw;
-    float t = ui->time;
-    for (int i = 0; i < 7; i++) {
-        float a = t * 0.55f + (float)i * (2.0f * PI_F / 7.0f);
-        float r = 92.0f + 10.0f * sinf(t * 0.7f + (float)i * 1.7f);
-        float x = RING_X + r * cosf(a), y = RING_Y + r * 0.92f * sinf(a);
-        float size = 15.0f + 6.0f * rnd(i, 3) + 2.5f * sinf(t * 1.3f + (float)i);
-        draw_orb(ui, x, y, size, 0.85f + 0.15f * sinf(t * 2.0f + (float)i * 2.3f));
-    }
-    /* the list: the picked entry sits at the top slot in blue, the others follow in grey */
+    static const float ys[MAIN_COUNT] = {247.0f, 279.0f};
+    draw_orb_ring(ui);
+    /* the two entries never move, the pick only changes their colour (a cross-fade) */
     for (int i = 0; i < MAIN_COUNT; i++) {
-        float rel = (float)i - ui->main_pos;
-        float focus = 1.0f - clampf(fabsf(rel), 0.0f, 1.0f);
-        float y = 190.0f + rel * 48.0f - (rel > 0.0f ? 0.0f : 0.0f);
-        float fade = rel < 0.0f ? 1.0f + rel * 1.4f : 1.0f;
-        ps2d_text(d, names[i], MENU_X, y, 0.78f + 0.08f * focus - 0.12f * (1.0f - focus), ps2_fade(ps2_mix(0xFFB0B0B0u, COL_BLUE, focus), fade),
-                  PS2_TEXT_CENTER);
+        float focus = 1.0f - clampf(fabsf((float)i - ui->main_pos), 0.0f, 1.0f);
+        text_at(ui, names[i], MENU_ITEM_X + (i == MAIN_SETTINGS ? 1.0f : 0.0f), Y(ys[i]), MENU_ITEM_SCALE, ps2_mix(COL_ITEM_GREY, COL_BLUE, focus),
+                PS2_TEXT_CENTER);
     }
-    hint_t left[] = {{SYM_CROSS, "Enter"}};
-    hint_t right[] = {{SYM_TRIANGLE, "Version"}};
-    draw_hints(ui, left, 1, 200.0f);
-    draw_hints(ui, right, 1, 470.0f);
+    hint_t hints[] = {{SYM_CROSS, "Enter", 235.0f}, {SYM_TRIANGLE, "Version", 523.0f}};
+    draw_hints(ui, hints, 2);
+}
+
+static void
+draw_version(ps2_ui* ui) {
+    char games[24];
+    int count = ui->host.game_count ? ui->host.game_count(ui->host.user) : 0;
+    snprintf(games, sizeof(games), "%d", count);
+    const char* ver = ui->host.version ? ui->host.version(ui->host.user) : "OpenMenu";
+    const char* label[3] = {"Console", "Menu", "Games"};
+    const char* value[3] = {"Dreamcast", ver, games};
+    draw_orb_ring(ui);
+    text_at(ui, "Version Information", 454.0f, Y(191.0f), 1.0f, COL_YELLOW, PS2_TEXT_CENTER);
+    for (int i = 0; i < 3; i++) {
+        float y = Y(296.0f + 26.0f * (float)(i - 1) + 26.0f);
+        int sel = i == 2;
+        text_at(ui, label[i], 440.0f, y, 0.9f, sel ? COL_BLUE : COL_ITEM_GREY, PS2_TEXT_RIGHT);
+        text_at(ui, value[i], 467.0f, y, 0.9f, sel ? COL_VALUE : COL_ITEM_GREY, PS2_TEXT_LEFT);
+    }
+    hint_t hints[] = {{SYM_CIRCLE, "Back", 357.0f}};
+    draw_hints(ui, hints, 1);
 }
 
 /* ---- Drawing: the grey panel of the browser --------------------------------------------- */
@@ -526,43 +595,88 @@ draw_grid_icon(ps2_ui* ui, int model, int tex, int planar, float x, float y, flo
 
 /* ---- Drawing: device screen ------------------------------------------------------------- */
 
+#define VIEW_X 10.0f
+#define VIEW_W 620.0f
+
+/* The picker's backdrop: a diagonal grey gradient, light at the top left, dark olive at the lower
+ * right, inside the viewport (10,64)-(630,448) of the 640x512 reference, black around it. */
+static void
+draw_picker_backdrop(ps2_ui* ui, const char* tag, const char* name, const char* sub) {
+    ps2_draw* d = &ui->draw;
+    float y0 = Y(64.0f), h = Y(384.0f);
+    ps2d_gradient_h(d, VIEW_X, y0, VIEW_W, h, 0xFF969696u, 0xFF4A4A38u, PS2_BLEND_ALPHA);
+    ps2d_gradient(d, VIEW_X, y0, VIEW_W, h, 0x00000000u, 0x80101008u, PS2_BLEND_ALPHA);
+    text_at(ui, tag, 35.0f, Y(81.0f), 0.82f, 0xFFD8D8D8u, PS2_TEXT_LEFT);
+    /* title in yellow at the right; the part in brackets is smaller */
+    const char* open = strchr(name, '(');
+    const char* close = open ? strchr(open, ')') : NULL;
+    if (open && close) {
+        char head[40], mid[16];
+        snprintf(head, sizeof(head), "%.*s", (int)(open - name), name);
+        snprintf(mid, sizeof(mid), "%.*s", (int)(close - open + 1), open);
+        float x = 627.0f;
+        float tail_w = ps2d_text_width(d, close + 1, 0.9f);
+        text_at(ui, close + 1, x, Y(81.0f), 0.9f, COL_YELLOW, PS2_TEXT_RIGHT);
+        x -= tail_w;
+        float mid_w = ps2d_text_width(d, mid, 0.62f);
+        text_at(ui, mid, x, Y(84.0f), 0.62f, COL_YELLOW, PS2_TEXT_RIGHT);
+        x -= mid_w + 3.0f;
+        text_at(ui, head, x, Y(81.0f), 0.9f, COL_YELLOW, PS2_TEXT_RIGHT);
+    } else {
+        text_at(ui, name, 627.0f, Y(81.0f), 0.9f, COL_YELLOW, PS2_TEXT_RIGHT);
+    }
+    if (sub && sub[0]) {
+        text_at(ui, sub, 627.0f, Y(112.0f), 0.62f, 0xFFE0E0D0u, PS2_TEXT_RIGHT);
+    }
+}
+
+/* An icon seen face on, as in the picker: dark, or lit with a white glow on its label when picked */
+static void
+draw_picker_icon(ps2_ui* ui, int model, int tex, float x, float y, float scale, int selected, float pitch) {
+    ps2_model_view mv = {.cx = x, .cy = y, .scale = scale, .yaw = 0.0f, .pitch = pitch, .roll = model == ui->id.m_card ? PI_F : 0.0f, .tint = selected ? 0xFFA8A8A8u : 0xFF484848u,
+                         .tex = tex};
+    ps2d_model(&ui->draw, model, &mv);
+    if (selected) {
+        float pulse = 0.85f + 0.15f * sinf(ui->time * 3.0f);
+        ps2d_sprite(&ui->draw, ui->id.glow2, x, y + 3.0f, scale * 3.0f, scale * 2.2f, 0.0f, ps2_argb((int)(255.0f * pulse), 255, 255, 255), PS2_BLEND_ADD);
+    }
+}
+
 static void
 draw_devices(ps2_ui* ui) {
-    static const char* const names[DEV_COUNT] = {"Memory Card 1", "Memory Card 2", "Disc"};
-    char info[48];
+    static const char* const names[DEV_COUNT] = {"Memory Card (PS2)/1", "Memory Card (PS2)/2", "Disc"};
+    static const char* const tags[DEV_COUNT] = {"PS2", "PS2", "SD"};
+    char info[48] = "";
     if (ui->dev_sel == DEV_DISC) {
-        snprintf(info, sizeof(info), "SD card games");
-    } else {
-        int present = ui->host.memcard_present ? ui->host.memcard_present(ui->host.user, ui->dev_sel) : 0;
-        snprintf(info, sizeof(info), "%s", present ? "Memory card inserted" : "No memory card");
+        snprintf(info, sizeof(info), "Games on the SD card");
     }
-    draw_panel(ui, names[ui->dev_sel], info, ui->id.m_disc, ui->id.t_disc);
+    draw_picker_backdrop(ui, tags[ui->dev_sel], names[ui->dev_sel], info);
     for (int i = 0; i < DEV_COUNT; i++) {
-        float x = 320.0f + ((float)i - 1.0f) * 125.0f;
-        int sel = i == ui->dev_sel;
+        float x = 320.0f + ((float)i - 1.0f) * 156.0f; /* the two cards sit at 252 and 408 */
         if (i == DEV_DISC) {
-            draw_grid_icon(ui, ui->id.m_disc, ui->id.t_disc, 0, x, 255.0f, 24.0f, sel, 1.0f, 0.0f);
+            draw_picker_icon(ui, ui->id.m_disc, ui->id.t_disc, x, Y(276.0f), 25.0f, i == ui->dev_sel, 1.2f);
         } else {
-            draw_grid_icon(ui, ui->id.m_card, ui->id.t_card, 0, x, 255.0f, 24.0f, sel, 1.0f, 0.0f);
+            draw_picker_icon(ui, ui->id.m_card, ui->id.t_card, x, Y(276.0f), 27.0f, i == ui->dev_sel, 1.5f);
         }
     }
-    hint_t hints[] = {{SYM_CROSS, "Enter"}, {SYM_CIRCLE, "Back"}};
-    draw_hints(ui, hints, 2, 320.0f);
+    hint_t hints[] = {{SYM_CROSS, "Enter", 235.0f}, {SYM_CIRCLE, "Back", 357.0f}};
+    draw_hints(ui, hints, 2);
 }
 
 static void
 draw_card_screen(ps2_ui* ui) {
     ps2_draw* d = &ui->draw;
     char title[32];
-    snprintf(title, sizeof(title), "Memory Card %d", ui->card_slot + 1);
+    snprintf(title, sizeof(title), "Memory Card (PS2)/%d", ui->card_slot + 1);
     int present = ui->host.memcard_present ? ui->host.memcard_present(ui->host.user, ui->card_slot) : 0;
-    draw_panel(ui, title, present ? "Memory card inserted" : "No memory card", ui->id.m_card, ui->id.t_card);
-    ps2d_text(d, present ? "No data" : "No memory card", 320.0f, 230.0f, 0.7f, COL_WHITE, PS2_TEXT_CENTER);
+    draw_picker_backdrop(ui, "PS2", title, "");
+    (void)d;
+    text_at(ui, present ? "No data" : "No memory card", 320.0f, Y(250.0f), 1.0f, COL_WHITE, PS2_TEXT_CENTER);
     if (present) {
-        ps2d_text(d, "Browsing memory cards is not available yet", 320.0f, 280.0f, 0.42f, 0xFFD0D0D0u, PS2_TEXT_CENTER);
+        text_at(ui, "Browsing memory cards is not available yet", 320.0f, Y(300.0f), 0.62f, 0xFFE0E0D0u, PS2_TEXT_CENTER);
     }
-    hint_t hints[] = {{SYM_CIRCLE, "Back"}};
-    draw_hints(ui, hints, 1, 320.0f);
+    hint_t hints[] = {{SYM_CIRCLE, "Back", 357.0f}};
+    draw_hints(ui, hints, 1);
 }
 
 /* ---- Drawing: game list ----------------------------------------------------------------- */
@@ -650,9 +764,9 @@ draw_games(ps2_ui* ui) {
         ps2d_text(d, "No data", 320.0f, 230.0f, 0.7f, COL_WHITE, PS2_TEXT_CENTER);
     }
     if (!ui->launching) {
-        hint_t hints[4] = {{SYM_CROSS, "Enter"}, {SYM_CIRCLE, "Back"}, {SYM_SQUARE, "Recent"}, {SYM_TRIANGLE, "Disc"}};
+        hint_t hints[4] = {{SYM_CROSS, "Enter", 0.0f}, {SYM_CIRCLE, "Back", 0.0f}, {SYM_SQUARE, "Recent", 0.0f}, {SYM_TRIANGLE, "Disc", 0.0f}};
         int n = sel.disc_total > 1 ? 4 : 3;
-        draw_hints(ui, hints, n, 320.0f);
+        draw_hints(ui, hints, n);
     }
     if (launch > 0.55f) {
         ps2d_rect(d, 0.0f, 0.0f, 640.0f, 480.0f, ps2_argb((int)(255.0f * smooth((launch - 0.55f) / 0.45f)), 255, 255, 255));
@@ -685,41 +799,44 @@ draw_recent(ps2_ui* ui) {
 
 /* ---- Drawing: settings ------------------------------------------------------------------ */
 
-#define CFG_X 190.0f
-#define CFG_Y 238.0f
-#define CFG_TEXT_X 436.0f
+#define CFG_CX 322.0f
+#define CFG_CY Y(250.0f)
+
+/* Where the five visible cubes sit (reference pixels): they zig-zag down the left side, the picked
+ * one in the middle. */
+static const float cube_slot_x[5] = {205.0f, 85.0f, 212.0f, 90.0f, 208.0f};
+static const float cube_slot_y[5] = {115.0f, 190.0f, 255.0f, 322.0f, 392.0f};
 
 static void
 draw_settings_background(ps2_ui* ui) {
     ps2_draw* d = &ui->draw;
     float t = ui->time;
-    ps2d_gradient(d, 0.0f, 0.0f, 640.0f, 480.0f, 0xFF52428Eu, 0xFF38295Fu, PS2_BLEND_ALPHA);
-    /* beams of blue glass fanning out of the middle */
+    float y0 = Y(62.0f), h = Y(388.0f);
+    ps2d_gradient(d, VIEW_X, y0, VIEW_W, h, 0xFF5B4F8Cu, 0xFF2B2150u, PS2_BLEND_ALPHA);
+    /* about twelve long rounded bars of blue glass radiating from the middle, turning slowly */
     for (int i = 0; i < 12; i++) {
-        float a = t * 0.12f + (float)i * (2.0f * PI_F / 12.0f) + rnd(i, 1) * 0.3f;
-        float len = 190.0f + 90.0f * rnd(i, 2);
-        float r = 70.0f + len * 0.5f;
-        float w = 22.0f + 22.0f * rnd(i, 3);
-        ps2d_sprite(d, ui->id.blur, CFG_X + cosf(a) * r, CFG_Y + sinf(a) * r * 0.9f, len, w * 2.2f, a, ps2_argb(70 + (int)(40.0f * rnd(i, 4)), 40, 110, 255),
-                    PS2_BLEND_ADD);
+        float a = t * 0.07f + (float)i * (2.0f * PI_F / 12.0f) + 0.25f * rnd(i, 1);
+        float r = 120.0f + 90.0f * rnd(i, 2);
+        float len = 95.0f + 70.0f * rnd(i, 3);
+        uint32_t c = i == 4 ? ps2_argb(230, 110, 220, 255) : ps2_argb(150, 30, 60 + (int)(60.0f * rnd(i, 4)), 190);
+        float bx = CFG_CX + cosf(a) * r, by = CFG_CY + sinf(a) * r * 0.85f;
+        ps2d_sprite(d, ui->id.blur, bx, by, len * 1.3f, 46.0f, a, c, PS2_BLEND_ADD);
+        ps2d_sprite(d, ui->id.glow2, bx, by, len * 0.8f, 26.0f, a, ps2_fade(c, 0.7f), PS2_BLEND_ADD);
     }
-    /* the dark eye in the middle and the sparks around it */
-    ps2d_sprite(d, ui->id.glow2, CFG_X, CFG_Y, 190.0f, 190.0f, 0.0f, 0xE0100820u, PS2_BLEND_ALPHA);
-    for (int i = 0; i < 7; i++) {
-        float a = -t * 0.4f + (float)i * 0.9f;
-        float r = 40.0f + 40.0f * rnd(i, 5);
-        draw_orb(ui, CFG_X + r * cosf(a), CFG_Y + r * sinf(a), 5.0f + 4.0f * rnd(i, 6), 0.7f);
+    /* the dark eye with its ring of small lights */
+    ps2d_sprite(d, ui->id.glow2, CFG_CX, CFG_CY, 150.0f, 130.0f, 0.0f, 0xD0100820u, PS2_BLEND_ALPHA);
+    for (int i = 0; i < 9; i++) {
+        float a = 1.2f + (float)i * 0.28f + t * 0.3f;
+        draw_orb(ui, CFG_CX - 20.0f + 62.0f * cosf(a), CFG_CY + 30.0f + 40.0f * sinf(a), 3.2f + 0.3f * (float)i, 0.8f);
     }
 }
 
-/* One glass cube of the ring */
+/* One cube of glass; the picked one is solid blue */
 static void
-draw_glass_cube(ps2_ui* ui, float x, float y, float scale, float yaw, int selected, float depth) {
-    uint32_t tint = selected ? 0xFF2C78FFu : ps2_argb(150, 205, 200, 235);
-    if (!selected && depth < 0.0f) {
-        tint = ps2_argb(110, 170, 165, 215); /* the far side of the ring */
-    }
-    ps2_model_view mv = {.cx = x, .cy = y, .scale = scale, .yaw = yaw, .pitch = 0.5f, .y_offset = -1.04f, .tint = tint, .tex = PS2_TEX_NONE,
+draw_glass_cube(ps2_ui* ui, float x, float y, float scale, float phase, int selected, float fade) {
+    uint32_t tint = selected ? ps2_argb(235, 40, 130, 255) : ps2_argb(175, 135, 125, 190);
+    ps2_model_view mv = {.cx = x, .cy = y, .scale = scale, .yaw = ui->time * 0.5f + phase, .pitch = 0.45f + 0.3f * sinf(ui->time * 0.4f + phase),
+                         .roll = 0.5f * sinf(ui->time * 0.3f + phase * 2.0f), .y_offset = -1.04f, .tint = ps2_fade(tint, fade), .tex = PS2_TEX_NONE,
                          .spec = selected ? 0.5f : 0.3f};
     ps2d_model(&ui->draw, ui->id.m_cube, &mv);
 }
@@ -728,8 +845,29 @@ static void
 draw_settings(ps2_ui* ui) {
     ps2_draw* d = &ui->draw;
     int n = ui->host.set_count ? ui->host.set_count(ui->host.user) : 0;
+    float keep = ui->draw.alpha;
+    float ui_fade = 1.0f - ui->cfg_hidden; /* Display hides the text, date and clock stay */
+
     draw_settings_background(ui);
-    if (ui->clock[0]) { /* "YYYY/MM/DD HH:MM:SS": date at the left, time at the right */
+    if (n > 0) {
+        for (int pass = 0; pass < 2; pass++) { /* the picked cube last */
+            for (int i = 0; i < n; i++) {
+                float rel = (float)i - ui->settings_pos;
+                if (fabsf(rel) > 2.6f || (fabsf(rel) < 0.5f) != (pass == 1)) {
+                    continue;
+                }
+                float u = clampf(rel + 2.0f, 0.0f, 4.0f);
+                int k = (int)u;
+                if (k > 3) k = 3;
+                float f = u - (float)k;
+                float x = cube_slot_x[k] + (cube_slot_x[k + 1] - cube_slot_x[k]) * f;
+                float y = Y(cube_slot_y[k] + (cube_slot_y[k + 1] - cube_slot_y[k]) * f);
+                float fade = clampf(2.6f - fabsf(rel), 0.0f, 1.0f);
+                draw_glass_cube(ui, x, y, 29.0f + (i == ui->settings_cursor ? 3.0f : 0.0f), (float)i * 1.3f, i == ui->settings_cursor, fade);
+            }
+        }
+    }
+    if (ui->clock[0]) { /* "YYYY/MM/DD HH:MM:SS": the date at the left, the time at the right */
         char date[16], time_s[16];
         const char* sp = strchr(ui->clock, ' ');
         size_t dl = sp ? (size_t)(sp - ui->clock) : strlen(ui->clock);
@@ -737,46 +875,28 @@ draw_settings(ps2_ui* ui) {
         memcpy(date, ui->clock, dl);
         date[dl] = '\0';
         snprintf(time_s, sizeof(time_s), "%s", sp ? sp + 1 : "");
-        ps2d_text(d, date, 36.0f, 24.0f, 0.62f, COL_WHITE, PS2_TEXT_LEFT);
-        ps2d_text(d, time_s, 606.0f, 24.0f, 0.62f, COL_WHITE, PS2_TEXT_RIGHT);
-        draw_orb(ui, 520.0f, 38.0f, 5.0f, 0.9f);
+        text_at(ui, date, 35.0f, Y(47.0f), 1.0f, 0xFFE0E0E0u, PS2_TEXT_LEFT);
+        text_at(ui, time_s, 628.0f, Y(47.0f), 1.0f, 0xFFE0E0E0u, PS2_TEXT_RIGHT);
     }
-    /* the ring: the picked setting sits at the bottom and is the biggest */
+    d->alpha = keep * ui_fade;
+    text_at(ui, "Settings", 443.0f, Y(221.0f), MENU_ITEM_SCALE, COL_YELLOW, PS2_TEXT_CENTER);
     if (n > 0) {
-        int order[64];
-        float depth[64];
-        int m = n < 64 ? n : 64;
-        for (int i = 0; i < m; i++) {
-            float a = 0.5f * PI_F + ((float)i - ui->settings_pos) * (2.0f * PI_F / (float)(m < 5 ? 5 : m));
-            depth[i] = sinf(a);
-            order[i] = i;
-        }
-        for (int i = 1; i < m; i++) { /* far ones first */
-            int v = order[i], j = i;
-            while (j > 0 && depth[order[j - 1]] > depth[v]) {
-                order[j] = order[j - 1];
-                j--;
-            }
-            order[j] = v;
-        }
-        for (int k = 0; k < m; k++) {
-            int i = order[k];
-            float a = 0.5f * PI_F + ((float)i - ui->settings_pos) * (2.0f * PI_F / (float)(m < 5 ? 5 : m));
-            float x = CFG_X + 108.0f * cosf(a), y = CFG_Y + 130.0f * sinf(a);
-            float scale = 22.0f + 7.0f * depth[i];
-            draw_glass_cube(ui, x, y, scale, ui->time * 0.6f + (float)i, i == ui->settings_cursor, depth[i]);
-        }
+        float fit = 330.0f;
+        text_at(ui, "", 443.0f, Y(274.0f), 1.0f, COL_CYAN, PS2_TEXT_CENTER);
+        float w = ps2d_text_width(d, ui->host.set_label(ui->host.user, ui->settings_cursor), 1.1f);
+        float sc = w > fit ? 1.1f * fit / w : 1.1f;
+        text_at(ui, ui->host.set_label(ui->host.user, ui->settings_cursor), 443.0f, Y(274.0f), sc, COL_CYAN, PS2_TEXT_CENTER);
+        w = ps2d_text_width(d, ui->host.set_value(ui->host.user, ui->settings_cursor), 1.1f);
+        sc = w > fit ? 1.1f * fit / w : 1.1f;
+        text_at(ui, ui->host.set_value(ui->host.user, ui->settings_cursor), 443.0f, Y(316.0f), sc, COL_VALUE, PS2_TEXT_CENTER);
+        text_at(ui, ui->host.set_help(ui->host.user, ui->settings_cursor), 443.0f, Y(356.0f), 0.55f, 0xFFC8C0E0u, PS2_TEXT_CENTER);
+        draw_arrow(ui, 2, 616.0f, Y(264.0f), 22.0f, 0xFFB8B8C8u); /* up/down change the value */
+        draw_arrow(ui, 3, 616.0f, Y(286.0f), 22.0f, 0xFFB8B8C8u);
     }
-    ps2d_text(d, "Settings", CFG_TEXT_X, 168.0f, 0.82f, COL_YELLOW, PS2_TEXT_CENTER);
-    if (n > 0) {
-        ps2d_text_fit(d, ui->host.set_label(ui->host.user, ui->settings_cursor), CFG_TEXT_X, 222.0f, 0.82f, COL_CYAN, PS2_TEXT_CENTER, 300.0f);
-        ps2d_text_fit(d, ui->host.set_value(ui->host.user, ui->settings_cursor), CFG_TEXT_X, 262.0f, 0.82f, 0xFFE8E8E8u, PS2_TEXT_CENTER, 300.0f);
-        ps2d_text_fit(d, ui->host.set_help(ui->host.user, ui->settings_cursor), CFG_TEXT_X, 316.0f, 0.42f, 0xFFD0C8E8u, PS2_TEXT_CENTER, 330.0f);
-        draw_arrow(ui, 2, 592.0f, 236.0f, 18.0f, 0xFFE0E0E0u); /* up/down change the value */
-        draw_arrow(ui, 3, 592.0f, 262.0f, 18.0f, 0xFFE0E0E0u);
-    }
-    hint_t hints[] = {{SYM_CROSS, "Change"}, {SYM_CIRCLE, "Back"}};
-    draw_hints(ui, hints, 2, 380.0f);
+    hint_t hints[] = {{SYM_SQUARE, "Display", 45.0f}, {SYM_CROSS, "Enter", 235.0f}, {SYM_CIRCLE, "Back", 357.0f}};
+    d->alpha = keep * (ui->cfg_hide ? 1.0f : ui_fade);
+    draw_hints(ui, hints, ui->cfg_hide ? 1 : 3);
+    d->alpha = keep;
 }
 
 /* ---- Frame ------------------------------------------------------------------------------ */
@@ -791,7 +911,7 @@ ps2_ui_draw(ps2_ui* ui) {
     float k = 1.0f;
     if (ui->transitioning) {
         float half = SCREEN_TRANSITION / 2.0f;
-        k = smooth(ui->transitioning == 1 ? ui->trans / half : 1.0f - ui->trans / half);
+        k = clampf(ui->transitioning == 1 ? ui->trans / half : 1.0f - ui->trans / half, 0.0f, 1.0f); /* linear, as on the PS2 */
     }
     d->alpha = k;
     switch (ui->screen) {
@@ -800,6 +920,7 @@ ps2_ui_draw(ps2_ui* ui) {
         case PS2_SCREEN_GAMES: draw_games(ui); break;
         case PS2_SCREEN_CARD: draw_card_screen(ui); break;
         case PS2_SCREEN_SETTINGS: draw_settings(ui); break;
+        case PS2_SCREEN_VERSION: draw_version(ui); break;
         default: break;
     }
     if (ui->screen == PS2_SCREEN_GAMES && ui->recent_open) {

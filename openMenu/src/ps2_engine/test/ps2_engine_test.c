@@ -245,18 +245,23 @@ main(void) {
     run(&ui, 0.7f);
     draw_all(&ui);
 
-    /* triangle on the main menu shows the version */
+    /* triangle on the main menu opens the version screen, circle comes back */
     ps2_ui_button(&ui, PS2_BTN_Y);
-    CHECK(ui.notice_t > 0.0f && !strcmp(ui.notice, "OpenMenu test"));
+    run(&ui, 1.2f);
+    CHECK(ui.screen == PS2_SCREEN_VERSION);
+    draw_all(&ui);
+    ps2_ui_button(&ui, PS2_BTN_B);
+    run(&ui, 1.2f);
+    CHECK(ui.screen == PS2_SCREEN_MAIN);
 
     /* Browser -> devices -> disc -> games */
     ps2_ui_button(&ui, PS2_BTN_A);
     CHECK(ui.transitioning);
-    run(&ui, 0.6f);
+    run(&ui, 1.2f);
     CHECK(ui.screen == PS2_SCREEN_DEVICES);
     draw_all(&ui);
     ps2_ui_button(&ui, PS2_BTN_A); /* the disc is selected first */
-    run(&ui, 0.6f);
+    run(&ui, 1.2f);
     CHECK(ui.screen == PS2_SCREEN_GAMES);
     draw_all(&ui);
     ps2_ui_button(&ui, PS2_BTN_RIGHT);
@@ -271,7 +276,7 @@ main(void) {
     run(&ui, 0.3f);
     draw_all(&ui);
     CHECK(launched == 0);
-    run(&ui, 0.6f);
+    run(&ui, 1.2f);
     CHECK(launched == 1 && !ui.launching);
     run(&ui, 0.1f);
     CHECK(ui.notice_t > 0.0f); /* launch() returned: it failed, the player is told */
@@ -279,26 +284,26 @@ main(void) {
 
     /* back out through the devices to a memory card */
     ps2_ui_button(&ui, PS2_BTN_B);
-    run(&ui, 0.6f);
+    run(&ui, 1.2f);
     CHECK(ui.screen == PS2_SCREEN_DEVICES);
     ps2_ui_button(&ui, PS2_BTN_LEFT);
     ps2_ui_button(&ui, PS2_BTN_LEFT);
     CHECK(ui.dev_sel == 0);
     ps2_ui_button(&ui, PS2_BTN_A);
-    run(&ui, 0.6f);
+    run(&ui, 1.2f);
     CHECK(ui.screen == PS2_SCREEN_CARD);
     draw_all(&ui);
     ps2_ui_button(&ui, PS2_BTN_B);
-    run(&ui, 0.6f);
+    run(&ui, 1.2f);
     ps2_ui_button(&ui, PS2_BTN_B);
-    run(&ui, 0.6f);
+    run(&ui, 1.2f);
     CHECK(ui.screen == PS2_SCREEN_MAIN);
 
     /* settings: toggle, open a popup, leave (saves) */
     ps2_ui_button(&ui, PS2_BTN_DOWN);
     CHECK(ui.main_sel == 1);
     ps2_ui_button(&ui, PS2_BTN_A);
-    run(&ui, 0.6f);
+    run(&ui, 1.2f);
     CHECK(ui.screen == PS2_SCREEN_SETTINGS);
     draw_all(&ui);
     ps2_ui_button(&ui, PS2_BTN_A); /* A and up/down change the value of the picked setting */
@@ -312,7 +317,7 @@ main(void) {
     run(&ui, 0.5f);
     draw_all(&ui);
     ps2_ui_button(&ui, PS2_BTN_B);
-    run(&ui, 0.6f);
+    run(&ui, 1.2f);
     CHECK(left_settings == 1 && ui.screen == PS2_SCREEN_MAIN);
 
     /* no games: the list screen must not divide by zero or read a missing entry */

@@ -150,7 +150,7 @@ export and it is never committed (`PS2.PAK` is in `.gitignore`):
 Screens (`src/ps2_engine/src/ps2_ui.c`, portable C, shared by the console and the PC preview):
 
 - Main menu: black, a ring of seven glowing balls turning on the left, the list on the right
-  (Browser in blue, Settings in grey). Up/Down pick, A enters, Y shows the version.
+  (Browser in blue, Settings in grey). Up/Down pick, A enters, Y opens a Version Information screen.
 - Browser: the grey panel of the PS2 memory card browser with Memory Card 1, Memory Card 2 and Disc.
   A memory card opens "No data" (the card is only detected, not read yet).
 - Disc: the same panel with the games as a perspective grid of cubes (5 columns, 4 rows visible,
@@ -159,7 +159,8 @@ Screens (`src/ps2_engine/src/ps2_ui.c`, portable C, shared by the console and th
   A opens a folder / starts the game (cube flies up, white fade; Settings > Launch animation turns
   it off), B back, X recently played, Y next disc of a multi-disc set.
 - Settings: purple screen with a ring of glass cubes, one per openMenu setting (`ui_settings.c`):
-  Left/Right turn the ring, Up/Down (or A) change the value shown on the right, B saves and leaves.
+  Left/Right turn the ring, Up/Down (or A) change the value shown on the right, X (square, "Display")
+  hides the text and leaves the bare scene, B saves and leaves.
 
 Animation runs on seconds, not frames (a time accumulator), as in `TIMINGS.md` of the PS2 export:
 the PS2 BIOS counts video fields, 50 Hz PAL and 60 Hz NTSC last the same time. Screen changes take
@@ -176,6 +177,7 @@ Preview without hardware (needs your `PS2.PAK`; `-DBUILD_PC=ON` builds it, or
 Host test: `test/ps2_engine_test.c` builds a synthetic pack and drives every screen.
 
 Not verified on hardware: layout numbers, glow strengths and colours are matched by eye to three
-screenshots (main menu, memory card browser, System Configuration); the PS2's own animation curves
+screenshots and, for the main menu, picker and settings screens, to the measured positions in
+`capture/layout_real.json` of the PS2 export (PCSX2 recording of the real BIOS); fades last 1.1 s as measured; the PS2's own animation curves
 were not recoverable and are approximated. Memory cards are only detected. The PS2 sounds are not
 used, the menu plays the Dreamcast BIOS sounds.

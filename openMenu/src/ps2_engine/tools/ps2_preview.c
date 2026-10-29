@@ -91,8 +91,9 @@ static const char* h_set_group(void* u, int r) { (void)u; return set_groups[r]; 
 static const char* h_set_help(void* u, int r) { (void)u; return set_help[r]; }
 static const char* h_set_value(void* u, int r) { (void)u; return set_choices[g_set_values[r] & 3]; }
 static void h_set_change(void* u, int r, int d) { (void)u; g_set_values[r] += d; }
+static const char* h_version(void* u) { (void)u; return "OpenMenu 1.0"; }
 static int h_memcard(void* u, int s) { (void)u; return s == 0; }
-static void h_clock(void* u, char* out, size_t n) { (void)u; snprintf(out, n, "%s", "2026/10/28 14:05:09"); }
+static void h_clock(void* u, char* out, size_t n) { (void)u; snprintf(out, n, "%s", "2026/10/29 14:25:56"); }
 
 /* ---- Rasteriser ---------------------------------------------------------------------------- */
 
@@ -270,6 +271,7 @@ main(int argc, char** argv) {
     host.set_change = h_set_change;
     host.memcard_present = h_memcard;
     host.clock_text = h_clock;
+    host.version = h_version;
     ps2_sink sink = {NULL, tri, bind_art};
 
     static ps2_ui ui;
@@ -282,6 +284,7 @@ main(int argc, char** argv) {
     if (!strcmp(screen_name, "games")) screen = PS2_SCREEN_GAMES;
     if (!strcmp(screen_name, "card")) screen = PS2_SCREEN_CARD;
     if (!strcmp(screen_name, "settings")) screen = PS2_SCREEN_SETTINGS;
+    if (!strcmp(screen_name, "version")) screen = PS2_SCREEN_VERSION;
     g_cursor = screen == PS2_SCREEN_GAMES ? sel : 0;
     ui.main_sel = screen == PS2_SCREEN_MAIN ? sel : 0;
     ui.dev_sel = screen == PS2_SCREEN_DEVICES ? sel : 2;
