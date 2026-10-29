@@ -442,12 +442,56 @@ draw_arrow(ps2_ui* ui, int which, float cx, float cy, float size, uint32_t argb)
 #define RING_Y 232.0f
 #define MENU_X 420.0f
 
+/* The PS2's background: a field of ribbons, six layers of additive triangle strips with a slow
+ * texture over them (captured from the BIOS: six layers x three 64x64 textures, additive with
+ * alpha 20/128). Their height follows how much save data there is; with none the field is a flat
+ * line running slightly downhill to the right. Here the number of games stands in for saves. */
+#define RIBBON_LAYERS 6
+#define RIBBON_STEPS 32
+
+static void
+draw_ribbons(ps2_ui* ui) {
+    ps2_draw* d = &ui->draw;
+    int games = ui->host.game_count ? ui->host.game_count(ui->host.user) : 0;
+    float level = clampf((float)games / 120.0f, 0.0f, 1.0f);
+    float amp = 14.0f + 210.0f * level;
+    float t = ui->time;
+    for (int l = 0; l < RIBBON_LAYERS; l++) {
+        float ph = (float)l * 1.7f;
+        float cx_prev = 0.0f, top_prev = 0.0f, base_prev = 0.0f;
+        int tex = ui->id.fog[1 + l % 3];
+        for (int i = 0; i <= RIBBON_STEPS; i++) {
+            float x = 640.0f * (float)i / (float)RIBBON_STEPS;
+            float base = 97.0f + x * 0.095f + 40.0f * (float)l * level; /* the slanted base line of the capture */
+            float w1 = 0.5f + 0.5f * sinf(x * 0.011f + t * (0.35f + 0.07f * (float)l) + ph);
+            float w2 = 0.5f + 0.5f * sinf(x * 0.027f - t * 0.5f + ph * 1.3f);
+            float top = base - amp * (0.25f + 0.75f * w1 * (0.4f + 0.6f * w2)) * (0.45f + 0.55f * rnd(l, 2));
+            if (i > 0) {
+                float xs[4] = {cx_prev, x, cx_prev, x};
+                float ys[4] = {top_prev, top, base_prev, base};
+                float us[4] = {cx_prev / 160.0f + t * 0.02f, x / 160.0f + t * 0.02f, cx_prev / 160.0f + t * 0.02f, x / 160.0f + t * 0.02f};
+                float vs[4] = {0.0f, 0.0f, 1.0f, 1.0f};
+                uint32_t tc = ps2_argb(52, 70, 120, 255), bc = ps2_argb(0, 20, 40, 140);
+                uint32_t cs[4] = {tc, tc, bc, bc};
+                ps2d_quad4(d, tex, xs, ys, us, vs, cs, PS2_BLEND_ADD);
+            }
+            cx_prev = x;
+            top_prev = top;
+            base_prev = base;
+        }
+    }
+    /* the flat line itself, dark blue */
+    ps2d_quad4(d, PS2_TEX_NONE, (float[4]){0.0f, 640.0f, 0.0f, 640.0f}, (float[4]){96.0f, 157.0f, 98.0f, 159.0f}, (float[4]){0, 0, 0, 0},
+               (float[4]){0, 0, 0, 0}, (uint32_t[4]){0x601A2A90u, 0x601A2A90u, 0x601A2A90u, 0x601A2A90u}, PS2_BLEND_ADD);
+}
+
 /* The seven glowing balls turning around a circle (the PS2 main menu) */
 static void
 draw_main(ps2_ui* ui) {
     static const char* const names[MAIN_COUNT] = {"Browser", "Settings"};
     ps2_draw* d = &ui->draw;
     float t = ui->time;
+    draw_ribbons(ui);
     for (int i = 0; i < 7; i++) {
         float a = t * 0.55f + (float)i * (2.0f * PI_F / 7.0f);
         float r = 92.0f + 10.0f * sinf(t * 0.7f + (float)i * 1.7f);

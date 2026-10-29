@@ -65,6 +65,9 @@ void ps2d_quad(ps2_draw* d, int tex, float x0, float y0, float x1, float y1, flo
                uint32_t argb, int blend);
 /* Whole picture of a texture centred on (cx, cy), w x h pixels, turned by `angle` radians. */
 void ps2d_sprite(ps2_draw* d, int tex, float cx, float cy, float w, float h, float angle, uint32_t argb, int blend);
+/* Quad with free corners (top-left, top-right, bottom-left, bottom-right), a colour and a uv each. */
+void ps2d_quad4(ps2_draw* d, int tex, const float x[4], const float y[4], const float u[4], const float v[4], const uint32_t argb[4],
+                int blend);
 /* Flat quad with a vertical colour gradient */
 void ps2d_gradient(ps2_draw* d, float x, float y, float w, float h, uint32_t top, uint32_t bottom, int blend);
 /* Flat quad with a horizontal colour gradient */

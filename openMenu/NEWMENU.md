@@ -150,7 +150,9 @@ export and it is never committed (`PS2.PAK` is in `.gitignore`):
 Screens (`src/ps2_engine/src/ps2_ui.c`, portable C, shared by the console and the PC preview):
 
 - Main menu: black, a ring of seven glowing balls turning on the left, the list on the right
-  (Browser in blue, Settings in grey). Up/Down pick, A enters, Y shows the version.
+  (Browser in blue, Settings in grey). Up/Down pick, A enters, Y shows the version. Behind it is
+  the PS2's ribbon field (six additive layers; captured from the BIOS in the updated export): its height
+  follows the amount of save data on a PS2, here the number of games, and with none it is a flat line.
 - Browser: the grey panel of the PS2 memory card browser with Memory Card 1, Memory Card 2 and Disc.
   A memory card opens "No data" (the card is only detected, not read yet).
 - Disc: the same panel with the games as a perspective grid of cubes (5 columns, 4 rows visible,
