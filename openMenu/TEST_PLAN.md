@@ -192,3 +192,4 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 - [ ] With Online features on (manual or automatic) the main menu's Music icon is the globe, labelled Internet, sitting where the note was; it turns slowly (3 s a turn) while selected and rests when not. With Online off it is the music note again.
 - [ ] Main menu, Internet icon (globe): the globe sits behind the caption's pill (the pill is drawn over it), and the caption text stays still while the globe turns.
 - [ ] Settings: the VMU icon is centred in the icon column (as the lips and clock), and its row text is where the other rows' text is.
+- [ ] "Now!" / "CNET" are drawn with the logo polygon's own colour (grey 0xB4 shading, and its fade): same blue as the PAL swirl, no light border, same weight as "Dreamcast"; they slide in and fade with the bar when coming back from a menu.

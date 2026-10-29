@@ -63,6 +63,7 @@ static rom_tex logo_tex;
 static rom_tex logo_dcnet_tex;  /* the BIOS logo cropped to its swirl (mode 2: swirl + the D; "CNET" is drawn after it) */
 static float logo_ox, logo_oy; /* top left of the header logo's quad this frame (it slides in with the bar) */
 static int logo_seen;
+static uint32_t logo_argb = 0xFFFFFFFFu; /* the colour the header logo's polygon is drawn with this frame (shading and the bar's fade) */
 static int logo_mode;           /* see gfx_set_logo_mode */
 static int logo_variants_tried;
 static text_tex text_texes[MAX_TEXT_ENTRIES];
@@ -1074,6 +1075,7 @@ sink_triangle(void* user, const bscene_vtx v[3], bscene_texref ref) {
             if (!logo_seen || v[i].y < logo_oy) logo_oy = v[i].y;
             logo_seen = 1;
         }
+        logo_argb = v[0].argb;
     }
     tri_count++;
     if (strip_pending && tex == strip_tex && ref.uv == strip_uv) {
@@ -1555,7 +1557,8 @@ gfx_logo_badge(void) {
     if (!text || !text->valid) {
         return;
     }
-    const uint32_t tint = 0xFFFFFFFFu;
+    /* drawn with the colour of the logo's own polygon, so the letters are shaded and fade exactly as the logo is */
+    const uint32_t tint = logo_seen ? logo_argb : 0xFFFFFFFFu;
     float x = logo_mode == 1 ? ox + 127.0f * sx - 2.0f : ox + (float)LOGO_D_END * sx, y = oy;
     float w = (float)text->w * sx, h = (float)LOGO_H * sy;
     ensure_header(text, NULL, 0);

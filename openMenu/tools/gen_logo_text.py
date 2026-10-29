@@ -15,8 +15,8 @@ TOP, BOT = 7.6, 24.8
 CAP = BOT - TOP
 XT = 12.4                  # x-height top
 MID = (TOP + BOT) / 2
-TS = 2.87                  # stems
-TN = 2.45                  # horizontals (arms, tops and bottoms of bowls)
+TS = 2.7                  # stems
+TN = 2.3                  # horizontals (arms, tops and bottoms of bowls)
 SX = 1.0
 FL = 0.0                   # no flares: the wordmark's ends are plain
 
@@ -50,8 +50,8 @@ def ring(g, cx, cy, rxo, ryo, tx, ty, a0=0, a1=360, n=96):
     inner = arcpts(cx, cy, rxo - tx, ryo - ty, a1, a0, n)
     g.poly(outer + inner)
 
-SIDE = 3.05                # the round parts: thickness at the sides
-RTB = 2.4                  # and at the top and bottom
+SIDE = 2.85                # the round parts: thickness at the sides
+RTB = 2.25                  # and at the top and bottom
 def C(ox):
     g = Glyph(ox)
     ring(g, 7.7, MID, 7.7, CAP / 2, SIDE, RTB, 42, 318)
