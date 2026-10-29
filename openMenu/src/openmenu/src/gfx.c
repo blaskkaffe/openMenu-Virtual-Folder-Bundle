@@ -652,6 +652,14 @@ upload_argb4444(const unsigned short* px, int w, int h, rom_tex* g) {
     g->valid = 1;
 }
 
+/* The online logos' pictures: "Now!" orange / blue and "CNET" for the light bar, and flat copies for the dark bar (dark mode), made by
+ * gfx_load_logo_texts from the masks of logo_letters.inc; and the ROM logo with a light wordmark. */
+static rom_tex logo_now_tex[2]; /* [0] orange, [1] blue */
+static rom_tex logo_dcnet_text_tex;
+static rom_tex logo_now_dark_tex[2], logo_cnet_dark_tex, logo_dark_tex, logo_dcnet_dark_tex;
+static int logo_dark;
+static unsigned logo_swirl_rgb = 0xFFFFFF; /* the swirl's colour, 0xRRGGBB: picks the orange or the blue "Now!" */
+
 #include "logo_letters.inc"
 
 /* One 64x32 ARGB4444 picture from a coverage mask. Light bar (`dark` 0): the colour mixed with white by (1 - coverage), as the BIOS

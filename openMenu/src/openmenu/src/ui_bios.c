@@ -49,6 +49,7 @@
 #include "ui_files.h"
 #include <bios_cdplayer.h>
 #include "ui_list.h"
+#include "bg_palette.h"
 #include "ui_settings.h"
 #include "video.h"
 
@@ -174,18 +175,18 @@ static char status_line[64];
 static char logo_line[64]; /* logo mode, link state, network and the letters made, in the X debug overlay */
 
 /* The logo at the left of the bar follows the connection: the plain logo, "Now!" behind it on Dreamcast Now!, "DCNET" on DCNET.
- * While connecting, and while a DreamPi has not yet said which network it has, it stays the plain logo. Every frame. */
+ * While connecting it stays the plain logo. Every frame. */
 static void
 update_logo_mode(void) {
     online_header oh;
     online_header_get(&oh);
-    int mode = !oh.shown ? 0 : oh.state != 2 || oh.pi_pending ? 0 : oh.network == 2 ? 2 : 1;
+    int mode = !oh.shown ? 0 : oh.state != 2 ? 0 : oh.network == 2 ? 2 : 1;
 #ifdef OM_NO_LOGO_MODES /* test build: the header logo never changes */
     mode = 0;
 #endif
     static int last_mode = -1;
     if (mode != last_mode) { /* why the logo is what it is: shown, link state (0 none 1 connecting 2 online 3 failed), DreamPi network */
-        printf("OM logo: mode %d (shown %d, state %d, network %d, pi_pending %d)\n", mode, oh.shown, oh.state, oh.network, oh.pi_pending);
+        printf("OM logo: mode %d (shown %d, state %d, network %d)\n", mode, oh.shown, oh.state, oh.network);
         last_mode = mode;
     }
     snprintf(logo_line, sizeof(logo_line), "logo %d  link %d  net %d  letters %d", mode, oh.state, oh.network, gfx_logo_texts_loaded());
