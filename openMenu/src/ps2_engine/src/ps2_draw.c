@@ -100,18 +100,6 @@ ps2d_sprite(ps2_draw* d, int tex, float cx, float cy, float w, float h, float an
 }
 
 void
-ps2d_quad4(ps2_draw* d, int tex, const float x[4], const float y[4], const float u[4], const float v[4], const uint32_t argb[4],
-           int blend) {
-    float su, sv;
-    pic_uv(d, tex, &su, &sv);
-    ps2_vtx q[4];
-    for (int i = 0; i < 4; i++) {
-        q[i] = vtx(d, x[i], y[i], u[i] * su, v[i] * sv, argb[i]);
-    }
-    emit_quad(d, q, tex, blend);
-}
-
-void
 ps2d_gradient(ps2_draw* d, float x, float y, float w, float h, uint32_t top, uint32_t bottom, int blend) {
     ps2_vtx q[4] = {vtx(d, x, y, 0, 0, top), vtx(d, x + w, y, 0, 0, top), vtx(d, x, y + h, 0, 0, bottom),
                     vtx(d, x + w, y + h, 0, 0, bottom)};
