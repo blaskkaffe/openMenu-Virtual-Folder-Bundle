@@ -49,12 +49,12 @@ typedef struct bmenu {
      * model has no motion of its own, so it turns while its icon is selected. */
     struct {
         uint16_t model;
-        float scale, dx, dy; /* size, and where the model's middle is moved to (world units) */
+        float scale, dx, dy, dz; /* size, and where the model's middle is moved to (world units; dz > 0 away from the viewer, behind the caption) */
         int selected_frames;
     } icon_model[BMENU_ICONS];
 } bmenu;
 
-void bmenu_set_icon_model(bmenu* m, int icon, uint16_t model, float scale, float dx, float dy);
+void bmenu_set_icon_model(bmenu* m, int icon, uint16_t model, float scale, float dx, float dy, float dz);
 
 void bmenu_init(bmenu* m, const bios_rom* rom, const bvm_host* host);
 void bmenu_free(bmenu* m);

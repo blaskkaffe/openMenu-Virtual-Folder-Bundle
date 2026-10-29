@@ -185,8 +185,10 @@ build_logo_variants / gfx_logo_badge) is the cause; if not, the cause is in the 
 
 ## Settings icons
 - [ ] Only the selected row's icon animates (the BIOS lips, clock, speaker, question mark play their own motion from the start each time the row is selected; the rest sit still).
-- [ ] The icons we added animate too while selected, with a small turn: controller sways, globe turns, telephone shakes in bursts, jewel case sways, the others sway.
+- [ ] The icons we added animate too while selected, as the BIOS ones do: they shrink to about 70% and back once in a second (60 frames), about their own middle (VMU, controller, globe, telephone, case, disc, digits).
 - [ ] The VMU icon is the main menu's VMU with its LCD screen (and its own motion), centred on the row, not too big. Check the colour: it may look pale.
 
 ## Internet icon
 - [ ] With Online features on (manual or automatic) the main menu's Music icon is the globe, labelled Internet, sitting where the note was; it turns slowly (3 s a turn) while selected and rests when not. With Online off it is the music note again.
+- [ ] Main menu, Internet icon (globe): the globe sits behind the caption's pill (the pill is drawn over it), and the caption text stays still while the globe turns.
+- [ ] Settings: the VMU icon is centred in the icon column (as the lips and clock), and its row text is where the other rows' text is.

@@ -246,6 +246,7 @@ make_key(const bscene* s, const bvm_obj* o, const float scl[3], const float* off
     memcpy(k->pos, o->pos, sizeof(k->pos));
     k->pos[0] += o->model_off[0];
     k->pos[1] += o->model_off[1];
+    k->pos[2] += o->model_off[2];
     memcpy(k->rot, o->rot, sizeof(k->rot));
     memcpy(k->scl, scl, sizeof(k->scl));
     if (offs) {
@@ -609,7 +610,7 @@ bscene_draw_object(bscene* s, const bvm_obj* o, const bscene_sink* sink) {
     const float ms = o->model_scale > 0.0f ? o->model_scale : 1.0f;
     float scl[3] = {o->scale_tw[0].cur * ms, o->scale_tw[1].cur * ms, o->scale_tw[2].cur * ms};
     nj_mat4 obj_m;
-    const float mpos[3] = {o->pos[0] + o->model_off[0], o->pos[1] + o->model_off[1], o->pos[2]};
+    const float mpos[3] = {o->pos[0] + o->model_off[0], o->pos[1] + o->model_off[1], o->pos[2] + o->model_off[2]};
     nj_mat_object(&obj_m, mpos, scl, o->rot);
     /* constant material (a, r, g, b offsets), and the screen transition's fade */
     float eoff[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -904,9 +905,10 @@ model_done:
          * turned with the object, then moved to its place */
         /* (a model that was moved or resized for its icon, see model_off / model_scale, leaves its caption where it was) */
         nj_mat4 text_m;
-        if (o->model_scale > 0.0f || o->model_off[0] != 0.0f || o->model_off[1] != 0.0f) {
+        if (o->model_scale > 0.0f || o->model_off[0] != 0.0f || o->model_off[1] != 0.0f || o->model_off[2] != 0.0f) {
             const float tscl[3] = {o->scale_tw[0].cur, o->scale_tw[1].cur, o->scale_tw[2].cur};
-            nj_mat_object(&text_m, o->pos, tscl, o->rot);
+            const int32_t still[3] = {0, 0, 0}; /* the model may turn, the caption does not */
+            nj_mat_object(&text_m, o->pos, tscl, still);
         } else {
             text_m = obj_m;
         }

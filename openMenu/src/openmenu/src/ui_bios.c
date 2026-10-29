@@ -79,9 +79,9 @@ set_icon_labels(void) {
     }
     /* and the icon is the globe (it turns while selected), not the music note */
     if (sf_dcnow[0] != DCNOW_OFF) {
-        bmenu_set_icon_model(&menu, ICON_MUSIC, BMODEL_GLOBE, 1.0f, -10.51f, -12.46f);
+        bmenu_set_icon_model(&menu, ICON_MUSIC, BMODEL_GLOBE, 1.115f, -11.75f, -13.96f, 40.0f); /* 40 units back: behind the caption's pill */
     } else {
-        bmenu_set_icon_model(&menu, ICON_MUSIC, 0, 1.0f, 0.0f, 0.0f);
+        bmenu_set_icon_model(&menu, ICON_MUSIC, 0, 1.0f, 0.0f, 0.0f, 0.0f);
     }
 }
 

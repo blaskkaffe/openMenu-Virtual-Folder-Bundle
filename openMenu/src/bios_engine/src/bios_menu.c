@@ -83,12 +83,13 @@ bmenu_move(bmenu* m, bmenu_dir dir) {
 }
 
 void
-bmenu_set_icon_model(bmenu* m, int icon, uint16_t model, float scale, float dx, float dy) {
+bmenu_set_icon_model(bmenu* m, int icon, uint16_t model, float scale, float dx, float dy, float dz) {
     if (icon >= 0 && icon < BMENU_ICONS) {
         m->icon_model[icon].model = model;
         m->icon_model[icon].scale = scale;
         m->icon_model[icon].dx = dx;
         m->icon_model[icon].dy = dy;
+        m->icon_model[icon].dz = dz;
     }
 }
 
@@ -112,6 +113,7 @@ apply_icon_models(bmenu* m) {
             o->model_scale = m->icon_model[i].scale;
             o->model_off[0] = m->icon_model[i].dx; /* the model moves, its caption does not */
             o->model_off[1] = m->icon_model[i].dy;
+            o->model_off[2] = -m->icon_model[i].dz; /* more negative = farther */
             o->rot_tw[1].step = 0;
             o->rot_tw[1].cur = o->rot[1] = age ? turn : 0;
         }

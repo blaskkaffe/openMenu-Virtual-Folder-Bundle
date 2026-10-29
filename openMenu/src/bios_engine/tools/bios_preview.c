@@ -665,7 +665,7 @@ main(int argc, char** argv) {
     /* BIOS_PREVIEW_BG=<palette index> and BIOS_PREVIEW_DARK=1 as the Settings rows (needs bg_palette.c in the build) */
     int pv_bg = getenv("BIOS_PREVIEW_BG") ? atoi(getenv("BIOS_PREVIEW_BG")) : 0, pv_dark = getenv("BIOS_PREVIEW_DARK") != NULL;
     if (getenv("BIOS_PREVIEW_GLOBE")) {
-        bmenu_set_icon_model(&menu, 2, BMODEL_GLOBE, (float)atof(getenv("BIOS_PREVIEW_GLOBE")), getenv("GX") ? (float)atof(getenv("GX")) : 0.0f, getenv("GY") ? (float)atof(getenv("GY")) : 0.0f); /* the Music icon as the globe: the value is its scale */
+        bmenu_set_icon_model(&menu, 2, BMODEL_GLOBE, (float)atof(getenv("BIOS_PREVIEW_GLOBE")), getenv("GX") ? (float)atof(getenv("GX")) : 0.0f, getenv("GY") ? (float)atof(getenv("GY")) : 0.0f, getenv("GZ") ? (float)atof(getenv("GZ")) : 0.0f); /* the Music icon as the globe: the value is its scale */
     }
     bscene_set_background_tint(bg_palette_wave_tint(pv_bg, pv_dark));
     if (pv_dark) {
