@@ -285,6 +285,7 @@ main(int argc, char** argv) {
     if (!strcmp(screen_name, "card")) screen = PS2_SCREEN_CARD;
     if (!strcmp(screen_name, "settings")) screen = PS2_SCREEN_SETTINGS;
     if (!strcmp(screen_name, "version")) screen = PS2_SCREEN_VERSION;
+    if (!strcmp(screen_name, "intro")) screen = PS2_SCREEN_INTRO;
     g_cursor = screen == PS2_SCREEN_GAMES ? sel : 0;
     ui.main_sel = screen == PS2_SCREEN_MAIN ? sel : 0;
     ui.dev_sel = screen == PS2_SCREEN_DEVICES ? sel : 2;

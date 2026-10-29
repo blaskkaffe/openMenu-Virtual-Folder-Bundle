@@ -38,7 +38,7 @@ FMT_4444, FMT_565, FMT_1555 = 0, 1, 2
 #   glow  white, alpha = brightness of the picture (drawn additively, tinted by the vertex colour)
 #   rgba  picture with its own alpha
 #   rgb   opaque colour picture
-GLOW = ["OFOG0", "OFOG1", "OFOG2", "OFOG3", "OFOG4", "OFLAR", "OREF", "CBLUR", "CFLOW", "CSMOK", "CREFA", "CNAVI", "OBLP"]
+GLOW = ["OFOG0", "OFOG1", "OFOG2", "OFOG3", "OFOG4", "OFLAR", "OREF", "CBLUR", "CFLOW", "CSMOK", "CREFA", "CNAVI", "OBLP", "OSCE"]
 RGBA = ["BARRW", "BBTTN", "BCDPB", "BCPAR", "BNAV1", "BNAV2", "BOVAL", "CMARU", "OCRBL", "OCRLE", "BICHI"]
 RGB = ["CKABE", "OWAL0"]
 # The icon pictures are dark (the PS2 lights them with shiny materials); the console's texture

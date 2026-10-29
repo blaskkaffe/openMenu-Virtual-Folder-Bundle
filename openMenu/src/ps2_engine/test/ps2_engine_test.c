@@ -239,10 +239,19 @@ main(void) {
     static ps2_ui ui;
     CHECK(ps2_ui_init(&ui, &pack, &host, &sink) == 0);
 
-    /* start: fade in, input is ignored until the fade is over */
+    /* start: the intro plays; input is ignored while the screen fades in, then any button skips it */
+    CHECK(ui.screen == PS2_SCREEN_INTRO);
     ps2_ui_button(&ui, PS2_BTN_A);
-    CHECK(ui.screen == PS2_SCREEN_MAIN && !ui.transitioning);
+    CHECK(ui.screen == PS2_SCREEN_INTRO);
     run(&ui, 0.7f);
+    ps2_ui_draw(&ui); /* still black */
+    run(&ui, 3.0f);
+    draw_all(&ui);
+    run(&ui, 3.0f);
+    draw_all(&ui);
+    ps2_ui_button(&ui, PS2_BTN_A); /* skip */
+    CHECK(ui.screen == PS2_SCREEN_MAIN);
+    run(&ui, 1.2f);
     draw_all(&ui);
 
     /* triangle on the main menu opens the version screen, circle comes back */

@@ -94,7 +94,8 @@ ps2_ui_init(ps2_ui* ui, const ps2_pack* pack, const ps2_host* host, const ps2_si
     if (ui->id.m_disc < 0 || ui->id.m_card < 0 || ui->id.m_cube < 0 || ui->id.m_system < 0) {
         return -1;
     }
-    ui->screen = PS2_SCREEN_MAIN;
+    ui->id.sce = ps2_pack_find_tex(pack, "OSCE");
+    ui->screen = PS2_SCREEN_INTRO;
     ui->dev_sel = DEV_DISC;
     ui->dev_pos = (float)DEV_DISC;
     return 0;
@@ -146,6 +147,20 @@ ps2_ui_show(ps2_ui* ui, int screen) {
     ui->transitioning = 0;
     ui->boot_t = BOOT_FADE;
     arrive(ui);
+}
+
+/* Start-up animation, measured in the PCSX2 recording of the real BIOS (game seconds): the blue cloud
+ * fades in at about 0.7 s, the SCE text shows from 1.4 to 4.5 s, the cloud swells and fades away by
+ * 6.3 s, small coloured lights gather from 6.5 s into the ring of the main menu, which has formed
+ * by 8 s. */
+#define INTRO_END 8.0f
+
+static void
+intro_done(ps2_ui* ui) {
+    ui->screen = PS2_SCREEN_MAIN;
+    ui->intro_t = INTRO_END;
+    ui->transitioning = 2; /* the main menu fades in */
+    ui->trans = SCREEN_TRANSITION / 2.0f;
 }
 
 /* ---- Input ------------------------------------------------------------------------------ */
@@ -228,7 +243,7 @@ button_recent(ps2_ui* ui, ps2_btn b) {
             sfx(ui, PS2_SFX_ERROR);
             notice(ui, "Could not start the game");
         }
-    } else if (b == PS2_BTN_B || b == PS2_BTN_X) {
+    } else if (b == PS2_BTN_B || b == PS2_BTN_Y) {
         sfx(ui, PS2_SFX_CANCEL);
         ui->recent_open = 0;
     }
@@ -243,7 +258,12 @@ button_games(ps2_ui* ui, ps2_btn b) {
         button_recent(ui, b);
         return;
     }
-    if (b == PS2_BTN_X) {
+    if (b == PS2_BTN_X) { /* square: the next disc of a multi-disc set */
+        int r = ui->host.game_nav ? ui->host.game_nav(ui->host.user, PS2_NAV_DISC) : PS2_NAVR_NONE;
+        sfx(ui, r == PS2_NAVR_CHANGED ? PS2_SFX_CURSOR : PS2_SFX_ERROR);
+        return;
+    }
+    if (b == PS2_BTN_Y) { /* triangle: recently played */
         if (ui->host.recent_count && ui->host.recent_count(ui->host.user) > 0) {
             ui->recent_open = 1;
             ui->recent_sel = 0;
@@ -260,7 +280,6 @@ button_games(ps2_ui* ui, ps2_btn b) {
         case PS2_BTN_RIGHT: nav = PS2_NAV_NEXT; break;
         case PS2_BTN_UP: nav = PS2_NAV_ROW_PREV; break;
         case PS2_BTN_DOWN: nav = PS2_NAV_ROW_NEXT; break;
-        case PS2_BTN_Y: nav = PS2_NAV_DISC; break;
         case PS2_BTN_A:
         case PS2_BTN_START: nav = PS2_NAV_ENTER; break;
         case PS2_BTN_B: nav = PS2_NAV_BACK; break;
@@ -321,6 +340,7 @@ ps2_ui_button(ps2_ui* ui, ps2_btn b) {
         case PS2_SCREEN_CARD: button_card(ui, b); break;
         case PS2_SCREEN_SETTINGS: button_settings(ui, b); break;
         case PS2_SCREEN_VERSION: button_version(ui, b); break;
+        case PS2_SCREEN_INTRO: intro_done(ui); break; /* any button skips the start-up animation */
         default: break;
     }
 }
@@ -347,6 +367,12 @@ ps2_ui_update(ps2_ui* ui, float dt) {
                 ui->transitioning = 0;
                 ui->trans = 0.0f;
             }
+        }
+    }
+    if (ui->screen == PS2_SCREEN_INTRO) {
+        ui->intro_t += dt;
+        if (ui->intro_t >= INTRO_END) {
+            intro_done(ui);
         }
     }
     ui->main_pos = ease_to(ui->main_pos, (float)ui->main_sel, dt);
@@ -468,11 +494,92 @@ draw_arrow(ps2_ui* ui, int which, float cx, float cy, float size, uint32_t argb)
               qu[which] + 0.5f, qv[which] + 0.5f, argb, PS2_BLEND_ALPHA);
 }
 
-/* ---- Drawing: main menu ----------------------------------------------------------------- */
-
 #define RING_X 262.0f
 #define RING_Y Y(262.0f)
 #define RING_R 58.0f
+
+/* ---- Drawing: start-up ------------------------------------------------------------------ */
+
+static void
+draw_streak(ps2_ui* ui, float t, int k, uint32_t colour, float alpha) {
+    /* a coloured light flying a curve, with a thin trail behind it */
+    float px = 0.0f, py = 0.0f;
+    for (int i = 0; i <= 28; i++) {
+        float u = t * 0.35f - (float)i * 0.018f + (float)k * 1.7f;
+        float x = 330.0f + 190.0f * sinf(u * 1.3f + (float)k) * cosf(u * 0.5f);
+        float y = Y(256.0f) + 120.0f * sinf(u * 0.9f + (float)k * 2.0f);
+        if (i > 0) {
+            ps2d_line(&ui->draw, px, py, x, y, 1.2f, ps2_fade(colour, alpha * (1.0f - (float)i / 28.0f) * 0.7f), PS2_BLEND_ADD);
+        } else {
+            ps2d_sprite(&ui->draw, ui->id.glow2, x, y, 16.0f, 16.0f, 0.0f, ps2_fade(colour | 0xFF000000u, alpha), PS2_BLEND_ADD);
+        }
+        px = x;
+        py = y;
+    }
+}
+
+static void
+draw_intro(ps2_ui* ui) {
+    ps2_draw* d = &ui->draw;
+    float t = ui->intro_t;
+    float cloud = clampf((t - 0.7f) / 1.0f, 0.0f, 1.0f) * (1.0f - clampf((t - 5.2f) / 1.1f, 0.0f, 1.0f));
+    float swell = 1.0f + 0.25f * clampf((t - 4.5f) / 0.8f, 0.0f, 1.0f);
+    float text = clampf((t - 1.4f) / 0.8f, 0.0f, 1.0f) * (1.0f - clampf((t - 3.7f) / 0.8f, 0.0f, 1.0f));
+    if (cloud > 0.0f) {
+        /* the volumetric cloud: fog drifting in a window of the textures (so the layers have no
+         * visible edges after the black frame below), blue and brighter in the middle */
+        const float x0 = 110.0f * swell - 55.0f * (swell - 1.0f) * 0.0f, x1 = 550.0f;
+        float cxm = 330.0f, hw = (x1 - x0) * 0.5f * swell, hh = Y(190.0f) * swell;
+        for (int i = 0; i < 3; i++) {
+            float ox = 0.15f + 0.12f * sinf(t * (0.11f + 0.04f * (float)i) + (float)i * 2.0f);
+            float oy = 0.15f + 0.12f * cosf(t * (0.09f + 0.05f * (float)i) + (float)i);
+            ps2d_quad(d, ui->id.fog[i], cxm - hw, Y(256.0f) - hh, cxm + hw, Y(256.0f) + hh, ox, oy, ox + 0.7f, oy + 0.7f,
+                      ps2_argb((int)(105.0f * cloud), 22, 40, 150), PS2_BLEND_ADD);
+        }
+        ps2d_sprite(d, ui->id.glow2, 330.0f, Y(236.0f), 300.0f * swell, 260.0f * swell, 0.0f, ps2_argb((int)(46.0f * cloud), 30, 50, 190),
+                    PS2_BLEND_ADD);
+        /* black frame hiding the edges of the fog window, fading inwards */
+        float fw = 150.0f * swell;
+        ps2d_gradient_h(d, cxm - hw, Y(256.0f) - hh, fw, hh * 2.0f, 0xFF000000u, 0x00000000u, PS2_BLEND_ALPHA);
+        ps2d_gradient_h(d, cxm + hw - fw, Y(256.0f) - hh, fw, hh * 2.0f, 0x00000000u, 0xFF000000u, PS2_BLEND_ALPHA);
+        ps2d_gradient(d, cxm - hw, Y(256.0f) - hh, hw * 2.0f, hh * 0.7f, 0xFF000000u, 0x00000000u, PS2_BLEND_ALPHA);
+        ps2d_gradient(d, cxm - hw, Y(256.0f) + hh * 0.3f, hw * 2.0f, hh * 0.7f, 0x00000000u, 0xFF000000u, PS2_BLEND_ALPHA);
+        /* dim glass cubes drifting in the corners */
+        static const float cx[4] = {120.0f, 520.0f, 140.0f, 520.0f}, cy[4] = {100.0f, 110.0f, 410.0f, 400.0f};
+        for (int i = 0; i < 4; i++) {
+            ps2_glass g = {.cx = cx[i], .cy = Y(cy[i]), .scale = 26.0f, .yaw = t * 0.3f + (float)i, .pitch = 0.5f + 0.2f * sinf(t * 0.4f + (float)i),
+                           .roll = 0.3f * (float)i, .dist = 9.0f, .front = ps2_argb((int)(16.0f * cloud), 150, 150, 170),
+                           .back = ps2_argb((int)(26.0f * cloud), 20, 20, 30), .edge = ps2_argb((int)(26.0f * cloud), 170, 170, 200), .edge_w = 1.4f};
+            ps2d_glass_cube(d, &g);
+        }
+        draw_streak(ui, t, 0, 0xFFC03050u, cloud);
+        draw_streak(ui, t, 1, 0xFF30C050u, cloud);
+        draw_streak(ui, t, 2, 0xFF6040D0u, cloud);
+    }
+    if (text > 0.0f && ui->id.sce >= 0) {
+        /* The BIOS picture holds the phrase in two rows ("Sony Computer" over "Entertainment"); on screen
+         * they stand side by side, 390 px wide in all and stretched taller than they are wide. */
+        uint32_t c = ps2_argb((int)(255.0f * text), 235, 235, 242);
+        float y = Y(256.0f), h = 14.0f;
+        ps2d_quad(d, ui->id.sce, 135.0f, y - h, 135.0f + 198.0f, y + h, 4.0f / 512.0f, 0.0f, 414.0f / 512.0f, 0.5f, c, PS2_BLEND_ALPHA);
+        ps2d_quad(d, ui->id.sce, 341.0f, y - h, 341.0f + 184.0f, y + h, 4.0f / 512.0f, 0.5f, 384.0f / 512.0f, 1.0f, c, PS2_BLEND_ALPHA);
+    }
+    /* small coloured lights gather into the ring of the main menu */
+    float gather = clampf((t - 6.5f) / 1.5f, 0.0f, 1.0f);
+    if (gather > 0.0f) {
+        static const uint32_t cols[7] = {0xFF60A0FFu, 0xFFFF6080u, 0xFF60FF90u, 0xFF9070FFu, 0xFF60C0FFu, 0xFFFFA060u, 0xFF70FFD0u};
+        for (int i = 0; i < 7; i++) {
+            float a = (float)i * (2.0f * PI_F / 7.0f);
+            float fx = RING_X + 160.0f * cosf(a * 2.3f + 1.0f), fy = RING_Y + 120.0f * sinf(a * 1.7f);
+            float k = smooth(gather);
+            float x = fx + (RING_X + RING_R * cosf(a) - fx) * k, y = fy + (RING_Y + RING_R * sinf(a) * 0.8f - fy) * k;
+            ps2d_sprite(d, ui->id.glow2, x, y, 18.0f, 18.0f, 0.0f, ps2_fade(cols[i], gather), PS2_BLEND_ADD);
+        }
+    }
+}
+
+/* ---- Drawing: main menu ----------------------------------------------------------------- */
+
 #define MENU_ITEM_X 442.0f
 #define MENU_ITEM_SCALE 1.12f
 
@@ -531,60 +638,6 @@ draw_version(ps2_ui* ui) {
     }
     hint_t hints[] = {{SYM_CIRCLE, "Back", 357.0f}};
     draw_hints(ui, hints, 1);
-}
-
-/* ---- Drawing: the grey panel of the browser --------------------------------------------- */
-
-#define PANEL_X 79.0f
-#define PANEL_Y 62.0f
-#define PANEL_W 480.0f
-#define PANEL_H 358.0f
-
-/* Where a row of the cube grid lies on the screen: the rows are in perspective, the lower ones
- * nearer, wider apart and larger. s is the row (0 = top of the panel), may be fractional. */
-static float
-grid_y(float s) {
-    static const float ys[4] = {163.0f, 217.0f, 275.0f, 342.0f};
-    if (s <= 0.0f) return ys[0] + s * 54.0f;
-    if (s >= 3.0f) return ys[3] + (s - 3.0f) * 67.0f;
-    int i = (int)s;
-    return ys[i] + (ys[i + 1] - ys[i]) * (s - (float)i);
-}
-
-static float
-grid_spacing(float s) {
-    return 60.0f + 5.0f * clampf(s, -1.0f, 4.0f);
-}
-
-static float
-grid_scale(float s) {
-    return 14.0f + 1.8f * clampf(s, -1.0f, 4.0f);
-}
-
-static void
-draw_panel(ps2_ui* ui, const char* line1, const char* line2, int icon_model, int icon_tex) {
-    ps2_draw* d = &ui->draw;
-    /* dark at the top left, lighter to the lower right */
-    ps2d_gradient_h(d, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 0xFF2E2E2Au, 0xFF7C7C6Cu, PS2_BLEND_ALPHA);
-    ps2d_gradient(d, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 0x00FFFFFFu, 0x48FFFFFFu, PS2_BLEND_ADD);
-    ps2_model_view mv = {.cx = 116.0f, .cy = 84.0f, .scale = 8.0f, .yaw = 0.0f, .pitch = 0.9f, .tint = 0xFF707070u, .tex = icon_tex,
-                         .y_offset = icon_model == ui->id.m_cube ? -1.04f : 0.0f};
-    ps2d_model(d, icon_model, &mv);
-    ps2d_text_fit(d, line1, 137.0f, 66.0f, 0.5f, 0xFFE0E0E0u, PS2_TEXT_LEFT, 380.0f);
-    ps2d_text_fit(d, line2, 137.0f, 90.0f, 0.42f, 0xFFC0C0C0u, PS2_TEXT_LEFT, 380.0f);
-}
-
-/* One icon of the grid: dark when idle, lit and turning when it is the picked one */
-static void
-draw_grid_icon(ps2_ui* ui, int model, int tex, int planar, float x, float y, float scale, int selected, float fade, float y_off) {
-    ps2_draw* d = &ui->draw;
-    if (selected) {
-        ps2d_sprite(d, ui->id.glow2, x, y, scale * 6.5f, scale * 5.5f, 0.0f, ps2_fade(0xFFFFFFFFu, fade), PS2_BLEND_ADD);
-        ps2d_sprite(d, ui->id.glow2, x, y, scale * 3.0f, scale * 2.6f, 0.0f, ps2_fade(0xFFFFFFFFu, fade), PS2_BLEND_ADD);
-    }
-    ps2_model_view mv = {.cx = x, .cy = y, .scale = scale, .yaw = selected ? ui->time * 1.4f : 0.5f, .pitch = 0.62f,
-                         .y_offset = y_off, .tint = ps2_fade(selected ? 0xFFFFFFFFu : 0xFF787878u, fade), .tex = tex, .planar_uv = planar};
-    ps2d_model(d, model, &mv);
 }
 
 /* ---- Drawing: device screen ------------------------------------------------------------- */
@@ -675,6 +728,52 @@ draw_card_screen(ps2_ui* ui) {
 
 /* ---- Drawing: game list ----------------------------------------------------------------- */
 
+/* The cube grid of the memory card browser (measured: 5 columns, 4 visible rows, in perspective -
+ * the lower rows are larger and further apart). s is the row as shown, 0 = first visible row. */
+static float
+grid_y(float s) {
+    static const float ys[4] = {160.0f, 222.0f, 290.0f, 368.0f}; /* measured on a frame of the video */
+    if (s <= 0.0f) return Y(ys[0] + s * 62.0f);
+    if (s >= 3.0f) return Y(ys[3] + (s - 3.0f) * 78.0f);
+    int i = (int)s;
+    return Y(ys[i] + (ys[i + 1] - ys[i]) * (s - (float)i));
+}
+
+static float
+grid_spacing(float s) {
+    return 81.5f + 5.5f * clampf(s, -1.0f, 4.0f);
+}
+
+static float
+grid_scale(float s) {
+    return 14.8f + 1.7f * clampf(s, -1.0f, 4.0f); /* cube widths about 34 to 46 px */
+}
+
+/* Header of the save list: name and free space at the left, the status of the picked entry in
+ * yellow at the right, like the PS2's "Memory Card (PS2)/1 - 6,049 KB Free - Corrupted data". */
+static void
+draw_grid_header(ps2_ui* ui, const char* title, const char* sub, const char* status) {
+    text_at(ui, title, 35.0f, Y(81.0f), 0.9f, COL_WHITE, PS2_TEXT_LEFT);
+    text_at(ui, sub, 35.0f, Y(106.0f), 0.55f, COL_WHITE, PS2_TEXT_LEFT);
+    float w = ps2d_text_width(&ui->draw, status, 0.9f);
+    float sc = w > 380.0f ? 0.9f * 380.0f / w : 0.9f;
+    text_at(ui, status, 627.0f, Y(81.0f), sc, COL_YELLOW, PS2_TEXT_RIGHT);
+}
+
+/* A cube of the grid: dull when idle, with a white glow and lit when it is the picked one */
+static void
+draw_grid_cube(ps2_ui* ui, int tex, int planar, float x, float y, float scale, int selected, float fade, float yaw) {
+    ps2_draw* d = &ui->draw;
+    ps2_model_view mv = {.cx = x, .cy = y, .scale = scale, .yaw = yaw, .pitch = 0.28f, .y_offset = -1.04f, .dist = 14.0f,
+                         .tint = ps2_fade(selected ? 0xFFFFFFFFu : 0xFF8C8C8Cu, fade), .tex = tex, .planar_uv = planar};
+    ps2d_model(d, ui->id.m_cube, &mv);
+    if (selected) { /* the glow is drawn over the cube */
+        float pulse = 0.92f + 0.08f * sinf(ui->time * 3.0f);
+        ps2d_sprite(d, ui->id.glow2, x, y, 84.0f, 84.0f, 0.0f, ps2_fade(0xFFFFFFFFu, fade * pulse), PS2_BLEND_ADD);
+        ps2d_sprite(d, ui->id.glow2, x, y, 40.0f, 40.0f, 0.0f, ps2_fade(0xFFFFFFFFu, fade), PS2_BLEND_ADD);
+    }
+}
+
 static void
 draw_games(ps2_ui* ui) {
     ps2_draw* d = &ui->draw;
@@ -689,45 +788,43 @@ draw_games(ps2_ui* ui) {
     if (count > 0) {
         ui->host.game_get(ui->host.user, cursor, &sel);
     }
-    char line1[100], line2[112];
-    snprintf(line1, sizeof(line1), "%s%s%s", "Disc", folder[0] ? " / " : "", folder);
+    char title[100], sub[48], status[112];
+    snprintf(title, sizeof(title), "Disc%s%s", folder[0] ? " / " : "", folder);
+    snprintf(sub, sizeof(sub), "%d %s", count, count == 1 ? "game" : "games");
     if (count <= 0) {
-        snprintf(line2, sizeof(line2), "No games found");
+        snprintf(status, sizeof(status), "No data");
     } else if (sel.disc_total > 1) {
-        snprintf(line2, sizeof(line2), "%s   Disc %d of %d", sel.name, sel.disc_index + 1, sel.disc_total);
+        snprintf(status, sizeof(status), "%s  (%d/%d)", sel.name, sel.disc_index + 1, sel.disc_total);
     } else {
-        snprintf(line2, sizeof(line2), "%s", sel.name);
+        snprintf(status, sizeof(status), "%s", sel.name);
     }
-    draw_panel(ui, line1, line2, ui->id.m_disc, ui->id.t_disc);
+    draw_picker_backdrop(ui, "", "", "");
+    draw_grid_header(ui, title, sub, status);
 
     float launch = ui->launching ? smooth(ui->launch_t / LAUNCH_TIME) : 0.0f;
     if (count > 0) {
-        char num[32];
-        snprintf(num, sizeof(num), "%d / %d", cursor + 1, count);
-        ps2d_text(d, num, PANEL_X + PANEL_W - 14.0f, 66.0f, 0.42f, 0xFFC0C0C0u, PS2_TEXT_RIGHT);
         int first = (int)floorf(ui->grid_top) - 1;
         if (first < 0) first = 0;
         int last = (int)ceilf(ui->grid_top) + GRID_ROWS;
         int art_slot = 0;
-        int sel_art = -1;
-        int order[2] = {0, 1}; /* the picked icon is drawn after the others */
-        for (int pass = 0; pass < 2; pass++) {
+        for (int pass = 0; pass < 2; pass++) { /* the picked cube is drawn after the others */
             for (int row = first; row <= last; row++) {
                 float s = (float)row - ui->grid_top;
-                if (s < -0.7f || s > (float)GRID_ROWS - 0.3f) {
+                float y = grid_y(s);
+                /* the rows slide out under the header and above the legend */
+                float edge = clampf((y - Y(78.0f)) / 30.0f, 0.0f, 1.0f) * clampf((Y(440.0f) - y) / 30.0f, 0.0f, 1.0f);
+                if (edge <= 0.0f) {
                     continue;
                 }
-                float edge = clampf(1.0f + s * 1.4f, 0.0f, 1.0f) * clampf(((float)GRID_ROWS - 0.3f - s) * 1.4f, 0.0f, 1.0f);
                 for (int col = 0; col < PS2_GRID_COLS; col++) {
                     int i = row * PS2_GRID_COLS + col;
-                    if (i >= count || (i == cursor) != (order[pass] == 1)) {
+                    if (i >= count || (i == cursor) != (pass == 1)) {
                         continue;
                     }
                     ps2_game_entry e;
                     memset(&e, 0, sizeof(e));
                     ui->host.game_get(ui->host.user, i, &e);
-                    float x = 320.0f + (float)(col - 2) * grid_spacing(s);
-                    float y = grid_y(s);
+                    float x = 330.0f + (float)(col - 2) * grid_spacing(s);
                     float scale = grid_scale(s);
                     float fade = edge * (i == cursor ? 1.0f : 1.0f - launch);
                     int tex = e.is_folder ? ui->id.t_folder : ui->id.t_cube;
@@ -738,29 +835,31 @@ draw_games(ps2_ui* ui) {
                         }
                         tex = PS2_TEX_ART + art_slot;
                         planar = 1;
-                        if (i == cursor) sel_art = art_slot;
                         art_slot++;
                     }
+                    float yaw = (float)(2 - col) * 0.07f; /* seen from the middle: the outer cubes show their inner side */
                     if (i == cursor && ui->launching) {
-                        scale *= 1.0f + 5.0f * launch * launch;
-                        y -= 60.0f * launch;
+                        scale *= 1.0f + 6.0f * launch * launch;
+                        y -= 70.0f * launch;
+                        yaw += launch * 9.0f;
                     }
-                    draw_grid_icon(ui, ui->id.m_cube, tex, planar, x, y, scale, i == cursor, fade, -1.04f);
+                    draw_grid_cube(ui, tex, planar, x, y, scale, i == cursor, fade, yaw);
                 }
             }
         }
-        (void)sel_art;
-        float up = ui->grid_top > 0.05f ? 1.0f : 0.0f;
-        float down = (floorf(ui->grid_top + 0.5f) + GRID_ROWS) * PS2_GRID_COLS < (float)count ? 1.0f : 0.0f;
-        if (up > 0.0f) draw_arrow(ui, 2, 320.0f, 114.0f, 16.0f, 0xFF2878FFu);
-        if (down > 0.0f) draw_arrow(ui, 3, 320.0f, 392.0f, 16.0f, 0xFF2878FFu);
+        if (ui->grid_top > 0.05f) {
+            draw_arrow(ui, 2, 330.0f, Y(100.0f), 18.0f, 0xFF2850FFu);
+        }
+        if ((floorf(ui->grid_top + 0.5f) + GRID_ROWS) * PS2_GRID_COLS < (float)count) {
+            draw_arrow(ui, 3, 330.0f, Y(416.0f), 18.0f, 0xFF2850FFu);
+        }
     } else {
-        ps2d_text(d, "No data", 320.0f, 230.0f, 0.7f, COL_WHITE, PS2_TEXT_CENTER);
+        text_at(ui, "No games found", 320.0f, Y(256.0f), 1.0f, COL_WHITE, PS2_TEXT_CENTER);
     }
     if (!ui->launching) {
-        hint_t hints[4] = {{SYM_CROSS, "Enter", 0.0f}, {SYM_CIRCLE, "Back", 0.0f}, {SYM_SQUARE, "Recent", 0.0f}, {SYM_TRIANGLE, "Disc", 0.0f}};
-        int n = sel.disc_total > 1 ? 4 : 3;
-        draw_hints(ui, hints, n);
+        hint_t hints[4] = {{SYM_CROSS, "Enter", 235.0f}, {SYM_CIRCLE, "Back", 357.0f}, {SYM_TRIANGLE, "Recent", 521.0f},
+                           {SYM_SQUARE, "Disc", 45.0f}};
+        draw_hints(ui, hints, sel.disc_total > 1 ? 4 : 3);
     }
     if (launch > 0.55f) {
         ps2d_rect(d, 0.0f, 0.0f, 640.0f, 480.0f, ps2_argb((int)(255.0f * smooth((launch - 0.55f) / 0.45f)), 255, 255, 255));
@@ -994,6 +1093,7 @@ ps2_ui_draw(ps2_ui* ui) {
         case PS2_SCREEN_CARD: draw_card_screen(ui); break;
         case PS2_SCREEN_SETTINGS: draw_settings(ui); break;
         case PS2_SCREEN_VERSION: draw_version(ui); break;
+        case PS2_SCREEN_INTRO: draw_intro(ui); break;
         default: break;
     }
     if (ui->screen == PS2_SCREEN_GAMES && ui->recent_open) {

@@ -149,15 +149,22 @@ export and it is never committed (`PS2.PAK` is in `.gitignore`):
 
 Screens (`src/ps2_engine/src/ps2_ui.c`, portable C, shared by the console and the PC preview):
 
+- Start-up: the PS2's intro, about 8 s (any button skips it): a blue cloud with dim glass cubes and
+  coloured streaks, the "Sony Computer Entertainment" picture from the BIOS, then coloured lights
+  gather into the orb ring and the main menu fades in. Timings measured from the PCSX2 recording.
+
 - Main menu: black, a ring of seven glowing balls turning on the left, the list on the right
   (Browser in blue, Settings in grey). Up/Down pick, A enters, Y opens a Version Information screen.
 - Browser: the grey panel of the PS2 memory card browser with Memory Card 1, Memory Card 2 and Disc.
   A memory card opens "No data" (the card is only detected, not read yet).
-- Disc: the same panel with the games as a perspective grid of cubes (5 columns, 4 rows visible,
-  scrolling by row), the picked cube lit and turning with a white glow, the game's `ICON.DAT` picture
-  on its faces (the generic data cube while it loads). Folders are the darker cube. D-pad moves,
+- Disc: the layout of the PS2 save list, measured from a PCSX2 recording with a populated card: the
+  grey backdrop with the name at the top left, the game count under it and the picked game's name
+  in yellow at the top right; 5 columns x 4 visible rows of cubes in perspective (lower rows larger
+  and wider apart), blue triangles at the top / bottom when the grid scrolls, a white glow on the
+  picked cube (moves one cell per press). The cubes carry the game's `ICON.DAT` picture (the generic
+  data cube while it loads). Folders are the other cube. Left/Right move one game, Up/Down one row,
   A opens a folder / starts the game (cube flies up, white fade; Settings > Launch animation turns
-  it off), B back, X recently played, Y next disc of a multi-disc set.
+  it off), B back, triangle recently played, square the next disc of a multi-disc set.
 - Settings: purple screen (the PS2's System Configuration scene: twelve glass prisms around a wire
   sphere with white balls, measured from the PCSX2 video) with five glass cubes at fixed places, the
   picked setting's cube lit blue (`ui_settings.c`). Left/Right pick the setting (old text fades out,

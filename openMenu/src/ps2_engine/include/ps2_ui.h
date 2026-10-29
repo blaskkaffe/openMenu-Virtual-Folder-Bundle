@@ -95,7 +95,8 @@ typedef enum {
     PS2_SCREEN_GAMES,
     PS2_SCREEN_CARD,
     PS2_SCREEN_SETTINGS,
-    PS2_SCREEN_VERSION
+    PS2_SCREEN_VERSION,
+    PS2_SCREEN_INTRO /* the start-up: blue cloud, SCE text, the orbs gathering */
 } ps2_screen;
 
 
@@ -107,6 +108,7 @@ typedef struct ps2_ui {
     /* texture / model indexes, -1 if the pack lacks them */
     struct {
         int fog[5], flare, ref, blur, smoke, glow1, glow2, ring, btn, arrow, kabe, wall;
+        int sce;
         int m_disc, m_card, m_cube, m_system;
         int t_disc, t_card, t_cube, t_folder, t_system;
     } id;
@@ -116,6 +118,7 @@ typedef struct ps2_ui {
     float trans;       /* >0: leaving the old screen, counts down; <0: arriving, counts up to 0 */
     int transitioning; /* 0 none, 1 leaving, 2 arriving */
     float boot_t;      /* start-up fade from black */
+    float intro_t;     /* seconds into the start-up animation */
 
     int main_sel;
     float main_pos;
