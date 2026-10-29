@@ -52,17 +52,6 @@ smooth(float t) {
     return t * t * (3.0f - 2.0f * t);
 }
 
-static float
-frac(float v) {
-    return v - floorf(v);
-}
-
-/* Pseudo-random number in 0..1 from an index and a salt */
-static float
-rnd(int i, int salt) {
-    return frac(sinf((float)i * 12.9898f + (float)salt * 78.233f) * 43758.5453f);
-}
-
 static void
 sfx(ps2_ui* ui, int s) {
     if (ui->host.sfx) {
@@ -804,8 +793,8 @@ draw_recent(ps2_ui* ui) {
 
 /* ---- Drawing: settings ------------------------------------------------------------------ */
 
-#define CFG_CX 300.0f /* the dark eye the bars radiate from, reference pixels */
-#define CFG_CY 262.0f
+#define CFG_CX 277.0f /* middle of the ring of prisms and of the wire sphere, reference pixels (measured) */
+#define CFG_CY 235.0f
 #define CFG_SLOTS 5
 
 /* The cubes sit still at these places (measured, reference pixels) and only tumble; the picked
@@ -813,12 +802,68 @@ draw_recent(ps2_ui* ui) {
 static const float cube_slot_x[CFG_SLOTS] = {205.0f, 85.0f, 212.0f, 90.0f, 208.0f};
 static const float cube_slot_y[CFG_SLOTS] = {110.0f, 190.0f, 255.0f, 320.0f, 392.0f};
 
-/* A soft rod of blue glass seen from the side */
+/* One prism of blue glass lying on the ring, pointing at the middle: three bands (lit top face,
+ * side, dark underside) with a bright outline and a lighter end. `lit` is the pale cyan one. */
 static void
-draw_rod(ps2_ui* ui, float x, float y, float len, float width, float angle, uint32_t body, uint32_t core) {
+draw_prism(ps2_ui* ui, float x, float y, float len, float width, float angle, int lit) {
     ps2_draw* d = &ui->draw;
-    ps2d_sprite(d, ui->id.blur, x, y, len * 1.7f, width * 2.6f, angle, body, PS2_BLEND_ALPHA);
-    ps2d_sprite(d, ui->id.blur, x, y, len * 1.1f, width * 1.2f, angle, core, PS2_BLEND_ALPHA);
+    float c = cosf(angle), s = sinf(angle);
+    float hx = c * len * 0.5f, hy = s * len * 0.5f, wx = -s * width * 0.5f, wy = c * width * 0.5f;
+    static const float band_lo[3] = {-1.0f, -0.33f, 0.33f}, band_hi[3] = {-0.33f, 0.33f, 1.0f};
+    static const uint32_t blue[3] = {0xA07AB4F0u, 0x98386CC8u, 0x982A4C9Cu};
+    static const uint32_t cyan[3] = {0xE0DCFAFFu, 0xE0A8E8FFu, 0xE07CC8F0u};
+    for (int k = 0; k < 3; k++) {
+        float lo = band_lo[k], hi = band_hi[k];
+        float xs[4] = {x - hx + wx * lo, x + hx + wx * lo, x - hx + wx * hi, x + hx + wx * hi};
+        float ys[4] = {y - hy + wy * lo, y + hy + wy * lo, y - hy + wy * hi, y + hy + wy * hi};
+        float z[4] = {0, 0, 0, 0};
+        uint32_t col = lit ? cyan[k] : blue[k];
+        uint32_t far = ps2_fade(col, 0.75f);
+        uint32_t cs[4] = {far, col, far, col};
+        ps2d_quad4(d, PS2_TEX_NONE, xs, ys, z, z, cs, PS2_BLEND_ALPHA);
+    }
+    uint32_t edge = lit ? 0xFFE8FAFFu : 0xB0A0D0FFu;
+    ps2d_line(d, x - hx + wx, y - hy + wy, x + hx + wx, y + hy + wy, 1.3f, edge, PS2_BLEND_ALPHA);
+    ps2d_line(d, x - hx - wx, y - hy - wy, x + hx - wx, y + hy - wy, 1.3f, edge, PS2_BLEND_ALPHA);
+    ps2d_line(d, x + hx - wx, y + hy - wy, x + hx + wx, y + hy + wy, 1.3f, edge, PS2_BLEND_ALPHA);
+    ps2d_line(d, x - hx - wx, y - hy - wy, x - hx + wx, y - hy + wy, 1.3f, ps2_fade(edge, 0.6f), PS2_BLEND_ALPHA);
+}
+
+/* The sphere of thin blue lines in the middle with its bright balls, turning in space */
+static void
+draw_wire_sphere(ps2_ui* ui) {
+    ps2_draw* d = &ui->draw;
+    float t = ui->time;
+    const float R = 66.0f;
+    float cx = CFG_CX, cy = Y(CFG_CY);
+    for (int m = 0; m < 4; m++) { /* the outline, then three meridians turning about the vertical axis */
+        float phi = t * 0.4f + (float)m * (PI_F / 3.0f);
+        float px = 0.0f, py = 0.0f;
+        for (int i = 0; i <= 40; i++) {
+            float a = (float)i * (2.0f * PI_F / 40.0f);
+            float x, y, z;
+            if (m == 0) {
+                x = cosf(a);
+                y = sinf(a);
+                z = 0.0f;
+            } else {
+                x = sinf(a) * cosf(phi);
+                y = cosf(a);
+                z = sinf(a) * sinf(phi);
+            }
+            float sx = cx + R * x, sy = cy + R * 0.95f * y;
+            if (i > 0) {
+                ps2d_line(d, px, py, sx, sy, 1.2f, ps2_argb(m == 0 ? 190 : (z > 0.0f ? 170 : 80), 70, 130, 255), PS2_BLEND_ADD);
+            }
+            px = sx;
+            py = sy;
+        }
+    }
+    for (int i = 0; i < 9; i++) {
+        float a = t * 0.8f + (float)i * 0.7f, b = 0.9f * sinf(t * 0.3f + (float)i);
+        float x = cosf(b) * cosf(a), y = sinf(b), z = cosf(b) * sinf(a);
+        draw_orb(ui, cx + R * x, cy + R * 0.95f * y, 7.0f + 2.0f * z, 0.85f + 0.15f * z);
+    }
 }
 
 static void
@@ -826,26 +871,19 @@ draw_settings_background(ps2_ui* ui) {
     ps2_draw* d = &ui->draw;
     float t = ui->time;
     float y0 = Y(62.0f), h = Y(388.0f);
-    ps2d_gradient(d, VIEW_X, y0, VIEW_W, h, 0xFF5B4F8Cu, 0xFF2B2150u, PS2_BLEND_ALPHA);
-    /* a dark patch in the middle, where the bars come from */
-    ps2d_sprite(d, ui->id.glow2, CFG_CX + 40.0f, Y(CFG_CY), 380.0f, 300.0f, 0.0f, 0x90140C30u, PS2_BLEND_ALPHA);
-    /* long rods of dark blue glass radiating from the eye, turning very slowly */
-    for (int i = 0; i < 14; i++) {
-        float a = t * 0.05f + (float)i * (2.0f * PI_F / 14.0f) + 0.2f * rnd(i, 1);
-        float r = 105.0f + 95.0f * rnd(i, 2);
-        float len = 85.0f + 75.0f * rnd(i, 3);
-        float width = 20.0f + 12.0f * rnd(i, 4);
-        draw_rod(ui, CFG_CX + 40.0f + cosf(a) * r, Y(CFG_CY) + sinf(a) * r * 0.8f, len, width, a, ps2_argb(255, 30, 70, 150 + (int)(30.0f * rnd(i, 5))),
-                 ps2_argb(230, 60, 120, 190));
+    /* noisy purple, lighter towards the right, dark around the middle */
+    ps2d_gradient_h(d, VIEW_X, y0, VIEW_W, h, 0xFF3E3068u, 0xFF6A5496u, PS2_BLEND_ALPHA);
+    ps2d_gradient(d, VIEW_X, y0, VIEW_W, h, 0x30000000u, 0x70000010u, PS2_BLEND_ALPHA);
+    ps2d_sprite(d, ui->id.glow2, CFG_CX, Y(CFG_CY), 420.0f, 360.0f, 0.0f, 0xC0100820u, PS2_BLEND_ALPHA);
+    /* twelve prisms on an ellipse around the middle, pointing at it; the one at the upper right is pale */
+    for (int i = 0; i < 12; i++) {
+        float th = (float)i * (PI_F / 6.0f) + 0.015f * sinf(t * 0.6f + (float)i);
+        float ex = 167.0f * cosf(th), ey = 138.0f * sinf(th);
+        float ang = atan2f(ey, ex);
+        float len = 100.0f + 52.0f * fabsf(cosf(th));
+        draw_prism(ui, CFG_CX + ex, Y(CFG_CY) + ey * 0.9375f, len, 31.0f, ang, i == 10);
     }
-    /* the one bright bar of light at the upper right */
-    draw_rod(ui, 415.0f, Y(154.0f), 105.0f, 24.0f, -0.42f, ps2_argb(235, 150, 225, 255), ps2_argb(220, 215, 245, 255));
-    ps2d_sprite(d, ui->id.glow2, 415.0f, Y(154.0f), 150.0f, 70.0f, -0.42f, 0x5078B4FFu, PS2_BLEND_ADD);
-    /* the arc of small lights around the eye, with its orb */
-    for (int i = 0; i < 10; i++) {
-        float a = 2.0f + (float)i * 0.22f + 0.15f * sinf(t * 0.5f);
-        draw_orb(ui, CFG_CX - 10.0f + 66.0f * cosf(a), Y(CFG_CY) + 24.0f + 44.0f * sinf(a), 2.4f + 0.45f * (float)i, 0.8f);
-    }
+    draw_wire_sphere(ui);
 }
 
 /* One cube of glass; the picked one is lit blue */

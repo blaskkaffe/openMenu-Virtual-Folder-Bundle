@@ -158,8 +158,10 @@ Screens (`src/ps2_engine/src/ps2_ui.c`, portable C, shared by the console and th
   on its faces (the generic data cube while it loads). Folders are the darker cube. D-pad moves,
   A opens a folder / starts the game (cube flies up, white fade; Settings > Launch animation turns
   it off), B back, X recently played, Y next disc of a multi-disc set.
-- Settings: purple screen with a ring of glass cubes, one per openMenu setting (`ui_settings.c`):
-  Left/Right turn the ring, Up/Down (or A) change the value shown on the right, X (square, "Display")
+- Settings: purple screen (the PS2's System Configuration scene: twelve glass prisms around a wire
+  sphere with white balls, measured from the PCSX2 video) with five glass cubes at fixed places, the
+  picked setting's cube lit blue (`ui_settings.c`). Left/Right pick the setting (old text fades out,
+  new fades in), Up/Down (or A) change the value shown on the right, X (square, "Display")
   hides the text and leaves the bare scene, B saves and leaves.
 
 Animation runs on seconds, not frames (a time accumulator), as in `TIMINGS.md` of the PS2 export:
