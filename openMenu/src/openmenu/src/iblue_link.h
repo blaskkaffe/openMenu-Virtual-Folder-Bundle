@@ -56,6 +56,21 @@ int iblue_link_reset_map(iblue_link* l, int port);
 int iblue_link_commit(iblue_link* l);
 int iblue_link_revert(iblue_link* l);
 /* Source buttons held on the controller of the port (bit = generic id, word 0 is the pad). */
+/* Profiles: the type and mapping of one port saved in the iBlue (slot 0..3). On the controller,
+ * Home plus a face button (down, right, left, up) loads slot 0..3 for the controller it is pressed on. */
+typedef struct iblue_profile {
+    uint8_t used, dev_mode, acc_mode;
+} iblue_profile;
+int iblue_link_profiles(iblue_link* l, iblue_profile out[IBLUE_PROFILES]);
+int iblue_link_profile_save(iblue_link* l, int slot, int port);
+int iblue_link_profile_load(iblue_link* l, int slot, int port); /* IBLUE_RES_EMPTY if nothing saved */
+int iblue_link_profile_delete(iblue_link* l, int slot);
+
+/* Games: the iBlue switches to a game's own settings when it has them. id "" detaches. */
+int iblue_link_game_set(iblue_link* l, const char* id, int* has_own);
+int iblue_link_game_save(iblue_link* l);   /* the current settings become the game's */
+int iblue_link_game_delete(iblue_link* l); /* the game uses the normal settings again */
+
 /* Pairing mode: 0 auto (looks for controllers by itself), 1 manual (only when asked). */
 int iblue_link_get_pairing(iblue_link* l, int* mode);
 int iblue_link_set_pairing(iblue_link* l, int mode);

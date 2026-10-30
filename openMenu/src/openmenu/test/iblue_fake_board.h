@@ -17,3 +17,9 @@ int board_stat(int which); /* 0 commits, 1 reverts, 2 sleeps, 3 reads */
 int board_pairing(void);
 void board_set_plugged(int port, int on);
 int board_field(int port, int src, int which); /* 0 scale, 1 threshold, 2 deadzone, 3 turbo, 4 algo */
+int board_profile_used(int slot);
+int board_profile_dst(int slot, int src);
+const char* board_game(void);
+int board_game_stat(int which); /* 0 saves, 1 deletes, 2 a game has its own settings */
+void board_set_dst(int port, int src, int dst);
+int hotkey_slot(unsigned int* btns, unsigned int* prev);

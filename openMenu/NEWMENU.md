@@ -153,6 +153,11 @@ iBlueControlMod BlueRetro firmware), like the controller settings of a console:
   controller, 10 s), X picks from a list (also the way when no controller is connected), Y clears,
   Start opens that button's settings: scale, press level, dead zone, rapid fire, stick scaling.
   Assigning swaps: the output that button had goes to the button that had this output.
+- Profiles: four slots (type, rumble/VMU and the whole button table of a port) kept in the iBlue. A loads one
+  into the port, X saves the port into it, Y deletes. On the controller, Home plus a face button (down, right,
+  left, up) loads slot 1 to 4 for that controller, with one buzz.
+- Game settings: Y on a game in the list opens the same screen for that game only. Starting a game makes the
+  iBlue use the game's own settings if it has some (the product number is sent first).
 - Changes work at once but are saved in the iBlue only with Save (B asks when there is something unsaved).
 
 How it talks to the board: `iblue_link.c` (portable, commands in `iblue_proto.h`) over eight blocks (200

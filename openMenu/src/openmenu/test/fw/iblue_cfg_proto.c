@@ -36,6 +36,24 @@ void iblue_cfg_window_init(uint8_t *window) {
 }
 
 /* algo: low nibble is the stick scaling (0 linear .. 5 passthrough), the high nibble is not used here */
+int iblue_hotkey_filter(struct iblue_hotkey *st, uint32_t *btns) {
+    uint32_t faces = *btns & IBLUE_HOTKEY_FACES;
+    uint32_t fresh = faces & ~st->prev_faces;
+    int slot = -1;
+
+    st->prev_faces = faces;
+    if (!(*btns & (1u << IBLUE_HOTKEY_HOME))) {
+        return -1;
+    }
+    *btns &= ~IBLUE_HOTKEY_FACES;
+    /* face down (18) = slot 0, right (17) = 1, left (16) = 2, up (19) = 3: A, B, X, Y */
+    if (fresh & (1u << 18)) slot = 0;
+    else if (fresh & (1u << 17)) slot = 1;
+    else if (fresh & (1u << 16)) slot = 2;
+    else if (fresh & (1u << 19)) slot = 3;
+    return slot;
+}
+
 static int map_ok(const struct iblue_map *m) {
     return m->dst_id < IBLUE_PORTS && m->perc_max <= 100 && m->perc_threshold <= 100 && m->algo <= 5;
 }
@@ -191,6 +209,99 @@ static uint16_t run_cmd(struct iblue_cfg *cfg, uint16_t cmd, const uint8_t *in, 
             cfg->status |= IBLUE_ST_UNSAVED;
             return IBLUE_RES_OK;
         }
+
+        case IBLUE_CMD_PROFILE_LIST:
+            for (int i = 0; i < IBLUE_PROFILES; i++) {
+                struct iblue_profile_info pi;
+
+                memset(&pi, 0, sizeof(pi));
+                ops->profile_info(cfg->ctx, (uint8_t)i, &pi);
+                out[i * 4] = pi.used;
+                out[i * 4 + 1] = pi.dev_mode;
+                out[i * 4 + 2] = pi.acc_mode;
+                out[i * 4 + 3] = 0;
+            }
+            *out_len = IBLUE_PROFILES * 4;
+            return IBLUE_RES_OK;
+
+        case IBLUE_CMD_PROFILE_SAVE:
+            if (in_len < 2 || in[0] >= IBLUE_PROFILES || in[1] >= IBLUE_PORTS) {
+                return IBLUE_RES_BAD_ARG;
+            }
+            return ops->profile_save(cfg->ctx, in[0], in[1]) ? IBLUE_RES_FAILED : IBLUE_RES_OK;
+
+        case IBLUE_CMD_PROFILE_LOAD: {
+            int r;
+
+            if (in_len < 2 || in[0] >= IBLUE_PROFILES || in[1] >= IBLUE_PORTS) {
+                return IBLUE_RES_BAD_ARG;
+            }
+            r = ops->profile_load(cfg->ctx, in[0], in[1]);
+            if (r) {
+                return IBLUE_RES_EMPTY;
+            }
+            cfg->status |= IBLUE_ST_UNSAVED;
+            return IBLUE_RES_OK;
+        }
+
+        case IBLUE_CMD_PROFILE_DELETE:
+            if (in_len < 1 || in[0] >= IBLUE_PROFILES) {
+                return IBLUE_RES_BAD_ARG;
+            }
+            return ops->profile_delete(cfg->ctx, in[0]) ? IBLUE_RES_FAILED : IBLUE_RES_OK;
+
+        case IBLUE_CMD_GAME_SET: {
+            char id[IBLUE_GAME_ID_MAX + 1];
+
+            if (in_len > IBLUE_GAME_ID_MAX) {
+                return IBLUE_RES_BAD_ARG;
+            }
+            for (int i = 0; i < in_len; i++) {
+                /* letters, digits, - and _ only: the id becomes part of a file name */
+                uint8_t ch = in[i];
+                if (!((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '-' || ch == '_')) {
+                    return IBLUE_RES_BAD_ARG;
+                }
+                id[i] = (char)ch;
+            }
+            id[in_len] = '\0';
+            out[0] = (uint8_t)ops->game_set(cfg->ctx, id);
+            *out_len = 1;
+            cfg->status &= ~IBLUE_ST_UNSAVED; /* the configuration was reloaded */
+            return IBLUE_RES_OK;
+        }
+
+        case IBLUE_CMD_GAME_INFO: {
+            char id[IBLUE_GAME_ID_MAX + 1];
+            int flags;
+
+            memset(id, 0, sizeof(id));
+            flags = ops->game_info(cfg->ctx, id);
+            out[0] = (uint8_t)flags;
+            memcpy(out + 4, id, sizeof(id));
+            *out_len = 4 + sizeof(id);
+            return IBLUE_RES_OK;
+        }
+
+        case IBLUE_CMD_GAME_SAVE: {
+            int r = ops->game_save(cfg->ctx);
+
+            if (r > 0) {
+                return IBLUE_RES_NO_GAME;
+            }
+            if (r < 0) {
+                return IBLUE_RES_FAILED;
+            }
+            cfg->status &= ~IBLUE_ST_UNSAVED;
+            return IBLUE_RES_OK;
+        }
+
+        case IBLUE_CMD_GAME_DELETE:
+            if (ops->game_delete(cfg->ctx)) {
+                return IBLUE_RES_NO_GAME;
+            }
+            cfg->status &= ~IBLUE_ST_UNSAVED;
+            return IBLUE_RES_OK;
     }
     return IBLUE_RES_BAD_CMD;
 }

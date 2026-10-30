@@ -6,9 +6,12 @@
 #include "iblue_map.h"
 #include "ui_iblue.h"
 
-typedef enum { SC_NOBOARD, SC_PORT, SC_REMAP, SC_PICK, SC_LEARN, SC_LEAVE, SC_OPTS } sc_t;
+typedef enum { SC_NOBOARD, SC_PORT, SC_REMAP, SC_PICK, SC_LEARN, SC_LEAVE, SC_OPTS, SC_PROF } sc_t;
 
-enum { ROW_PORT, ROW_TYPE, ROW_VMU, ROW_RUMBLE, ROW_REMAP, ROW_PAIR, ROW_RESET, ROW_SAVE, ROW_DISCARD, ROWS };
+enum {
+    ROW_PORT, ROW_TYPE, ROW_VMU, ROW_RUMBLE, ROW_REMAP, ROW_PROFILES, ROW_PAIR, ROW_RESET, ROW_GAMEDEL, ROW_SAVE,
+    ROW_DISCARD, ROW_KINDS
+};
 enum { OPT_SCALE, OPT_THRESHOLD, OPT_DEADZONE, OPT_TURBO, OPT_ALGO, OPTS };
 
 #define LEFT_X 64.0f
@@ -36,6 +39,14 @@ static sc_t screen;
 static int done;
 static int port;
 static int cursor;
+static int rows[ROW_KINDS]; /* the rows of the port screen, in order */
+static int row_count;
+static int game_mode;       /* editing the settings of one game */
+static int game_has;        /* ... which has settings of its own */
+static char game_id[IBLUE_GAME_ID_MAX + 1];
+static char game_name[40];
+static iblue_profile prof[IBLUE_PROFILES];
+static int prof_cursor;
 static iblue_port_info info[IBLUE_PORTS];
 static iblue_map_entry map[IBLUE_MAP_MAX];
 static int map_size;
@@ -102,8 +113,29 @@ load_map(void) {
     return 1;
 }
 
-void
-uib_open(const iblue_io* io) {
+static void
+build_rows(void) {
+    row_count = 0;
+    rows[row_count++] = ROW_PORT;
+    rows[row_count++] = ROW_TYPE;
+    rows[row_count++] = ROW_VMU;
+    rows[row_count++] = ROW_RUMBLE;
+    rows[row_count++] = ROW_REMAP;
+    rows[row_count++] = ROW_PROFILES;
+    if (!game_mode) {
+        rows[row_count++] = ROW_PAIR; /* not a per game setting */
+    }
+    rows[row_count++] = ROW_RESET;
+    if (game_mode) {
+        rows[row_count++] = ROW_GAMEDEL;
+    }
+    rows[row_count++] = ROW_SAVE;
+    rows[row_count++] = ROW_DISCARD;
+}
+
+/* id NULL or "": the normal settings. Otherwise the settings of that game. */
+static void
+open_common(const iblue_io* io, const char* id, const char* name) {
     int r;
     done = 0;
     port = 0;
@@ -111,6 +143,11 @@ uib_open(const iblue_io* io) {
     port_top = 0;
     pair_mode = 0;
     map_loaded = 0;
+    game_mode = id && id[0];
+    game_has = 0;
+    snprintf(game_id, sizeof(game_id), "%s", game_mode ? id : "");
+    snprintf(game_name, sizeof(game_name), "%s", game_mode && name ? name : "");
+    build_rows();
     notice[0] = '\0';
     screen = SC_PORT;
     r = iblue_link_open(&lk, io);
@@ -122,12 +159,33 @@ uib_open(const iblue_io* io) {
         screen = SC_NOBOARD;
         return;
     }
+    /* Edits go to the normal settings, unless it is a game's: a game that was started earlier
+     * is still set in the iBlue. Older firmware does not know the command: ignored. */
+    iblue_link_game_set(&lk, game_id, &game_has);
     for (int p = 0; p < IBLUE_PORTS; p++) {
         if (!check(iblue_link_port_info(&lk, p, &info[p]))) {
             return;
         }
     }
     check(iblue_link_get_pairing(&lk, &pair_mode));
+}
+
+void
+uib_open(const iblue_io* io) {
+    open_common(io, NULL, NULL);
+}
+
+void
+uib_open_game(const iblue_io* io, const char* product, const char* name) {
+    open_common(io, product, name);
+}
+
+void
+uib_prepare_launch(const iblue_io* io, const char* product) {
+    iblue_link l;
+    if (product && product[0] && iblue_link_open(&l, io) == 0) {
+        iblue_link_game_set(&l, product, NULL); /* its own settings if it has some, else the normal ones */
+    }
 }
 
 int
@@ -186,13 +244,77 @@ toggle_pairing(void) {
 
 static uib_sound
 leave(int save) {
-    int r = save ? iblue_link_commit(&lk) : (lk.unsaved ? iblue_link_revert(&lk) : 0);
+    int r;
+    if (game_mode) {
+        r = save ? iblue_link_game_save(&lk) : 0;
+        if (r == 0) {
+            r = iblue_link_game_set(&lk, "", NULL); /* back to the normal settings (drops unsaved edits) */
+        }
+    } else {
+        r = save ? iblue_link_commit(&lk) : (lk.unsaved ? iblue_link_revert(&lk) : 0);
+    }
     if (!check(r)) {
         return UIB_SND_ERROR;
     }
     say(save ? "Saved" : "");
     done = 1;
     return save ? UIB_SND_CONFIRM : UIB_SND_CANCEL;
+}
+
+static uib_sound
+open_profiles(void) {
+    if (!check(iblue_link_profiles(&lk, prof))) {
+        return UIB_SND_ERROR;
+    }
+    prof_cursor = 0;
+    screen = SC_PROF;
+    return UIB_SND_ENTER;
+}
+
+static uib_sound
+profile_button(button_t b) {
+    switch (b) {
+        case BTN_UP:
+            if (prof_cursor > 0) { prof_cursor--; return UIB_SND_CURSOR; }
+            break;
+        case BTN_DOWN:
+            if (prof_cursor < IBLUE_PROFILES - 1) { prof_cursor++; return UIB_SND_CURSOR; }
+            break;
+        case BTN_A:
+        case BTN_START: {
+            int r = iblue_link_profile_load(&lk, prof_cursor, port);
+            if (r == IBLUE_RES_EMPTY) {
+                say("That profile is empty");
+                return UIB_SND_ERROR;
+            }
+            if (!check(r)) return UIB_SND_ERROR;
+            map_loaded = 0;
+            refresh_port();
+            say("Loaded (not saved yet)");
+            return UIB_SND_CONFIRM;
+        }
+        case BTN_X:
+            if (!check(iblue_link_profile_save(&lk, prof_cursor, port))) return UIB_SND_ERROR;
+            if (!check(iblue_link_profiles(&lk, prof))) return UIB_SND_ERROR;
+            say("Profile saved");
+            return UIB_SND_CONFIRM;
+        case BTN_Y:
+            if (!prof[prof_cursor].used) return UIB_SND_NONE;
+            if (!check(iblue_link_profile_delete(&lk, prof_cursor))) return UIB_SND_ERROR;
+            if (!check(iblue_link_profiles(&lk, prof))) return UIB_SND_ERROR;
+            say("Profile deleted");
+            return UIB_SND_CONFIRM;
+        case BTN_B:
+            screen = SC_PORT;
+            return UIB_SND_CANCEL;
+        default: break;
+    }
+    return UIB_SND_NONE;
+}
+
+static void
+refresh_port_n(int p) {
+    check(iblue_link_port_info(&lk, p, &info[p]));
 }
 
 static void
@@ -208,26 +330,35 @@ port_button(button_t b) {
             if (cursor > 0) { cursor--; port_scroll(); return UIB_SND_CURSOR; }
             break;
         case BTN_DOWN:
-            if (cursor < ROWS - 1) { cursor++; port_scroll(); return UIB_SND_CURSOR; }
+            if (cursor < row_count - 1) { cursor++; port_scroll(); return UIB_SND_CURSOR; }
             break;
         case BTN_LEFT:
         case BTN_RIGHT: {
             int d = b == BTN_LEFT ? -1 : 1;
-            if (cursor == ROW_PORT) { change_port(d); return screen == SC_NOBOARD ? UIB_SND_ERROR : UIB_SND_CURSOR; }
-            if (cursor == ROW_TYPE) return step_type(d);
-            if (cursor == ROW_VMU) return toggle_acc(1);
-            if (cursor == ROW_RUMBLE) return toggle_acc(2);
-            if (cursor == ROW_PAIR) return toggle_pairing();
+            int kind = rows[cursor];
+            if (kind == ROW_PORT) { change_port(d); return screen == SC_NOBOARD ? UIB_SND_ERROR : UIB_SND_CURSOR; }
+            if (kind == ROW_TYPE) return step_type(d);
+            if (kind == ROW_VMU) return toggle_acc(1);
+            if (kind == ROW_RUMBLE) return toggle_acc(2);
+            if (kind == ROW_PAIR) return toggle_pairing();
             break;
         }
         case BTN_A:
         case BTN_START:
-            switch (cursor) {
+            switch (rows[cursor]) {
                 case ROW_PORT: change_port(1); return UIB_SND_CURSOR;
                 case ROW_TYPE: return step_type(1);
                 case ROW_VMU: return toggle_acc(1);
                 case ROW_RUMBLE: return toggle_acc(2);
                 case ROW_PAIR: return toggle_pairing();
+                case ROW_PROFILES: return open_profiles();
+                case ROW_GAMEDEL:
+                    if (!check(iblue_link_game_delete(&lk))) return UIB_SND_ERROR;
+                    game_has = 0;
+                    map_loaded = 0;
+                    for (int p = 0; p < IBLUE_PORTS; p++) refresh_port_n(p);
+                    say("Game settings removed");
+                    return UIB_SND_CONFIRM;
                 case ROW_REMAP:
                     if (info[port].dev_mode > 1) {
                         say("Remap is for controllers");
@@ -447,6 +578,7 @@ uib_button(button_t b) {
         case SC_REMAP: return remap_button(b);
         case SC_PICK: return pick_button(b);
         case SC_OPTS: return opts_button(b);
+        case SC_PROF: return profile_button(b);
         case SC_LEARN: return UIB_SND_NONE; /* the pressed buttons are what is being learned */
         case SC_LEAVE:
             if (b == BTN_A || b == BTN_START) {
@@ -538,21 +670,25 @@ draw_port(void) {
     char label[28];
     const char* hint = "";
     const char* shown = "";
-    gfx_text("Controllers", LEFT_X, 60.0f, 0.6f, WHITE, 1);
+    gfx_text(game_mode ? "Game settings" : "Controllers", LEFT_X, 60.0f, 0.6f, WHITE, 1);
     for (int p = 0; p < IBLUE_PORTS; p++) {
         float x = LEFT_X + 150.0f + (float)p * 56.0f;
         gfx_rrect(x, 62.0f, 48.0f, 28.0f, 6.0f, 0.5f, p == port ? 0xC0FFFFFFu : 0x60000000u);
         snprintf(line, sizeof(line), "%c", 'A' + p);
         gfx_text(line, x + 18.0f, 62.0f, 0.6f, p == port ? 0xFF102050u : (info[p].connected ? WHITE : GREY), 0);
     }
-    snprintf(line, sizeof(line), "%s", info[port].connected ? info[port].name : "no Bluetooth controller");
-    gfx_text(line, LEFT_X, 94.0f, 0.6f, info[port].connected ? WHITE : GREY, 0);
+    if (game_mode) {
+        snprintf(line, sizeof(line), "%.24s%s", game_name, game_has ? " *" : "");
+    } else {
+        snprintf(line, sizeof(line), "%s", info[port].connected ? info[port].name : "no Bluetooth controller");
+    }
+    gfx_text(line, LEFT_X, 94.0f, 0.6f, (game_mode || info[port].connected) ? WHITE : GREY, 0);
 
-    for (int i = port_top; i < ROWS && i < port_top + VISIBLE; i++) {
+    for (int i = port_top; i < row_count && i < port_top + VISIBLE; i++) {
         int sel = cursor == i, row = i - port_top;
         value[0] = '\0';
         snprintf(label, sizeof(label), "?");
-        switch (i) {
+        switch (rows[i]) {
             case ROW_PORT:
                 snprintf(label, sizeof(label), "Port");
                 snprintf(value, sizeof(value), "< %c >%s", 'A' + port, info[port].plugged ? "  pad plugged in" : "");
@@ -575,6 +711,15 @@ draw_port(void) {
             case ROW_REMAP:
                 snprintf(label, sizeof(label), "Remap buttons");
                 hint = "Which controller button does what";
+                break;
+            case ROW_PROFILES:
+                snprintf(label, sizeof(label), "Profiles");
+                hint = "Home + face button on the controller";
+                break;
+            case ROW_GAMEDEL:
+                snprintf(label, sizeof(label), "Remove game settings");
+                snprintf(value, sizeof(value), "%s", game_has ? "" : "(none)");
+                hint = "This game uses the normal settings";
                 break;
             case ROW_PAIR:
                 snprintf(label, sizeof(label), "Bluetooth pairing");
@@ -602,7 +747,7 @@ draw_port(void) {
     }
     draw_hint(shown);
     if (port_top > 0) gfx_text("^", 590.0f, 100.0f, 0.6f, WHITE, 1);
-    if (port_top + VISIBLE < ROWS) gfx_text("v", 590.0f, 352.0f, 0.6f, WHITE, 1);
+    if (port_top + VISIBLE < row_count) gfx_text("v", 590.0f, 352.0f, 0.6f, WHITE, 1);
 }
 
 static void
@@ -628,6 +773,25 @@ draw_remap(void) {
     }
     if (out_top > 0) gfx_text("^", 590.0f, 100.0f, 0.6f, WHITE, 1);
     if (out_top + VISIBLE < IBLUE_OUTPUTS) gfx_text("v", 590.0f, 352.0f, 0.6f, WHITE, 1);
+}
+
+static void
+draw_profiles(void) {
+    static const char* const keys[IBLUE_PROFILES] = {"1  Home + down", "2  Home + right", "3  Home + left", "4  Home + up"};
+    char line[48], tmp[40];
+    snprintf(line, sizeof(line), "Port %c", 'A' + port);
+    gfx_text("Profiles", LEFT_X, 60.0f, 0.6f, WHITE, 1);
+    gfx_text(line, LEFT_X, 94.0f, 0.6f, GREY, 0);
+    for (int i = 0; i < IBLUE_PROFILES; i++) {
+        if (prof[i].used) {
+            snprintf(tmp, sizeof(tmp), "%s%s%s", dev_names[prof[i].dev_mode & 3], (prof[i].acc_mode & 2) ? ", rumble" : "",
+                     (prof[i].acc_mode & 1) ? ", VMU" : "");
+        } else {
+            snprintf(tmp, sizeof(tmp), "empty");
+        }
+        row_line(i, i == prof_cursor, keys[i], tmp);
+    }
+    draw_hint("A:load X:save here Y:delete");
 }
 
 static void
@@ -703,6 +867,7 @@ uib_draw(void) {
             break;
         case SC_REMAP: draw_remap(); break;
         case SC_OPTS: draw_opts(); break;
+        case SC_PROF: draw_profiles(); break;
         case SC_PICK: {
             int first = pick_cursor >= VISIBLE ? pick_cursor - VISIBLE + 1 : 0;
             draw_remap();

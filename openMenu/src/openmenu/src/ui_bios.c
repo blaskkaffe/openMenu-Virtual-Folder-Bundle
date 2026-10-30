@@ -82,6 +82,7 @@ blend_color(uint32_t from, uint32_t to, int t) {
 
 static bmenu menu;
 static screen_t screen;
+static screen_t iblue_back = SCREEN_MAIN; /* where the Controllers screen returns to */
 static bpage page;
 static blist glist;                 /* the game list screen */
 static const gd_item* launch_pending; /* a game waiting for the launch animation to end */
@@ -109,6 +110,18 @@ update_clock(void) {
                  t->tm_min);
         gfx_set_label(BMENU_ID_HEADER, text);
     }
+}
+
+/* Start a game. An iBlueControlMod switches to the game's own controller settings first, if it
+ * has some; without an iBlue this costs three memory card reads. */
+static void
+start_disc(const gd_item* g) {
+    if (g->product[0]) {
+        iblue_io io;
+        iblue_vmu_io(&io);
+        uib_prepare_launch(&io, g->product);
+    }
+    launch_disc(g);
 }
 
 static void
@@ -277,6 +290,7 @@ draw_games(void) {
         gfx_text("Folder", INFO_X, ART_Y, 0.5f, 0xFFFFFFFFu, 1);
     }
     gfx_text("A:go X:recent", INFO_X, 350.0f, 0.5f, 0xFFA0A0A0u, 0); /* B is the BACK marker */
+    gfx_text("Y:pad settings", INFO_X, 372.0f, 0.5f, 0xFFA0A0A0u, 0);
 }
 
 #define POPUP_X 120.0f
@@ -443,6 +457,7 @@ handle_main(button_t b) {
                 sound_sfx(BAUDIO_SFX_ENTER);
                 iblue_vmu_io(&io);
                 uib_open(&io);
+                iblue_back = SCREEN_MAIN;
                 screen = SCREEN_IBLUE;
             } else {
                 sound_sfx(BAUDIO_SFX_ERROR);
@@ -464,8 +479,12 @@ handle_iblue(button_t b) {
     uib_tick();
     if (uib_done()) {
         show_notice(uib_notice()[0] ? uib_notice() : NULL);
-        bmenu_show_main(&menu, ICON_FILES);
-        screen = SCREEN_MAIN;
+        if (iblue_back == SCREEN_GAMES) {
+            screen = SCREEN_GAMES;
+        } else {
+            bmenu_show_main(&menu, ICON_FILES);
+            screen = SCREEN_MAIN;
+        }
     }
 }
 
@@ -490,7 +509,7 @@ handle_recent(button_t b) {
             const gd_item* g = history_recent(recent_row);
             if (g) {
                 sound_sfx(BAUDIO_SFX_ENTER);
-                launch_disc(g); /* only returns if the launch failed */
+                start_disc(g); /* only returns if the launch failed */
                 sound_sfx(BAUDIO_SFX_ERROR);
                 show_notice("Could not start the game");
             }
@@ -528,6 +547,18 @@ handle_games(button_t b) {
     if (launch_pending) {
         return; /* the launch animation is running */
     }
+    if (b == BTN_Y) { /* the controller settings of the selected game */
+        const gd_item* cur = uil_item(uil_cursor());
+        if (cur && !uil_is_folder(cur) && cur->product[0]) {
+            iblue_io io;
+            sound_sfx(BAUDIO_SFX_ENTER);
+            iblue_vmu_io(&io);
+            uib_open_game(&io, cur->product, cur->name);
+            iblue_back = SCREEN_GAMES;
+            screen = SCREEN_IBLUE;
+        }
+        return;
+    }
     uil_result r = uil_button(b, &game);
     if (r == UIL_LAUNCH) {
         if (sf_scroll_art[0] == SCROLL_ART_ON) { /* "Launch animation" setting */
@@ -535,7 +566,7 @@ handle_games(button_t b) {
             launch_pending = game;
             blist_launch_start(&glist);
         } else {
-            launch_disc(game); /* only returns if the launch failed */
+            start_disc(game); /* only returns if the launch failed */
             sound_sfx(BAUDIO_SFX_ERROR);
             show_notice("Could not start the game");
         }
@@ -695,7 +726,7 @@ ui_bios_run(const bios_rom* rom) {
             if (launch_pending && blist_launch_step(&glist)) {
                 const gd_item* g = launch_pending;
                 launch_pending = NULL;
-                launch_disc(g); /* only returns if the launch failed */
+                start_disc(g); /* only returns if the launch failed */
                 blist_launch_cancel(&glist);
                 sound_sfx(BAUDIO_SFX_ERROR);
                 show_notice("Could not start the game");

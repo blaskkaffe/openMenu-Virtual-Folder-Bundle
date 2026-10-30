@@ -15,6 +15,14 @@ typedef enum { UIB_SND_NONE, UIB_SND_CURSOR, UIB_SND_CONFIRM, UIB_SND_ENTER, UIB
  * there the screen says so. */
 void uib_open(const iblue_io* io);
 
+/* The same, for the settings of one game (its product number and title): saving keeps them for
+ * that game, and starting it later makes the iBlue use them. */
+void uib_open_game(const iblue_io* io, const char* product, const char* name);
+
+/* Before a game starts: the iBlue switches to the game's own settings, if it has any. Does
+ * nothing without an iBlue. */
+void uib_prepare_launch(const iblue_io* io, const char* product);
+
 /* One button press (from input_poll). */
 uib_sound uib_button(button_t b);
 

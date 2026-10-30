@@ -285,3 +285,76 @@ iblue_link_set_pairing(iblue_link* l, int mode) {
     uint8_t arg = (uint8_t)mode;
     return call(l, IBLUE_CMD_SET_GLOBAL, &arg, 1, NULL, 0, NULL);
 }
+
+int
+iblue_link_profiles(iblue_link* l, iblue_profile out[IBLUE_PROFILES]) {
+    uint8_t ans[32];
+    int len = 0, r = call(l, IBLUE_CMD_PROFILE_LIST, NULL, 0, ans, sizeof(ans), &len);
+    if (r) {
+        return r;
+    }
+    if (len < IBLUE_PROFILES * 4) {
+        return IBLUE_ERR_PROTO;
+    }
+    for (int i = 0; i < IBLUE_PROFILES; i++) {
+        out[i].used = ans[i * 4];
+        out[i].dev_mode = ans[i * 4 + 1];
+        out[i].acc_mode = ans[i * 4 + 2];
+    }
+    return 0;
+}
+
+int
+iblue_link_profile_save(iblue_link* l, int slot, int port) {
+    uint8_t arg[2] = {(uint8_t)slot, (uint8_t)port};
+    return call(l, IBLUE_CMD_PROFILE_SAVE, arg, 2, NULL, 0, NULL);
+}
+
+int
+iblue_link_profile_load(iblue_link* l, int slot, int port) {
+    uint8_t arg[2] = {(uint8_t)slot, (uint8_t)port};
+    return call(l, IBLUE_CMD_PROFILE_LOAD, arg, 2, NULL, 0, NULL);
+}
+
+int
+iblue_link_profile_delete(iblue_link* l, int slot) {
+    uint8_t arg = (uint8_t)slot;
+    return call(l, IBLUE_CMD_PROFILE_DELETE, &arg, 1, NULL, 0, NULL);
+}
+
+int
+iblue_link_game_set(iblue_link* l, const char* id, int* has_own) {
+    uint8_t ans[4];
+    uint8_t buf[IBLUE_GAME_ID_MAX];
+    int len = 0, n = (int)strlen(id), r;
+    if (n > IBLUE_GAME_ID_MAX) {
+        n = IBLUE_GAME_ID_MAX;
+    }
+    /* the id becomes a file name on the board: letters, digits, - and _ only */
+    for (int i = 0; i < n; i++) {
+        char c = id[i];
+        int ok = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '-' || c == '_';
+        buf[i] = (uint8_t)(ok ? c : '_');
+    }
+    while (n > 0 && buf[n - 1] == '_' && id[n - 1] == ' ') {
+        n--; /* trailing padding */
+    }
+    r = call(l, IBLUE_CMD_GAME_SET, buf, n, ans, sizeof(ans), &len);
+    if (r) {
+        return r;
+    }
+    if (has_own) {
+        *has_own = len >= 1 ? ans[0] : 0;
+    }
+    return 0;
+}
+
+int
+iblue_link_game_save(iblue_link* l) {
+    return call(l, IBLUE_CMD_GAME_SAVE, NULL, 0, NULL, 0, NULL);
+}
+
+int
+iblue_link_game_delete(iblue_link* l) {
+    return call(l, IBLUE_CMD_GAME_DELETE, NULL, 0, NULL, 0, NULL);
+}

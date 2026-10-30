@@ -58,6 +58,14 @@ enum {
     IBLUE_CMD_LIVE      = 0x09,
     IBLUE_CMD_GET_GLOBAL = 0x0A,
     IBLUE_CMD_SET_GLOBAL = 0x0B,
+    IBLUE_CMD_PROFILE_LIST = 0x0C,
+    IBLUE_CMD_PROFILE_SAVE = 0x0D,
+    IBLUE_CMD_PROFILE_LOAD = 0x0E,
+    IBLUE_CMD_PROFILE_DELETE = 0x0F,
+    IBLUE_CMD_GAME_SET = 0x10,
+    IBLUE_CMD_GAME_INFO = 0x11,
+    IBLUE_CMD_GAME_SAVE = 0x12,
+    IBLUE_CMD_GAME_DELETE = 0x13,
 };
 
 enum {
@@ -67,7 +75,22 @@ enum {
     IBLUE_RES_BAD_CRC  = 3,
     IBLUE_RES_LOCKOUT  = 4, /* would remove the VMU of port A: the channel itself */
     IBLUE_RES_FAILED   = 5, /* flash write failed */
+    IBLUE_RES_EMPTY    = 6, /* that profile slot has nothing saved */
+    IBLUE_RES_NO_GAME  = 7, /* no game is set */
 };
+
+#define IBLUE_PROFILES  4
+#define IBLUE_GAME_ID_MAX 16 /* characters of a game's product number */
+
+struct iblue_profile_info {
+    uint8_t used;
+    uint8_t dev_mode;
+    uint8_t acc_mode;
+};
+
+/* Home plus a face button picks a profile slot for the controller it is pressed on. Generic ids. */
+#define IBLUE_HOTKEY_HOME  22
+#define IBLUE_HOTKEY_FACES 0x000F0000u /* ids 16..19: left, right, down, up */
 
 struct iblue_map {
     uint8_t src_btn;
@@ -112,7 +135,27 @@ struct iblue_cfg_ops {
     int (*live)(void *ctx, uint8_t port, uint32_t out[4]);
     void (*get_global)(void *ctx, struct iblue_global *out);
     void (*set_global)(void *ctx, const struct iblue_global *in);
+    /* Profiles: the type and mapping of one port, kept in flash (4 slots, survive a factory reset) */
+    void (*profile_info)(void *ctx, uint8_t slot, struct iblue_profile_info *out);
+    int (*profile_save)(void *ctx, uint8_t slot, uint8_t port);   /* 0 ok */
+    int (*profile_load)(void *ctx, uint8_t slot, uint8_t port);   /* 0 ok, 1 empty slot */
+    int (*profile_delete)(void *ctx, uint8_t slot);
+    /* Games: the board switches to the game's own configuration when it has one.
+     * id "" detaches (back to the normal configuration). Returns 1 if the game has its own. */
+    int (*game_set)(void *ctx, const char *id);
+    /* id out: the current game ("" none); returns bit0 game set, bit1 has own file, bit2 own file in use */
+    int (*game_info)(void *ctx, char id[IBLUE_GAME_ID_MAX + 1]);
+    int (*game_save)(void *ctx);   /* 0 ok, 1 no game set, -1 failed */
+    int (*game_delete)(void *ctx); /* back to the normal configuration */
 };
+
+/* Home + face button filter, per controller. Feed it the held generic buttons (word 0) of every
+ * report: while Home is held the face buttons are taken out of *btns (the game does not see
+ * them) and a newly pressed face returns its slot 0..3, else -1. */
+struct iblue_hotkey {
+    uint32_t prev_faces;
+};
+int iblue_hotkey_filter(struct iblue_hotkey *st, uint32_t *btns);
 
 struct iblue_cfg {
     const struct iblue_cfg_ops *ops;

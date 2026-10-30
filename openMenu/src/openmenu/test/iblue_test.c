@@ -48,9 +48,11 @@ static void press(button_t b) { uib_button(b); uib_tick(); }
 static void test_constants(void) {
     const int cmds[] = {IBLUE_CMD_HELLO, IBLUE_CMD_PORT_INFO, IBLUE_CMD_GET_MAP, IBLUE_CMD_SET_MAP, IBLUE_CMD_SET_TYPE,
                         IBLUE_CMD_RESET_MAP, IBLUE_CMD_COMMIT, IBLUE_CMD_REVERT, IBLUE_CMD_LIVE, IBLUE_CMD_GET_GLOBAL,
-                        IBLUE_CMD_SET_GLOBAL};
-    const int res[] = {IBLUE_RES_OK, IBLUE_RES_BAD_CMD, IBLUE_RES_BAD_ARG, IBLUE_RES_BAD_CRC, IBLUE_RES_LOCKOUT, IBLUE_RES_FAILED};
-    CHECK(fw_constants_match(cmds, 11, res, 6));
+                        IBLUE_CMD_SET_GLOBAL, IBLUE_CMD_PROFILE_LIST, IBLUE_CMD_PROFILE_SAVE, IBLUE_CMD_PROFILE_LOAD,
+                        IBLUE_CMD_PROFILE_DELETE, IBLUE_CMD_GAME_SET, IBLUE_CMD_GAME_INFO, IBLUE_CMD_GAME_SAVE,
+                        IBLUE_CMD_GAME_DELETE};
+    const int res[] = {IBLUE_RES_OK, IBLUE_RES_BAD_CMD, IBLUE_RES_BAD_ARG, IBLUE_RES_BAD_CRC, IBLUE_RES_LOCKOUT, IBLUE_RES_FAILED, IBLUE_RES_EMPTY, IBLUE_RES_NO_GAME};
+    CHECK(fw_constants_match(cmds, 19, res, 8));
 }
 
 static void test_link(void) {
@@ -133,7 +135,7 @@ static void test_ui(void) {
     CHECK(!uib_done() && shows("Controllers") && shows("Remap buttons") && shows("no Bluetooth controller"));
     CHECK(shows("Dual stick") == 0 && shows("Controller") && shows("Memory card (VMU)") && shows("Rumble pack"));
 
-    /* rows: 0 port, 1 type, 2 VMU, 3 rumble, 4 remap, 5 pairing, 6 reset, 7 save, 8 discard */
+    /* rows: 0 port, 1 type, 2 VMU, 3 rumble, 4 remap, 5 profiles, 6 pairing, 7 reset, 8 save, 9 discard */
     goto_row(0, 1);
     press(BTN_RIGHT); /* type: dual stick */
     CHECK(board_dev(0) == 1 && shows("Dual stick"));
@@ -169,13 +171,13 @@ static void test_ui(void) {
     CHECK(shows("pad plugged in"));
 
     /* pairing mode, a row below the first screen (the list scrolls) */
-    goto_row(0, 5);
+    goto_row(0, 6);
     CHECK(shows("Bluetooth pairing") && shows("Auto") && shows("Auto: search"));
     press(BTN_A);
     CHECK(board_pairing() == 1 && shows("Manual"));
 
     /* Remap on port A without a controller: A opens the list of buttons */
-    goto_row(5, 4); press(BTN_A);
+    goto_row(6, 4); press(BTN_A);
     CHECK(shows("Start") && shows("D button") && shows("A:press"));
     press(BTN_A);
     CHECK(shows("Button for A") && shows("Face down"));
@@ -246,10 +248,10 @@ static void test_ui(void) {
     CHECK(!shows("Press the button for") && strcmp(uib_notice(), "Nothing pressed") == 0);
     for (int i = 0; i < 30; i++) uib_tick();
     press(BTN_B);
-    CHECK(shows("Reset this controller"));
+    CHECK(shows("Remap buttons") && shows("Profiles"));
 
     /* leaving with unsaved changes asks; X discards, which also drops the pairing change */
-    goto_row(4, 7);
+    goto_row(4, 8);
     CHECK(shows("(unsaved changes)"));
     press(BTN_B);
     CHECK(shows("Unsaved changes"));
@@ -280,11 +282,106 @@ static void test_ui(void) {
     CHECK(too_long == 0);
 }
 
+static void test_profiles(void) {
+    unsigned int btns, prev = 0;
+
+    board_reset();
+    uib_open(&io);
+    goto_row(0, 1);
+    press(BTN_RIGHT); /* port A: dual stick */
+    goto_row(1, 5);
+    CHECK(shows("Profiles") && shows("Home + face button"));
+    press(BTN_A);
+    CHECK(shows("1  Home + down") && shows("4  Home + up") && shows("empty") && shows("A:load X:save here Y:delete"));
+    press(BTN_A); /* load an empty slot */
+    CHECK(strcmp(uib_notice(), "That profile is empty") == 0);
+    press(BTN_DOWN);
+    press(BTN_X); /* save this port into slot 2 */
+    CHECK(board_profile_used(1) && shows("Dual stick") && strcmp(uib_notice(), "Profile saved") == 0);
+    press(BTN_B);
+    goto_row(5, 1);
+    press(BTN_LEFT); /* port A back to a controller, then load the profile */
+    CHECK(board_dev(0) == 0);
+    goto_row(1, 5); press(BTN_A); press(BTN_DOWN);
+    press(BTN_A);
+    CHECK(board_dev(0) == 1 && strcmp(uib_notice(), "Loaded (not saved yet)") == 0);
+    press(BTN_Y);
+    CHECK(!board_profile_used(1) && shows("empty"));
+    press(BTN_B);
+    CHECK(shows("Profiles"));
+
+    /* Home + a face button on the controller (the board does this itself; same filter as the firmware) */
+    btns = (1u << 22) | (1u << 17);
+    CHECK(hotkey_slot(&btns, &prev) == 1 && !(btns & 0xF0000));
+    btns = (1u << 22) | (1u << 17);
+    CHECK(hotkey_slot(&btns, &prev) == -1);
+}
+
+static void test_game(void) {
+    board_reset();
+    uib_open_game(&io, "MK51035", "Crazy Taxi");
+    CHECK(strcmp(board_game(), "MK51035") == 0);
+    CHECK(shows("Game settings") && shows("Crazy Taxi") && shows("Profiles") && !shows("Bluetooth pairing"));
+    goto_row(0, 1);
+    press(BTN_RIGHT); /* this game: dual stick on port A */
+    CHECK(board_dev(0) == 1);
+    goto_row(1, 3);
+    press(BTN_A);
+    CHECK(board_acc(0) == 3);
+    goto_row(3, 0);
+    press(BTN_RIGHT); /* port B */
+    goto_row(0, 1);
+    press(BTN_RIGHT);
+    CHECK(board_dev(1) == 1);
+    /* the last row saves for the game, not into the normal settings */
+    press(BTN_B);
+    CHECK(shows("Unsaved changes"));
+    press(BTN_A);
+    CHECK(uib_done() && board_game_stat(0) == 1 && board_stat(0) == 0 && board_game_stat(2) == 1);
+    CHECK(strcmp(board_game(), "") == 0); /* detached again */
+    CHECK(board_dev(0) == 0 && board_dev(1) == 0);
+
+    /* starting the game makes the board use them */
+    uib_prepare_launch(&io, "MK51035");
+    CHECK(strcmp(board_game(), "MK51035") == 0 && board_dev(1) == 1);
+    uib_prepare_launch(&io, "");
+    CHECK(strcmp(board_game(), "MK51035") == 0);
+
+    /* editing the normal settings afterwards detaches the board from that game */
+    uib_open(&io);
+    CHECK(strcmp(board_game(), "") == 0 && board_dev(1) == 0 && shows("Bluetooth pairing") && !shows("Remove game settings"));
+    press(BTN_B);
+
+    /* remove the game's settings */
+    uib_open_game(&io, "MK51035", "Crazy Taxi");
+    CHECK(shows("*"));
+    goto_row(0, 7);
+    CHECK(shows("Remove game settings"));
+    press(BTN_A);
+    CHECK(board_game_stat(1) == 1 && board_game_stat(2) == 0 && strcmp(uib_notice(), "Game settings removed") == 0);
+    goto_row(7, 8);
+    press(BTN_A); /* save and exit: the game gets settings of its own again, from the normal ones */
+    CHECK(uib_done());
+
+    /* product numbers with spaces or dots become a safe id */
+    uib_prepare_launch(&io, "T-8101N 50  ");
+    CHECK(strcmp(board_game(), "T-8101N_50") == 0);
+
+    /* a launch without an iBlue is quietly skipped */
+    board_set_present(0);
+    uib_prepare_launch(&io, "MK51035");
+    CHECK(1);
+
+    CHECK(too_long == 0);
+}
+
 int main(void) {
     test_constants();
     test_link();
     test_assign();
     test_ui();
+    test_profiles();
+    test_game();
     printf("%d checks, %d failed\n", checks, fails);
     return fails != 0;
 }
