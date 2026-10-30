@@ -145,12 +145,12 @@ Files edits the button mapping of an iBlueControlMod (the internal Bluetooth ada
 iBlueControlMod BlueRetro firmware), like the controller settings of a console:
 
 - Port A to D (Left/Right), with the Bluetooth controller's name and "pad plugged in" when the board senses a
-  physical controller in the port. A port without a controller can be edited too.
+  physical controller in the port. The board only answers while a Bluetooth controller is connected (hotplug); a port without one is edited through another port.
 - Type (Controller, Dual stick, Keyboard, Mouse), Memory card (VMU) on/off, Rumble pack on/off, Bluetooth
   pairing (Auto / Manual). Port A always keeps its VMU: the settings channel is in it.
 - Remap buttons: one row per Dreamcast output (A, B, X, Y, Start, D, Z, C, triggers, d-pad, sticks) showing
   which button of the controller does it. A starts press-to-learn (press the button on the Bluetooth
-  controller, 10 s), X picks from a list (also the way when no controller is connected), Y clears,
+  controller, 10 s), X picks from a list (the way for a port that has no controller), Y clears,
   Start opens that button's settings: scale, press level, dead zone, rapid fire, stick scaling.
   Assigning swaps: the output that button had goes to the button that had this output.
 - Profiles: four slots (type, rumble/VMU and the whole button table of a port) kept in the iBlue. A loads one
