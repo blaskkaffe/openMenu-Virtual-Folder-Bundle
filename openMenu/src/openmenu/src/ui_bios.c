@@ -19,6 +19,7 @@
 #include "gfx.h"
 #include "history.h"
 #include "input.h"
+#include "iblue_gameid_vmu.h"
 #include "launch.h"
 #include "serial_region.h"
 #include "sound.h"
@@ -107,6 +108,16 @@ update_clock(void) {
                  t->tm_min);
         gfx_set_label(BMENU_ID_HEADER, text);
     }
+}
+
+/* Start a game. An iBlueControlMod is told which game it is first (its game id, so the controller
+ * configuration saved for that game is used); nothing happens without one. */
+static void
+start_disc(const gd_item* g) {
+    if (g->product[0]) {
+        iblue_gameid_set(g->product);
+    }
+    launch_disc(g);
 }
 
 static void
@@ -463,7 +474,7 @@ handle_recent(button_t b) {
             const gd_item* g = history_recent(recent_row);
             if (g) {
                 sound_sfx(BAUDIO_SFX_ENTER);
-                launch_disc(g); /* only returns if the launch failed */
+                start_disc(g); /* only returns if the launch failed */
                 sound_sfx(BAUDIO_SFX_ERROR);
                 show_notice("Could not start the game");
             }
@@ -508,7 +519,7 @@ handle_games(button_t b) {
             launch_pending = game;
             blist_launch_start(&glist);
         } else {
-            launch_disc(game); /* only returns if the launch failed */
+            start_disc(game); /* only returns if the launch failed */
             sound_sfx(BAUDIO_SFX_ERROR);
             show_notice("Could not start the game");
         }
@@ -602,6 +613,7 @@ ui_bios_run(const bios_rom* rom) {
         return -1;
     }
 
+    iblue_gameid_set(""); /* back from a game: the normal controller configuration */
     gfx_load_logo("/cd/LOGO.PVR"); /* optional replacement of the Dreamcast logo */
     /* game info (players, VMU blocks) comes from META.DAT on the menu disc; db_load_DAT needs it */
     file_t meta_fd = fs_open("/cd/META.DAT", O_RDONLY);
@@ -666,7 +678,7 @@ ui_bios_run(const bios_rom* rom) {
             if (launch_pending && blist_launch_step(&glist)) {
                 const gd_item* g = launch_pending;
                 launch_pending = NULL;
-                launch_disc(g); /* only returns if the launch failed */
+                start_disc(g); /* only returns if the launch failed */
                 blist_launch_cancel(&glist);
                 sound_sfx(BAUDIO_SFX_ERROR);
                 show_notice("Could not start the game");

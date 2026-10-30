@@ -137,3 +137,14 @@ blocks and disc count (`draw_button_text` in `ui_bios.c`); they are free for oth
 Disc colour: a game without icon art shows the BIOS disc of its region, chosen from the serial number
 (`serial_region.c`): PAL (Sega MK + 7 digits, third party ...D, ...D50, ...N50) gets the blue disc,
 everything else the red one - the same pairing the BIOS uses (blue on European consoles).
+
+## Game id for the iBlueControlMod
+
+Before a game starts, openMenu writes its product number into one reserved block (200) of the iBlueControlMod's emulated VMU
+(`iblue_gameid.c`, portable; `iblue_gameid_vmu.c`, the KallistiOS calls). The adapter makes it BlueRetro's game id, so blueretro.io can
+save a controller configuration for that game and the adapter loads it when the game starts. openMenu sends an empty id when it
+starts, so its own screens use the normal configuration. Without an iBlue the first start looks for it (one memory card block read
+per card) and then never again. Block layout and rules: iBlueControlMod `main/system/iblue_gameid.h`. Host test:
+`sh openMenu/src/openmenu/test/run_iblue_gameid.sh`.
+
+Not verified on a console: the block calls, the timing of the read-back, whether any game or the BIOS touches block 200.

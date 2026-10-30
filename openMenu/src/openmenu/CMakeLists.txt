@@ -13,6 +13,8 @@ set(OPENMENU_SOURCES
         src/main.c
         src/gfx.c
         src/history.c
+        src/iblue_gameid.c
+        src/iblue_gameid_vmu.c
         src/input.c
         src/launch.c
         src/serial_region.c
