@@ -12,7 +12,8 @@
 struct fake_board {
     struct iblue_port port[IBLUE_PORTS], saved_port[IBLUE_PORTS];
     struct iblue_map map[IBLUE_PORTS][IBLUE_MAP_MAX], saved_map[IBLUE_PORTS][IBLUE_MAP_MAX];
-    uint8_t connected[IBLUE_PORTS];
+    uint8_t connected[IBLUE_PORTS], plugged[IBLUE_PORTS];
+    struct iblue_global global, saved_global;
     uint32_t held[IBLUE_PORTS][4];
     int commits, reverts, reads, sleeps, present;
 };
@@ -37,6 +38,7 @@ default_map(int p) {
 static void
 snapshot(void) {
     memcpy(board.saved_port, board.port, sizeof(board.port));
+    board.saved_global = board.global;
     memcpy(board.saved_map, board.map, sizeof(board.map));
 }
 
@@ -44,6 +46,7 @@ static void o_get_port(void* c, uint8_t p, struct iblue_port* o) {
     (void)c;
     *o = board.port[p];
     o->connected = board.connected[p];
+    o->plugged = board.plugged[p];
     strcpy(o->name, board.connected[p] ? "Fake Pad" : "");
 }
 static void o_get_map(void* c, uint8_t p, uint16_t f, uint16_t n, struct iblue_map* o) {
@@ -66,6 +69,7 @@ static void o_revert(void* c) {
     (void)c;
     board.reverts++;
     memcpy(board.port, board.saved_port, sizeof(board.port));
+    board.global = board.saved_global;
     memcpy(board.map, board.saved_map, sizeof(board.map));
 }
 static int o_live(void* c, uint8_t p, uint32_t o[4]) {
@@ -73,7 +77,9 @@ static int o_live(void* c, uint8_t p, uint32_t o[4]) {
     memcpy(o, board.held[p], 16);
     return board.connected[p];
 }
-static const struct iblue_cfg_ops ops = {o_get_port, o_get_map, o_set_map, o_set_type, o_reset, o_commit, o_revert, o_live};
+static void o_get_global(void* c, struct iblue_global* g) { (void)c; *g = board.global; }
+static void o_set_global(void* c, const struct iblue_global* g) { (void)c; board.global = *g; }
+static const struct iblue_cfg_ops ops = {o_get_port, o_get_map, o_set_map, o_set_type, o_reset, o_commit, o_revert, o_live, o_get_global, o_set_global};
 
 void
 board_reset(void) {
@@ -129,10 +135,10 @@ int
 fw_constants_match(const int* cmds, int ncmds, const int* results, int nres) {
     static const int fw_cmds[] = {IBLUE_CMD_HELLO, IBLUE_CMD_PORT_INFO, IBLUE_CMD_GET_MAP, IBLUE_CMD_SET_MAP,
                                   IBLUE_CMD_SET_TYPE, IBLUE_CMD_RESET_MAP, IBLUE_CMD_COMMIT, IBLUE_CMD_REVERT,
-                                  IBLUE_CMD_LIVE};
+                                  IBLUE_CMD_LIVE, IBLUE_CMD_GET_GLOBAL, IBLUE_CMD_SET_GLOBAL};
     static const int fw_res[] = {IBLUE_RES_OK, IBLUE_RES_BAD_CMD, IBLUE_RES_BAD_ARG, IBLUE_RES_BAD_CRC,
                                  IBLUE_RES_LOCKOUT, IBLUE_RES_FAILED};
-    if (ncmds != 9 || nres != 6) return 0;
+    if (ncmds != 11 || nres != 6) return 0;
     for (int i = 0; i < ncmds; i++) if (cmds[i] != fw_cmds[i]) return 0;
     for (int i = 0; i < nres; i++) if (results[i] != fw_res[i]) return 0;
     return IBLUE_WINDOW_SIZE == 4096 && IBLUE_HDR_SIZE == 24 && IBLUE_BLOCK_FIRST == 200 && IBLUE_DST_NONE == 0x40 &&
@@ -147,3 +153,15 @@ int board_acc(int p) { return board.port[p].acc_mode; }
 void board_set_held(int p, uint32_t w0) { board.held[p][0] = w0; }
 void board_set_present(int on) { board.present = on; }
 int board_stat(int which) { return which == 0 ? board.commits : which == 1 ? board.reverts : which == 2 ? board.sleeps : board.reads; }
+int board_pairing(void) { return board.global.inquiry_mode; }
+void board_set_plugged(int p, int on) { board.plugged[p] = (uint8_t)on; }
+int board_field(int port, int src, int which) {
+    const struct iblue_map* m = &board.map[port][src];
+    switch (which) {
+        case 0: return m->perc_max;
+        case 1: return m->perc_threshold;
+        case 2: return m->perc_deadzone;
+        case 3: return m->turbo;
+        default: return m->algo;
+    }
+}

@@ -56,6 +56,8 @@ enum {
     IBLUE_CMD_COMMIT    = 0x07,
     IBLUE_CMD_REVERT    = 0x08,
     IBLUE_CMD_LIVE      = 0x09,
+    IBLUE_CMD_GET_GLOBAL = 0x0A,
+    IBLUE_CMD_SET_GLOBAL = 0x0B,
 };
 
 enum {
@@ -78,10 +80,16 @@ struct iblue_map {
     uint8_t algo;
 };
 
+/* Settings that are not per port. Only what the Dreamcast build uses. */
+struct iblue_global {
+    uint8_t inquiry_mode; /* 0 auto: look for controllers by itself, 1 manual: only when asked */
+};
+
 struct iblue_port {
     uint8_t dev_mode;
     uint8_t acc_mode;
-    uint8_t connected;
+    uint8_t connected; /* a Bluetooth controller is assigned to this port */
+    uint8_t plugged;   /* the board senses a physical controller in this port */
     uint16_t map_size;
     uint16_t vid;
     uint16_t pid;
@@ -102,6 +110,8 @@ struct iblue_cfg_ops {
     /* Source buttons held right now on the controller of this port: 4 words, bit = generic button id.
      * Returns 1 when a controller is connected. */
     int (*live)(void *ctx, uint8_t port, uint32_t out[4]);
+    void (*get_global)(void *ctx, struct iblue_global *out);
+    void (*set_global)(void *ctx, const struct iblue_global *in);
 };
 
 struct iblue_cfg {

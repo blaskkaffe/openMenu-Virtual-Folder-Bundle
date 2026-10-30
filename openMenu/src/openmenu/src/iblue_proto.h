@@ -43,6 +43,8 @@ enum {
     IBLUE_CMD_COMMIT = 0x07,
     IBLUE_CMD_REVERT = 0x08,
     IBLUE_CMD_LIVE = 0x09,
+    IBLUE_CMD_GET_GLOBAL = 0x0A,
+    IBLUE_CMD_SET_GLOBAL = 0x0B,
 };
 
 enum {

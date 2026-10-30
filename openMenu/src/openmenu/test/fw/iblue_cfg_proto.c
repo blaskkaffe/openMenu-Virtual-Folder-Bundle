@@ -35,8 +35,9 @@ void iblue_cfg_window_init(uint8_t *window) {
     wr16(window + IBLUE_H_VERSION, IBLUE_VERSION);
 }
 
+/* algo: low nibble is the stick scaling (0 linear .. 5 passthrough), the high nibble is not used here */
 static int map_ok(const struct iblue_map *m) {
-    return m->dst_id < IBLUE_PORTS && m->perc_max <= 100 && m->perc_threshold <= 100;
+    return m->dst_id < IBLUE_PORTS && m->perc_max <= 100 && m->perc_threshold <= 100 && m->algo <= 5;
 }
 
 /* Returns the result code; *out_len is the number of answer bytes written to out[] */
@@ -66,7 +67,7 @@ static uint16_t run_cmd(struct iblue_cfg *cfg, uint16_t cmd, const uint8_t *in, 
             out[0] = p.dev_mode;
             out[1] = p.acc_mode;
             out[2] = p.connected;
-            out[3] = 0;
+            out[3] = p.plugged;
             wr16(out + 4, p.map_size);
             wr16(out + 6, p.vid);
             wr16(out + 8, p.pid);
@@ -166,6 +167,28 @@ static uint16_t run_cmd(struct iblue_cfg *cfg, uint16_t cmd, const uint8_t *in, 
                 wr32(out + 4 + i * 4, w[i]);
             }
             *out_len = 20;
+            return IBLUE_RES_OK;
+        }
+
+        case IBLUE_CMD_GET_GLOBAL: {
+            struct iblue_global g;
+
+            memset(&g, 0, sizeof(g));
+            ops->get_global(cfg->ctx, &g);
+            out[0] = g.inquiry_mode;
+            *out_len = 8;
+            return IBLUE_RES_OK;
+        }
+
+        case IBLUE_CMD_SET_GLOBAL: {
+            struct iblue_global g;
+
+            if (in_len < 1 || in[0] > 1) {
+                return IBLUE_RES_BAD_ARG;
+            }
+            g.inquiry_mode = in[0];
+            ops->set_global(cfg->ctx, &g);
+            cfg->status |= IBLUE_ST_UNSAVED;
             return IBLUE_RES_OK;
         }
     }

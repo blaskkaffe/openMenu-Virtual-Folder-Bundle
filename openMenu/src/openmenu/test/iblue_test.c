@@ -22,8 +22,13 @@ static int fails, checks;
 
 /* gfx stubs: the screen's text is collected so the test can look for it */
 static char drawn[8192];
+static int too_long; /* the console draws at most 42 characters of a string */
 void gfx_text(const char* s, float x, float y, float z, uint32_t argb, int shadow) {
     (void)x; (void)y; (void)z; (void)argb; (void)shadow;
+    if (strlen(s) > 42) {
+        too_long++;
+        printf("too long (%d): %s\n", (int)strlen(s), s);
+    }
     strncat(drawn, s, sizeof(drawn) - strlen(drawn) - 2);
     strcat(drawn, "\n");
 }
@@ -42,9 +47,10 @@ static void press(button_t b) { uib_button(b); uib_tick(); }
 
 static void test_constants(void) {
     const int cmds[] = {IBLUE_CMD_HELLO, IBLUE_CMD_PORT_INFO, IBLUE_CMD_GET_MAP, IBLUE_CMD_SET_MAP, IBLUE_CMD_SET_TYPE,
-                        IBLUE_CMD_RESET_MAP, IBLUE_CMD_COMMIT, IBLUE_CMD_REVERT, IBLUE_CMD_LIVE};
+                        IBLUE_CMD_RESET_MAP, IBLUE_CMD_COMMIT, IBLUE_CMD_REVERT, IBLUE_CMD_LIVE, IBLUE_CMD_GET_GLOBAL,
+                        IBLUE_CMD_SET_GLOBAL};
     const int res[] = {IBLUE_RES_OK, IBLUE_RES_BAD_CMD, IBLUE_RES_BAD_ARG, IBLUE_RES_BAD_CRC, IBLUE_RES_LOCKOUT, IBLUE_RES_FAILED};
-    CHECK(fw_constants_match(cmds, 9, res, 6));
+    CHECK(fw_constants_match(cmds, 11, res, 6));
 }
 
 static void test_link(void) {
@@ -116,40 +122,105 @@ static void test_assign(void) {
     CHECK(strcmp(iblue_source_name(24, NULL, 0), "L2 trigger") == 0);
 }
 
+static void goto_row(int from, int to) {
+    for (int i = from; i < to; i++) press(BTN_DOWN);
+    for (int i = from; i > to; i--) press(BTN_UP);
+}
+
 static void test_ui(void) {
     board_reset();
     uib_open(&io);
-    CHECK(!uib_done() && shows("Controllers") && shows("Remap buttons") && shows("no controller connected"));
+    CHECK(!uib_done() && shows("Controllers") && shows("Remap buttons") && shows("no Bluetooth controller"));
+    CHECK(shows("Dual stick") == 0 && shows("Controller") && shows("Memory card (VMU)") && shows("Rumble pack"));
 
-    /* port A, no controller: Accessories cycles but keeps the VMU (port A's channel) */
-    press(BTN_DOWN); press(BTN_DOWN);
-    press(BTN_RIGHT);
-    CHECK(board_acc(0) == 3);
-    press(BTN_RIGHT);
-    CHECK(board_acc(0) == 1);
-    press(BTN_UP); press(BTN_RIGHT); /* Type: controller (alt) */
-    CHECK(board_dev(0) == 1 && shows("Controller (alt)"));
+    /* rows: 0 port, 1 type, 2 VMU, 3 rumble, 4 remap, 5 pairing, 6 reset, 7 save, 8 discard */
+    goto_row(0, 1);
+    press(BTN_RIGHT); /* type: dual stick */
+    CHECK(board_dev(0) == 1 && shows("Dual stick"));
     press(BTN_LEFT);
     CHECK(board_dev(0) == 0);
 
+    /* rumble on/off */
+    goto_row(1, 3);
+    CHECK(shows("Rumble pack") && board_acc(0) == 1);
+    press(BTN_A);
+    CHECK(board_acc(0) == 3);
+    press(BTN_LEFT);
+    CHECK(board_acc(0) == 1);
+
+    /* port A cannot lose its VMU, the other ports can */
+    goto_row(3, 2);
+    press(BTN_A);
+    CHECK(board_acc(0) == 1 && strcmp(uib_notice(), "Port A needs its VMU") == 0);
+    goto_row(2, 0);
+    press(BTN_RIGHT); /* port B */
+    CHECK(shows("Fake Pad"));
+    goto_row(0, 2);
+    press(BTN_A);
+    CHECK(board_acc(1) == 0 && shows("Off"));
+    press(BTN_A);
+    CHECK(board_acc(1) == 1);
+    goto_row(2, 0);
+    press(BTN_LEFT); /* back to port A */
+
+    /* the board senses a physical controller */
+    board_set_plugged(0, 1);
+    press(BTN_RIGHT); press(BTN_LEFT); /* port info is read again when the port changes */
+    CHECK(shows("pad plugged in"));
+
+    /* pairing mode, a row below the first screen (the list scrolls) */
+    goto_row(0, 5);
+    CHECK(shows("Bluetooth pairing") && shows("Auto") && shows("Auto: search"));
+    press(BTN_A);
+    CHECK(board_pairing() == 1 && shows("Manual"));
+
     /* Remap on port A without a controller: A opens the list of buttons */
-    press(BTN_DOWN); press(BTN_DOWN); press(BTN_A);
-    CHECK(shows("Start") && shows("D button"));  /* the remap list */
+    goto_row(5, 4); press(BTN_A);
+    CHECK(shows("Start") && shows("D button") && shows("A:press"));
     press(BTN_A);
     CHECK(shows("Button for A") && shows("Face down"));
     for (int i = 0; i < 15; i++) press(BTN_UP); /* the list opens on the current button (face down, 18) */
     press(BTN_A); /* source 3 (left stick up) becomes the A button */
     CHECK(board_dst(0, 3) == 18 && board_dst(0, 18) == 3);
     CHECK(shows("L stick up"));
+
+    /* the button's own settings (Start on the output) */
+    press(BTN_START);
+    CHECK(shows("Button settings") && shows("A: L stick up") && shows("100%") && shows("1.35%") && shows("Linear"));
+    press(BTN_LEFT);
+    CHECK(board_field(0, 3, 0) == 95 && shows("95%"));
+    press(BTN_DOWN); press(BTN_RIGHT);
+    CHECK(board_field(0, 3, 1) == 55);
+    press(BTN_DOWN); press(BTN_RIGHT);
+    CHECK(board_field(0, 3, 2) == 140 && shows("1.40%"));
+    press(BTN_DOWN); press(BTN_RIGHT);
+    CHECK(board_field(0, 3, 3) == 2 && shows("Fast"));
+    press(BTN_RIGHT);
+    CHECK(board_field(0, 3, 3) == 6 && shows("Medium"));
+    press(BTN_LEFT); press(BTN_LEFT);
+    CHECK(board_field(0, 3, 3) == 0 && shows("Off"));
+    press(BTN_DOWN); press(BTN_RIGHT);
+    CHECK(board_field(0, 3, 4) == 5 && shows("Raw"));
+    press(BTN_RIGHT);
+    CHECK(board_field(0, 3, 4) == 0 && shows("Linear"));
+    for (int i = 0; i < 40; i++) press(BTN_LEFT); /* clamps */
+    press(BTN_UP); press(BTN_UP); press(BTN_UP); press(BTN_UP);
+    for (int i = 0; i < 40; i++) press(BTN_LEFT);
+    CHECK(board_field(0, 3, 0) == 0);
+    press(BTN_B);
+    CHECK(shows("A:press"));
+
     press(BTN_Y); /* clear A */
     CHECK(board_dst(0, 3) == IBLUE_DST_NONE && shows("-"));
+    press(BTN_START); /* nothing to set for an output without a button */
+    CHECK(shows("A:press") && strcmp(uib_notice(), "No button does this yet") == 0);
     press(BTN_B);
 
     /* port B has a controller: press-to-learn */
-    press(BTN_UP); press(BTN_UP); press(BTN_UP);
+    goto_row(4, 0);
     press(BTN_RIGHT);
     CHECK(shows("Fake Pad"));
-    press(BTN_DOWN); press(BTN_DOWN); press(BTN_DOWN); press(BTN_A);
+    goto_row(0, 4); press(BTN_A);
     press(BTN_DOWN);            /* output "B" */
     board_set_held(1, 1u << 19); /* held while the screen opens: ignored until released */
     press(BTN_A);
@@ -165,32 +236,34 @@ static void test_ui(void) {
     CHECK(shows("L1 bumper"));
     board_set_held(1, 0);
     press(BTN_B); /* ignored right after learning */
-    CHECK(shows("Press a button") == 0 && shows("Port B   A: press a button"));
+    CHECK(shows("Port B") && shows("A:press"));
     for (int i = 0; i < 30; i++) uib_tick();
 
     /* learning gives up when nothing is pressed */
     press(BTN_A);
-    CHECK(shows("Press the button for C") || shows("Press the button for B"));
+    CHECK(shows("Press the button for B"));
     for (int i = 0; i < 700; i++) uib_tick();
     CHECK(!shows("Press the button for") && strcmp(uib_notice(), "Nothing pressed") == 0);
     for (int i = 0; i < 30; i++) uib_tick();
     press(BTN_B);
     CHECK(shows("Reset this controller"));
 
-    /* leaving with unsaved changes asks; X discards */
-    CHECK(shows("Save and exit") && shows("(unsaved changes)"));
+    /* leaving with unsaved changes asks; X discards, which also drops the pairing change */
+    goto_row(4, 7);
+    CHECK(shows("(unsaved changes)"));
     press(BTN_B);
     CHECK(shows("Unsaved changes"));
     press(BTN_B);
     CHECK(!uib_done() && !shows("Unsaved changes"));
     press(BTN_B);
     press(BTN_X);
-    CHECK(uib_done() && board_stat(1) == 1 && board_dst(1, 25) == 25);
+    CHECK(uib_done() && board_stat(1) == 1 && board_dst(1, 25) == 25 && board_pairing() == 0);
 
     /* save */
     board_reset();
     uib_open(&io);
-    press(BTN_DOWN); press(BTN_DOWN); press(BTN_RIGHT);
+    goto_row(0, 3);
+    press(BTN_A);
     CHECK(board_acc(0) == 3);
     press(BTN_B);
     press(BTN_A);
@@ -203,6 +276,8 @@ static void test_ui(void) {
     CHECK(shows("No iBlueControlMod found") && !uib_done());
     press(BTN_B);
     CHECK(uib_done());
+
+    CHECK(too_long == 0);
 }
 
 int main(void) {

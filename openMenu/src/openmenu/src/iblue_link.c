@@ -169,6 +169,7 @@ iblue_link_port_info(iblue_link* l, int port, iblue_port_info* out) {
     out->dev_mode = ans[0];
     out->acc_mode = ans[1];
     out->connected = ans[2];
+    out->plugged = ans[3];
     out->map_size = rd16(ans + 4);
     out->vid = rd16(ans + 6);
     out->pid = rd16(ans + 8);
@@ -263,4 +264,24 @@ iblue_link_live(iblue_link* l, int port, uint32_t words[4], int* connected) {
         words[i] = rd32(ans + 4 + i * 4);
     }
     return 0;
+}
+
+int
+iblue_link_get_pairing(iblue_link* l, int* mode) {
+    uint8_t ans[16];
+    int len = 0, r = call(l, IBLUE_CMD_GET_GLOBAL, NULL, 0, ans, sizeof(ans), &len);
+    if (r) {
+        return r;
+    }
+    if (len < 1) {
+        return IBLUE_ERR_PROTO;
+    }
+    *mode = ans[0];
+    return 0;
+}
+
+int
+iblue_link_set_pairing(iblue_link* l, int mode) {
+    uint8_t arg = (uint8_t)mode;
+    return call(l, IBLUE_CMD_SET_GLOBAL, &arg, 1, NULL, 0, NULL);
 }

@@ -14,3 +14,6 @@ int board_acc(int port);
 void board_set_held(int port, uint32_t word0);
 void board_set_present(int on);
 int board_stat(int which); /* 0 commits, 1 reverts, 2 sleeps, 3 reads */
+int board_pairing(void);
+void board_set_plugged(int port, int on);
+int board_field(int port, int src, int which); /* 0 scale, 1 threshold, 2 deadzone, 3 turbo, 4 algo */

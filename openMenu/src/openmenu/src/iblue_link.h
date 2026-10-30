@@ -29,7 +29,8 @@ typedef struct iblue_map_entry {
 typedef struct iblue_port_info {
     uint8_t dev_mode; /* 0 controller, 1 controller (alt), 2 keyboard, 3 mouse */
     uint8_t acc_mode; /* 0 none, 1 VMU, 2 rumble pack, 3 both */
-    uint8_t connected;
+    uint8_t connected; /* a Bluetooth controller is assigned to the port */
+    uint8_t plugged;   /* the board senses a physical controller in the port */
     uint16_t map_size;
     uint16_t vid, pid;
     char name[IBLUE_NAME_LEN];
@@ -55,4 +56,7 @@ int iblue_link_reset_map(iblue_link* l, int port);
 int iblue_link_commit(iblue_link* l);
 int iblue_link_revert(iblue_link* l);
 /* Source buttons held on the controller of the port (bit = generic id, word 0 is the pad). */
+/* Pairing mode: 0 auto (looks for controllers by itself), 1 manual (only when asked). */
+int iblue_link_get_pairing(iblue_link* l, int* mode);
+int iblue_link_set_pairing(iblue_link* l, int mode);
 int iblue_link_live(iblue_link* l, int port, uint32_t words[4], int* connected);

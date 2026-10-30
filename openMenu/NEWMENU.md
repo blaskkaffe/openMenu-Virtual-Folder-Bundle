@@ -144,13 +144,14 @@ everything else the red one - the same pairing the BIOS uses (blue on European c
 Files edits the button mapping of an iBlueControlMod (the internal Bluetooth adapter running the
 iBlueControlMod BlueRetro firmware), like the controller settings of a console:
 
-- Port A to D at the top (Left/Right), with the name of the Bluetooth controller on it. A port without a
-  controller can be edited too.
-- Type (controller, alternative controller, keyboard, mouse) and Accessories (VMU, rumble pack).
-  Port A always keeps its VMU: the settings channel is in it.
+- Port A to D (Left/Right), with the Bluetooth controller's name and "pad plugged in" when the board senses a
+  physical controller in the port. A port without a controller can be edited too.
+- Type (Controller, Dual stick, Keyboard, Mouse), Memory card (VMU) on/off, Rumble pack on/off, Bluetooth
+  pairing (Auto / Manual). Port A always keeps its VMU: the settings channel is in it.
 - Remap buttons: one row per Dreamcast output (A, B, X, Y, Start, D, Z, C, triggers, d-pad, sticks) showing
   which button of the controller does it. A starts press-to-learn (press the button on the Bluetooth
-  controller, 10 s), X picks from a list (also the way when no controller is connected), Y clears.
+  controller, 10 s), X picks from a list (also the way when no controller is connected), Y clears,
+  Start opens that button's settings: scale, press level, dead zone, rapid fire, stick scaling.
   Assigning swaps: the output that button had goes to the button that had this output.
 - Changes work at once but are saved in the iBlue only with Save (B asks when there is something unsaved).
 

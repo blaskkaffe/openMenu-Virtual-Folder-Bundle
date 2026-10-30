@@ -6,9 +6,10 @@
 #include "iblue_map.h"
 #include "ui_iblue.h"
 
-typedef enum { SC_NOBOARD, SC_PORT, SC_REMAP, SC_PICK, SC_LEARN, SC_LEAVE } sc_t;
+typedef enum { SC_NOBOARD, SC_PORT, SC_REMAP, SC_PICK, SC_LEARN, SC_LEAVE, SC_OPTS } sc_t;
 
-enum { ROW_PORT, ROW_TYPE, ROW_ACC, ROW_REMAP, ROW_RESET, ROW_SAVE, ROW_DISCARD, ROWS };
+enum { ROW_PORT, ROW_TYPE, ROW_VMU, ROW_RUMBLE, ROW_REMAP, ROW_PAIR, ROW_RESET, ROW_SAVE, ROW_DISCARD, ROWS };
+enum { OPT_SCALE, OPT_THRESHOLD, OPT_DEADZONE, OPT_TURBO, OPT_ALGO, OPTS };
 
 #define LEFT_X 64.0f
 #define VALUE_X 330.0f
@@ -18,8 +19,17 @@ enum { ROW_PORT, ROW_TYPE, ROW_ACC, ROW_REMAP, ROW_RESET, ROW_SAVE, ROW_DISCARD,
 #define LEARN_TIMEOUT_FRAMES 600
 #define SWALLOW_FRAMES 20
 
-static const char* const dev_names[] = {"Controller", "Controller (alt)", "Keyboard", "Mouse"};
-static const char* const acc_names[] = {"None", "VMU", "Rumble pack", "VMU + rumble"};
+/* "Dual stick" is the alternative controller description: the console is told about the
+ * extra buttons and the second stick. */
+static const char* const dev_names[] = {"Controller", "Dual stick", "Keyboard", "Mouse"};
+
+/* Rapid fire: the board's turbo byte is (frame mask << 1) | phase; a bigger mask is slower. */
+static const uint8_t turbo_values[] = {0, 2, 6, 14, 30};
+static const char* const turbo_names[] = {"Off", "Fast", "Medium", "Slow", "Very slow"};
+#define TURBO_COUNT 5
+/* Stick scaling: 0 stretches the controller's range over the Dreamcast's, 5 keeps the raw value. */
+static const uint8_t algo_values[] = {0, 5};
+static const char* const algo_names[] = {"Linear", "Raw"};
 
 static iblue_link lk;
 static sc_t screen;
@@ -33,6 +43,10 @@ static int map_loaded;   /* the table of `port` is in map[] */
 static int out_cursor;
 static int out_top;
 static int pick_cursor;
+static int port_top;
+static int pair_mode;
+static int opt_entry;  /* index in map[] of the button being set */
+static int opt_cursor;
 static int learn_frames;
 static int learn_armed;
 static int swallow;
@@ -94,6 +108,8 @@ uib_open(const iblue_io* io) {
     done = 0;
     port = 0;
     cursor = 0;
+    port_top = 0;
+    pair_mode = 0;
     map_loaded = 0;
     notice[0] = '\0';
     screen = SC_PORT;
@@ -111,6 +127,7 @@ uib_open(const iblue_io* io) {
             return;
         }
     }
+    check(iblue_link_get_pairing(&lk, &pair_mode));
 }
 
 int
@@ -144,18 +161,26 @@ step_type(int delta) {
 }
 
 static uib_sound
-step_acc(int delta) {
-    int v = info[port].acc_mode;
-    for (int i = 0; i < 4; i++) {
-        v = (v + delta + 4) % 4;
-        if (port != 0 || (v & 1)) { /* port A keeps the VMU: the settings channel lives in it */
-            break;
-        }
+toggle_acc(int bit) {
+    int v = info[port].acc_mode ^ bit;
+    if (port == 0 && !(v & 1)) { /* port A keeps the VMU: the settings channel lives in it */
+        say("Port A needs its VMU");
+        return UIB_SND_ERROR;
     }
     if (!check(iblue_link_set_type(&lk, port, info[port].dev_mode, v))) {
         return UIB_SND_ERROR;
     }
     refresh_port();
+    return UIB_SND_CONFIRM;
+}
+
+static uib_sound
+toggle_pairing(void) {
+    int v = !pair_mode;
+    if (!check(iblue_link_set_pairing(&lk, v))) {
+        return UIB_SND_ERROR;
+    }
+    pair_mode = v;
     return UIB_SND_CONFIRM;
 }
 
@@ -170,21 +195,29 @@ leave(int save) {
     return save ? UIB_SND_CONFIRM : UIB_SND_CANCEL;
 }
 
+static void
+port_scroll(void) {
+    if (cursor < port_top) port_top = cursor;
+    if (cursor >= port_top + VISIBLE) port_top = cursor - VISIBLE + 1;
+}
+
 static uib_sound
 port_button(button_t b) {
     switch (b) {
         case BTN_UP:
-            if (cursor > 0) { cursor--; return UIB_SND_CURSOR; }
+            if (cursor > 0) { cursor--; port_scroll(); return UIB_SND_CURSOR; }
             break;
         case BTN_DOWN:
-            if (cursor < ROWS - 1) { cursor++; return UIB_SND_CURSOR; }
+            if (cursor < ROWS - 1) { cursor++; port_scroll(); return UIB_SND_CURSOR; }
             break;
         case BTN_LEFT:
         case BTN_RIGHT: {
             int d = b == BTN_LEFT ? -1 : 1;
             if (cursor == ROW_PORT) { change_port(d); return screen == SC_NOBOARD ? UIB_SND_ERROR : UIB_SND_CURSOR; }
             if (cursor == ROW_TYPE) return step_type(d);
-            if (cursor == ROW_ACC) return step_acc(d);
+            if (cursor == ROW_VMU) return toggle_acc(1);
+            if (cursor == ROW_RUMBLE) return toggle_acc(2);
+            if (cursor == ROW_PAIR) return toggle_pairing();
             break;
         }
         case BTN_A:
@@ -192,7 +225,9 @@ port_button(button_t b) {
             switch (cursor) {
                 case ROW_PORT: change_port(1); return UIB_SND_CURSOR;
                 case ROW_TYPE: return step_type(1);
-                case ROW_ACC: return step_acc(1);
+                case ROW_VMU: return toggle_acc(1);
+                case ROW_RUMBLE: return toggle_acc(2);
+                case ROW_PAIR: return toggle_pairing();
                 case ROW_REMAP:
                     if (info[port].dev_mode > 1) {
                         say("Remap is for controllers");
@@ -261,6 +296,78 @@ open_pick(void) {
 }
 
 static uib_sound
+open_opts(void) {
+    int ids[1];
+    if (iblue_sources_of(map, map_size, port, out_cursor, ids, 1) == 0) {
+        say("No button does this yet");
+        return UIB_SND_ERROR;
+    }
+    for (int i = 0; i < map_size; i++) {
+        if (map[i].src_btn == ids[0] && map[i].dst_id == port) {
+            opt_entry = i;
+        }
+    }
+    opt_cursor = 0;
+    screen = SC_OPTS;
+    return UIB_SND_ENTER;
+}
+
+static int
+index_of(const uint8_t* values, int n, int v) {
+    for (int i = 0; i < n; i++) {
+        if (values[i] == v) return i;
+    }
+    return -1;
+}
+
+static int
+step_clamped(int v, int delta, int step, int max) {
+    v += delta * step;
+    return v < 0 ? 0 : (v > max ? max : v);
+}
+
+static uib_sound
+opts_button(button_t b) {
+    iblue_map_entry* e = &map[opt_entry];
+    int d = 0;
+    switch (b) {
+        case BTN_UP:
+            if (opt_cursor > 0) { opt_cursor--; return UIB_SND_CURSOR; }
+            return UIB_SND_NONE;
+        case BTN_DOWN:
+            if (opt_cursor < OPTS - 1) { opt_cursor++; return UIB_SND_CURSOR; }
+            return UIB_SND_NONE;
+        case BTN_B:
+            screen = SC_REMAP;
+            return UIB_SND_CANCEL;
+        case BTN_LEFT: d = -1; break;
+        case BTN_RIGHT:
+        case BTN_A: d = 1; break;
+        default: return UIB_SND_NONE;
+    }
+    switch (opt_cursor) {
+        case OPT_SCALE: e->perc_max = (uint8_t)step_clamped(e->perc_max, d, 5, 100); break;
+        case OPT_THRESHOLD: e->perc_threshold = (uint8_t)step_clamped(e->perc_threshold, d, 5, 100); break;
+        case OPT_DEADZONE: e->perc_deadzone = (uint8_t)step_clamped(e->perc_deadzone, d, 5, 255); break;
+        case OPT_TURBO: {
+            int i = index_of(turbo_values, TURBO_COUNT, e->turbo);
+            e->turbo = turbo_values[(i + d + TURBO_COUNT) % TURBO_COUNT]; /* i -1 (custom) goes to Off/Very slow */
+            break;
+        }
+        case OPT_ALGO: {
+            int i = index_of(algo_values, 2, e->algo & 0xF);
+            e->algo = algo_values[(i + d + 2) % 2];
+            break;
+        }
+    }
+    if (!send_range(opt_entry, 1)) {
+        map_loaded = 0;
+        return UIB_SND_ERROR;
+    }
+    return UIB_SND_CONFIRM;
+}
+
+static uib_sound
 remap_button(button_t b) {
     switch (b) {
         case BTN_UP:
@@ -269,8 +376,9 @@ remap_button(button_t b) {
         case BTN_DOWN:
             if (out_cursor < IBLUE_OUTPUTS - 1) { out_cursor++; keep_visible(); return UIB_SND_CURSOR; }
             break;
-        case BTN_A:
         case BTN_START:
+            return open_opts();
+        case BTN_A:
             if (!info[port].connected) {
                 return open_pick(); /* no controller to press a button on: choose from the list */
             }
@@ -338,6 +446,7 @@ uib_button(button_t b) {
         case SC_PORT: return port_button(b);
         case SC_REMAP: return remap_button(b);
         case SC_PICK: return pick_button(b);
+        case SC_OPTS: return opts_button(b);
         case SC_LEARN: return UIB_SND_NONE; /* the pressed buttons are what is being learned */
         case SC_LEAVE:
             if (b == BTN_A || b == BTN_START) {
@@ -418,9 +527,17 @@ row_line(int i, int selected, const char* label, const char* value) {
 }
 
 static void
+draw_hint(const char* text) {
+    gfx_text(text, LEFT_X, 376.0f, 0.6f, GREY, 0);
+}
+
+static void
 draw_port(void) {
     char line[64];
     char value[40];
+    char label[28];
+    const char* hint = "";
+    const char* shown = "";
     gfx_text("Controllers", LEFT_X, 60.0f, 0.6f, WHITE, 1);
     for (int p = 0; p < IBLUE_PORTS; p++) {
         float x = LEFT_X + 150.0f + (float)p * 56.0f;
@@ -428,19 +545,64 @@ draw_port(void) {
         snprintf(line, sizeof(line), "%c", 'A' + p);
         gfx_text(line, x + 18.0f, 62.0f, 0.6f, p == port ? 0xFF102050u : (info[p].connected ? WHITE : GREY), 0);
     }
-    snprintf(line, sizeof(line), "%s", info[port].connected ? info[port].name : "no controller connected");
+    snprintf(line, sizeof(line), "%s", info[port].connected ? info[port].name : "no Bluetooth controller");
     gfx_text(line, LEFT_X, 94.0f, 0.6f, info[port].connected ? WHITE : GREY, 0);
 
-    snprintf(value, sizeof(value), "< %c >", 'A' + port);
-    row_line(ROW_PORT, cursor == ROW_PORT, "Port", value);
-    snprintf(value, sizeof(value), "%s", dev_names[info[port].dev_mode & 3]);
-    row_line(ROW_TYPE, cursor == ROW_TYPE, "Type", value);
-    snprintf(value, sizeof(value), "%s", acc_names[info[port].acc_mode & 3]);
-    row_line(ROW_ACC, cursor == ROW_ACC, "Accessories", value);
-    row_line(ROW_REMAP, cursor == ROW_REMAP, "Remap buttons", "");
-    row_line(ROW_RESET, cursor == ROW_RESET, "Reset this controller", "");
-    row_line(ROW_SAVE, cursor == ROW_SAVE, "Save and exit", lk.unsaved ? "(unsaved changes)" : "");
-    row_line(ROW_DISCARD, cursor == ROW_DISCARD, "Exit without saving", "");
+    for (int i = port_top; i < ROWS && i < port_top + VISIBLE; i++) {
+        int sel = cursor == i, row = i - port_top;
+        value[0] = '\0';
+        snprintf(label, sizeof(label), "?");
+        switch (i) {
+            case ROW_PORT:
+                snprintf(label, sizeof(label), "Port");
+                snprintf(value, sizeof(value), "< %c >%s", 'A' + port, info[port].plugged ? "  pad plugged in" : "");
+                break;
+            case ROW_TYPE:
+                snprintf(label, sizeof(label), "Type");
+                snprintf(value, sizeof(value), "%s", dev_names[info[port].dev_mode & 3]);
+                hint = "Dual stick: second stick shown to games";
+                break;
+            case ROW_VMU:
+                snprintf(label, sizeof(label), "Memory card (VMU)");
+                snprintf(value, sizeof(value), "%s", (info[port].acc_mode & 1) ? "On" : "Off");
+                hint = port == 0 ? "Port A needs its VMU" : "Memory card in this port";
+                break;
+            case ROW_RUMBLE:
+                snprintf(label, sizeof(label), "Rumble pack");
+                snprintf(value, sizeof(value), "%s", (info[port].acc_mode & 2) ? "On" : "Off");
+                hint = "Vibration on this port";
+                break;
+            case ROW_REMAP:
+                snprintf(label, sizeof(label), "Remap buttons");
+                hint = "Which controller button does what";
+                break;
+            case ROW_PAIR:
+                snprintf(label, sizeof(label), "Bluetooth pairing");
+                snprintf(value, sizeof(value), "%s", pair_mode ? "Manual" : "Auto");
+                hint = "Auto: search by itself. Manual: button";
+                break;
+            case ROW_RESET:
+                snprintf(label, sizeof(label), "Reset this controller");
+                hint = "Back to the default buttons";
+                break;
+            case ROW_SAVE:
+                snprintf(label, sizeof(label), "Save and exit");
+                snprintf(value, sizeof(value), "%s", lk.unsaved ? "(unsaved changes)" : "");
+                hint = "Keep the changes in the iBlue";
+                break;
+            default:
+                snprintf(label, sizeof(label), "Exit without saving");
+                hint = "Throw the changes away";
+                break;
+        }
+        row_line(row, sel, label, value);
+        if (sel) {
+            shown = hint;
+        }
+    }
+    draw_hint(shown);
+    if (port_top > 0) gfx_text("^", 590.0f, 100.0f, 0.6f, WHITE, 1);
+    if (port_top + VISIBLE < ROWS) gfx_text("v", 590.0f, 352.0f, 0.6f, WHITE, 1);
 }
 
 static void
@@ -448,8 +610,9 @@ draw_remap(void) {
     char line[64], names[48], tmp[20];
     int ids[8];
     gfx_text("Remap buttons", LEFT_X, 60.0f, 0.6f, WHITE, 1);
-    snprintf(line, sizeof(line), "Port %c   A: press a button   X: pick from list   Y: clear", 'A' + port);
+    snprintf(line, sizeof(line), "Port %c", 'A' + port);
     gfx_text(line, LEFT_X, 94.0f, 0.6f, GREY, 0);
+    draw_hint("A:press X:list Y:clear Start:options");
     for (int i = 0; i < VISIBLE; i++) {
         int o = out_top + i;
         if (o >= IBLUE_OUTPUTS) break;
@@ -465,6 +628,53 @@ draw_remap(void) {
     }
     if (out_top > 0) gfx_text("^", 590.0f, 100.0f, 0.6f, WHITE, 1);
     if (out_top + VISIBLE < IBLUE_OUTPUTS) gfx_text("v", 590.0f, 352.0f, 0.6f, WHITE, 1);
+}
+
+static void
+draw_opts(void) {
+    char line[64], value[24], tmp[20];
+    const iblue_map_entry* e = &map[opt_entry];
+    int ti = -1, ai = -1;
+    const char* hint = "";
+
+    for (int i = 0; i < TURBO_COUNT; i++) if (turbo_values[i] == e->turbo) ti = i;
+    for (int i = 0; i < 2; i++) if (algo_values[i] == (e->algo & 0xF)) ai = i;
+    snprintf(line, sizeof(line), "%s: %s", iblue_output_name(out_cursor), iblue_source_name(e->src_btn, tmp, sizeof(tmp)));
+    gfx_text("Button settings", LEFT_X, 60.0f, 0.6f, WHITE, 1);
+    gfx_text(line, LEFT_X, 94.0f, 0.6f, GREY, 0);
+    for (int i = 0; i < OPTS; i++) {
+        const char* label = "";
+        value[0] = '\0';
+        switch (i) {
+            case OPT_SCALE:
+                label = "Scale";
+                snprintf(value, sizeof(value), "%d%%", e->perc_max);
+                if (i == opt_cursor) hint = "Strength of a stick or trigger";
+                break;
+            case OPT_THRESHOLD:
+                label = "Press level";
+                snprintf(value, sizeof(value), "%d%%", e->perc_threshold);
+                if (i == opt_cursor) hint = "How far a stick presses a button";
+                break;
+            case OPT_DEADZONE:
+                label = "Dead zone";
+                snprintf(value, sizeof(value), "%d.%02d%%", e->perc_deadzone / 100, e->perc_deadzone % 100);
+                if (i == opt_cursor) hint = "Stick travel around the centre ignored";
+                break;
+            case OPT_TURBO:
+                label = "Rapid fire";
+                snprintf(value, sizeof(value), "%s", ti >= 0 ? turbo_names[ti] : "Custom");
+                if (i == opt_cursor) hint = "Presses again and again while held";
+                break;
+            default:
+                label = "Stick scaling";
+                snprintf(value, sizeof(value), "%s", ai >= 0 ? algo_names[ai] : "Other");
+                if (i == opt_cursor) hint = "Linear fills the range, Raw keeps it";
+                break;
+        }
+        row_line(i, i == opt_cursor, label, value);
+    }
+    draw_hint(hint);
 }
 
 static void
@@ -492,6 +702,7 @@ uib_draw(void) {
             if (screen == SC_LEAVE) draw_box("Unsaved changes", "A: save   X: discard", "B: keep editing");
             break;
         case SC_REMAP: draw_remap(); break;
+        case SC_OPTS: draw_opts(); break;
         case SC_PICK: {
             int first = pick_cursor >= VISIBLE ? pick_cursor - VISIBLE + 1 : 0;
             draw_remap();
