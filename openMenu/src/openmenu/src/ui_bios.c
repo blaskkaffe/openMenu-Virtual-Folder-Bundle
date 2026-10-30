@@ -27,11 +27,13 @@
 #include "ui_bios.h"
 #include <backend/gd_list.h>
 
+#include "iblue_vmu.h"
+#include "ui_iblue.h"
 #include "ui_list.h"
 #include "ui_settings.h"
 #include "video.h"
 
-typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS } screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_GAMES, SCREEN_SETTINGS, SCREEN_IBLUE } screen_t;
 
 /* The BIOS runs its logic at a fixed 60 steps per second and catches up when a frame takes
  * longer; the animations were written for that rate. */
@@ -379,6 +381,9 @@ draw_frame(void) {
     } else if (screen == SCREEN_SETTINGS) {
         bscene_draw_background(&menu.bg, gfx_sink());
         draw_settings();
+    } else if (screen == SCREEN_IBLUE) {
+        bscene_draw_background(&menu.bg, gfx_sink());
+        uib_draw();
     } else {
         bscene_draw_background(&menu.bg, gfx_sink());
         if (screen == SCREEN_GAMES) {
@@ -433,12 +438,34 @@ handle_main(button_t b) {
                 bpage_open(&page, &menu, uis_count());
                 settings_popup = 0;
                 screen = SCREEN_SETTINGS;
+            } else if (menu.selected == ICON_FILES) {
+                iblue_io io;
+                sound_sfx(BAUDIO_SFX_ENTER);
+                iblue_vmu_io(&io);
+                uib_open(&io);
+                screen = SCREEN_IBLUE;
             } else {
                 sound_sfx(BAUDIO_SFX_ERROR);
                 show_notice("Not available yet");
             }
             break;
         default: break;
+    }
+}
+
+static void
+handle_iblue(button_t b) {
+    static const int sounds[] = {-1, BAUDIO_SFX_CURSOR, BAUDIO_SFX_CONFIRM, BAUDIO_SFX_ENTER, BAUDIO_SFX_CANCEL,
+                                 BAUDIO_SFX_ERROR};
+    int s = (int)uib_button(b);
+    if (s > 0) {
+        sound_sfx(sounds[s]);
+    }
+    uib_tick();
+    if (uib_done()) {
+        show_notice(uib_notice()[0] ? uib_notice() : NULL);
+        bmenu_show_main(&menu, ICON_FILES);
+        screen = SCREEN_MAIN;
     }
 }
 
@@ -638,6 +665,8 @@ ui_bios_run(const bios_rom* rom) {
             handle_main(b);
         } else if (screen == SCREEN_GAMES) {
             handle_games(b);
+        } else if (screen == SCREEN_IBLUE) {
+            handle_iblue(b);
         } else {
             handle_settings(b);
         }

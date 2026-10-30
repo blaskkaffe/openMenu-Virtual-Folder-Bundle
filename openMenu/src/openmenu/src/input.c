@@ -25,6 +25,8 @@ input_poll(void) {
         out = BTN_B;
     } else if (edge & CONT_X) {
         out = BTN_X;
+    } else if (edge & CONT_Y) {
+        out = BTN_Y;
     } else if (edge & CONT_START) {
         out = BTN_START;
     } else if (now & DPAD_MASK) {

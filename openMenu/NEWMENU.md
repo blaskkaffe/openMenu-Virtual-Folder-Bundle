@@ -61,7 +61,8 @@ container does not look as expected. The status line at the bottom shows the res
 Game opens the game browser (with a detail line), Settings edits boot animation and the exit
 mode and saves them. Files and Music show "Not available yet".
 
-Still open: date/time and language settings, Files (memory card manager), Music (online).
+Files opens the Controllers screen for the iBlueControlMod (below). Still open: date/time and
+language settings, the memory card manager, Music (online).
 
 ## Custom header logo
 
@@ -137,3 +138,29 @@ blocks and disc count (`draw_button_text` in `ui_bios.c`); they are free for oth
 Disc colour: a game without icon art shows the BIOS disc of its region, chosen from the serial number
 (`serial_region.c`): PAL (Sega MK + 7 digits, third party ...D, ...D50, ...N50) gets the blue disc,
 everything else the red one - the same pairing the BIOS uses (blue on European consoles).
+
+## Controllers screen (Files, iBlueControlMod)
+
+Files edits the button mapping of an iBlueControlMod (the internal Bluetooth adapter running the
+iBlueControlMod BlueRetro firmware), like the controller settings of a console:
+
+- Port A to D at the top (Left/Right), with the name of the Bluetooth controller on it. A port without a
+  controller can be edited too.
+- Type (controller, alternative controller, keyboard, mouse) and Accessories (VMU, rumble pack).
+  Port A always keeps its VMU: the settings channel is in it.
+- Remap buttons: one row per Dreamcast output (A, B, X, Y, Start, D, Z, C, triggers, d-pad, sticks) showing
+  which button of the controller does it. A starts press-to-learn (press the button on the Bluetooth
+  controller, 10 s), X picks from a list (also the way when no controller is connected), Y clears.
+  Assigning swaps: the output that button had goes to the button that had this output.
+- Changes work at once but are saved in the iBlue only with Save (B asks when there is something unsaved).
+
+How it talks to the board: `iblue_link.c` (portable, commands in `iblue_proto.h`) over eight blocks (200
+to 207) of the board's emulated VMU, `iblue_vmu.c` for the KOS calls. `iblue_map.c` has the names and the
+swap rule, `ui_iblue.c` the screen (returns sounds instead of playing them). Host test:
+`sh openMenu/src/openmenu/test/run_iblue.sh` runs link, rules and screen against the firmware's own command
+handler (`test/fw`, a copy of `iBlueControlMod/main/system/iblue_cfg_proto.[ch]`; keep the two in step).
+Spec: iBlueControlMod `docs/openmenu-config-channel.md`.
+
+Not verified on hardware: neither the board side nor openMenu has run on a console. Likely to need
+tuning: whether blocks 200 to 207 are free on the board's VMU, timing of `vmu_block_write` / the poll, the
+text positions.
