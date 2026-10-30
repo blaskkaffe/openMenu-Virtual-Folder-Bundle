@@ -1,360 +1,412 @@
 /* iblue_link: see iblue_link.h. */
+#include <stddef.h>
 #include <string.h>
 
 #include "iblue_link.h"
 
-#define POLL_TRIES 60
-#define POLL_MS 10
+#define CHUNK 512
 
-static uint16_t
-rd16(const uint8_t* p) {
-    return (uint16_t)(p[0] | (p[1] << 8));
-}
+/* Generic ids of the default shortcut buttons (BlueRetro's config_default_combo) */
+static const uint8_t default_combo[10] = {BR_BTN_LM, BR_BTN_RM, BR_BTN_MM, BR_BTN_RB_UP, BR_BTN_RB_LEFT,
+                                          BR_BTN_RB_RIGHT, BR_BTN_RB_DOWN, BR_BTN_LD_UP, BR_BTN_LD_DOWN, BR_BTN_MS};
+#define KBM_MAX 108
+#define COMBO_BASE 118
 
-static uint32_t
-rd32(const uint8_t* p) {
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
-static void
-wr16(uint8_t* p, uint16_t v) {
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-}
-
-static void
-wr32(uint8_t* p, uint32_t v) {
-    wr16(p, (uint16_t)v);
-    wr16(p + 2, (uint16_t)(v >> 16));
-}
-
-static uint32_t
-crc32(const uint8_t* data, int len) {
-    uint32_t crc = 0xFFFFFFFFu;
-    while (len-- > 0) {
-        crc ^= *data++;
-        for (int i = 0; i < 8; i++) {
-            crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
-        }
+void
+iblue_default_in_cfg(struct br_in_cfg* in, int port) {
+    int j = 0;
+    memset(in, 0, sizeof(*in));
+    for (; j < KBM_MAX; j++) {
+        in->map_cfg[j] = (struct br_map_cfg){(uint8_t)j, (uint8_t)j, (uint8_t)port, 100, 50, 135, 0, 0};
     }
-    return ~crc;
+    for (int k = 0; k < 10; k++, j++) {
+        in->map_cfg[j] = (struct br_map_cfg){default_combo[k], (uint8_t)(COMBO_BASE + k), (uint8_t)port, 100, 50, 135, 0, 0};
+    }
+    in->map_size = (uint8_t)j;
 }
+
+/* ---- transfers ---------------------------------------------------------------------------- */
 
 static int
-blocks_for(int bytes) {
-    return (bytes + IBLUE_BLOCK_SIZE - 1) / IBLUE_BLOCK_SIZE;
-}
-
-/* One command. `in` is the argument, `out` receives up to out_max bytes of the answer. */
-static int
-call(iblue_link* l, int cmd, const uint8_t* in, int in_len, uint8_t* out, int out_max, int* out_len) {
-    uint8_t win[IBLUE_WINDOW_SIZE];
-    uint8_t hdr[IBLUE_BLOCK_SIZE];
-    int blocks, i;
-    uint32_t seq = ++l->seq;
-
-    if (in_len < 0 || in_len > IBLUE_DATA_MAX) {
-        return IBLUE_ERR_PROTO;
-    }
-    memset(win, 0, sizeof(win));
-    if (in_len) {
-        memcpy(win + IBLUE_HDR_SIZE, in, (size_t)in_len);
-    }
-    memcpy(win + IBLUE_H_MAGIC, "iBLU", 4);
-    wr16(win + IBLUE_H_VERSION, IBLUE_VERSION);
-    wr16(win + IBLUE_H_STATUS, IBLUE_ST_PENDING);
-    wr16(win + IBLUE_H_CMD, (uint16_t)cmd);
-    wr16(win + IBLUE_H_LEN, (uint16_t)in_len);
-    wr32(win + IBLUE_H_SEQ, seq);
-    wr32(win + IBLUE_H_CRC, crc32(win + IBLUE_HDR_SIZE, in_len));
-
-    /* The first block starts the command, so it goes last. */
-    blocks = blocks_for(IBLUE_HDR_SIZE + in_len);
-    for (i = 1; i < blocks; i++) {
-        if (l->io.write(l->io.ctx, IBLUE_BLOCK_FIRST + i, win + i * IBLUE_BLOCK_SIZE)) {
-            return IBLUE_ERR_IO;
-        }
-    }
-    if (l->io.write(l->io.ctx, IBLUE_BLOCK_FIRST, win)) {
-        return IBLUE_ERR_IO;
-    }
-
-    for (i = 0;; i++) {
-        uint16_t status;
-        if (l->io.read(l->io.ctx, IBLUE_BLOCK_FIRST, hdr)) {
-            return IBLUE_ERR_IO;
-        }
-        status = rd16(hdr + IBLUE_H_STATUS);
-        if (memcmp(hdr, "iBLU", 4) == 0 && rd32(hdr + IBLUE_H_SEQ) == seq && !(status & IBLUE_ST_PENDING)) {
-            break;
-        }
-        if (i >= POLL_TRIES) {
-            return IBLUE_ERR_TIMEOUT;
-        }
-        if (l->io.sleep_ms) {
-            l->io.sleep_ms(l->io.ctx, POLL_MS);
-        }
-    }
-
-    {
-        uint16_t status = rd16(hdr + IBLUE_H_STATUS);
-        uint16_t result = rd16(hdr + IBLUE_H_RESULT);
-        int len = rd16(hdr + IBLUE_H_LEN);
-        uint8_t ans[IBLUE_WINDOW_SIZE];
-
-        l->unsaved = (status & IBLUE_ST_UNSAVED) != 0;
-        if (result != IBLUE_RES_OK) {
-            return result;
-        }
-        if (len > IBLUE_DATA_MAX || len > out_max) {
-            return IBLUE_ERR_PROTO;
-        }
-        memcpy(ans, hdr, IBLUE_BLOCK_SIZE);
-        blocks = blocks_for(IBLUE_HDR_SIZE + len);
-        for (i = 1; i < blocks; i++) {
-            if (l->io.read(l->io.ctx, IBLUE_BLOCK_FIRST + i, ans + i * IBLUE_BLOCK_SIZE)) {
-                return IBLUE_ERR_IO;
-            }
-        }
-        if (crc32(ans + IBLUE_HDR_SIZE, len) != rd32(hdr + IBLUE_H_CRC)) {
-            return IBLUE_ERR_PROTO;
-        }
-        if (out && len) {
-            memcpy(out, ans + IBLUE_HDR_SIZE, (size_t)len);
-        }
-        if (out_len) {
-            *out_len = len;
+read_all(iblue_link* l, uint8_t item, void* dst, uint32_t size) {
+    for (uint32_t off = 0; off < size; off += CHUNK) {
+        uint32_t n = size - off < CHUNK ? size - off : CHUNK;
+        int r = l->io.read(l->io.ctx, item, off, (uint8_t*)dst + off, n);
+        if (r) {
+            return r;
         }
     }
     return 0;
 }
+
+/* Write bytes [off, off+len) of `data` (the struct br_config at `base`) to the adapter. The adapter
+ * takes word aligned offsets, so the range grows to whole words. */
+static int
+push(iblue_link* l, const struct br_config* data, uint32_t off, uint32_t len) {
+    uint32_t a = off & ~3u, e = (off + len + 3u) & ~3u;
+    if (e > sizeof(*data)) {
+        e = sizeof(*data);
+    }
+    while (a < e) {
+        uint32_t n = e - a < CHUNK ? e - a : CHUNK;
+        int r = l->io.write(l->io.ctx, BRCTL_ITEM_CONFIG, a, (const uint8_t*)data + a, n);
+        if (r) {
+            return r;
+        }
+        a += n;
+    }
+    return 0;
+}
+
+static int
+reload(iblue_link* l) {
+    int r = read_all(l, BRCTL_ITEM_CONFIG, &l->cfg, sizeof(l->cfg));
+    if (r) {
+        return r;
+    }
+    l->orig = l->cfg;
+    l->unsaved = 0;
+    return 0;
+}
+
+/* What the adapter changes on its own is reloaded; the working copy then is not "saved" any more */
+static int
+reload_unsaved(iblue_link* l) {
+    int r = read_all(l, BRCTL_ITEM_CONFIG, &l->cfg, sizeof(l->cfg));
+    if (r) {
+        return r;
+    }
+    l->unsaved = memcmp(&l->cfg, &l->orig, sizeof(l->cfg)) != 0;
+    return 0;
+}
+
+static int
+op(iblue_link* l, uint32_t code, uint32_t a0, uint32_t a1, uint32_t a2) {
+    int result = 0, r = l->io.op(l->io.ctx, code, a0, a1, a2, &result);
+    if (r) {
+        return r;
+    }
+    switch (result) {
+        case BRCTL_RES_OK: return 0;
+        case BRCTL_RES_EMPTY: return IBLUE_RES_EMPTY;
+        case BRCTL_RES_NO_GAME: return IBLUE_RES_NO_GAME;
+        case BRCTL_RES_FAILED: return IBLUE_RES_FAILED;
+        default: return IBLUE_RES_BAD_ARG;
+    }
+}
+
+static int
+status(iblue_link* l, struct brctl_status* st) {
+    int r = l->io.read(l->io.ctx, BRCTL_ITEM_STATUS, 0, st, sizeof(*st));
+    if (r) {
+        return r;
+    }
+    return st->magic == BRCTL_STATUS_MAGIC ? 0 : IBLUE_ERR_PROTO;
+}
+
+/* ---- open --------------------------------------------------------------------------------- */
 
 int
 iblue_link_open(iblue_link* l, const iblue_io* io) {
-    uint8_t hdr[IBLUE_BLOCK_SIZE];
-    uint8_t ans[16];
-    int len = 0, r;
+    struct brctl_info info;
+    int r;
 
     memset(l, 0, sizeof(*l));
     l->io = *io;
-    if (io->read(io->ctx, IBLUE_BLOCK_FIRST, hdr)) {
-        return IBLUE_ERR_IO;
-    }
-    if (memcmp(hdr, "iBLU", 4) != 0) {
-        return IBLUE_ERR_NO_BOARD;
-    }
-    l->seq = rd32(hdr + IBLUE_H_SEQ);
-    r = call(l, IBLUE_CMD_HELLO, NULL, 0, ans, sizeof(ans), &len);
+    r = io->read(io->ctx, BRCTL_ITEM_INFO, 0, &info, sizeof(info));
     if (r) {
         return r;
     }
-    if (len < 8 || rd16(ans) != IBLUE_VERSION) {
+    if (info.magic != BRCTL_INFO_MAGIC) {
+        return IBLUE_ERR_NO_BOARD;
+    }
+    if (info.proto_ver != BRCTL_PROTO_VER || info.config_size != sizeof(struct br_config) ||
+        info.config_magic != BR_CONFIG_MAGIC) {
         return IBLUE_ERR_PROTO;
     }
-    l->map_max = rd16(ans + 4);
-    return 0;
+    return reload(l);
 }
+
+/* ---- ports and mapping -------------------------------------------------------------------- */
 
 int
 iblue_link_port_info(iblue_link* l, int port, iblue_port_info* out) {
-    uint8_t arg = (uint8_t)port;
-    uint8_t ans[64];
-    int len = 0, r = call(l, IBLUE_CMD_PORT_INFO, &arg, 1, ans, sizeof(ans), &len);
+    struct brctl_status st;
+    int r;
+    if (port < 0 || port >= IBLUE_PORTS) {
+        return IBLUE_RES_BAD_ARG;
+    }
+    r = status(l, &st);
     if (r) {
         return r;
     }
-    if (len < 10 + IBLUE_NAME_LEN) {
-        return IBLUE_ERR_PROTO;
+    memset(out, 0, sizeof(*out));
+    out->dev_mode = l->cfg.out_cfg[port].dev_mode;
+    out->acc_mode = l->cfg.out_cfg[port].acc_mode;
+    out->connected = st.port_bt_id[port] != 0xFF;
+    out->plugged = (st.plugged_mask >> port) & 1;
+    out->map_size = l->cfg.in_cfg[port].map_size;
+    if (out->connected) {
+        strcpy(out->name, "Bluetooth controller");
     }
-    out->dev_mode = ans[0];
-    out->acc_mode = ans[1];
-    out->connected = ans[2];
-    out->plugged = ans[3];
-    out->map_size = rd16(ans + 4);
-    out->vid = rd16(ans + 6);
-    out->pid = rd16(ans + 8);
-    memcpy(out->name, ans + 10, IBLUE_NAME_LEN);
-    out->name[IBLUE_NAME_LEN - 1] = '\0';
     return 0;
 }
 
 int
 iblue_link_get_map(iblue_link* l, int port, iblue_map_entry out[IBLUE_MAP_MAX], int* size) {
-    iblue_port_info info;
-    int total, first = 0, r;
-
-    r = iblue_link_port_info(l, port, &info);
-    if (r) {
-        return r;
+    int n;
+    if (port < 0 || port >= IBLUE_PORTS) {
+        return IBLUE_RES_BAD_ARG;
     }
-    total = info.map_size > IBLUE_MAP_MAX ? IBLUE_MAP_MAX : info.map_size;
-    while (first < total) {
-        uint8_t arg[5];
-        uint8_t ans[IBLUE_DATA_MAX];
-        int count = total - first, len = 0;
-        if (count > 100) {
-            count = 100;
-        }
-        arg[0] = (uint8_t)port;
-        wr16(arg + 1, (uint16_t)first);
-        wr16(arg + 3, (uint16_t)count);
-        r = call(l, IBLUE_CMD_GET_MAP, arg, 5, ans, sizeof(ans), &len);
-        if (r) {
-            return r;
-        }
-        if (len != count * IBLUE_MAP_ENTRY) {
-            return IBLUE_ERR_PROTO;
-        }
-        memcpy(&out[first], ans, (size_t)len);
-        first += count;
+    n = l->cfg.in_cfg[port].map_size;
+    if (n > IBLUE_MAP_MAX) {
+        n = IBLUE_MAP_MAX;
     }
-    *size = total;
+    memcpy(out, l->cfg.in_cfg[port].map_cfg, (size_t)n * sizeof(iblue_map_entry));
+    *size = n;
     return 0;
+}
+
+static int
+valid_entry(const iblue_map_entry* m) {
+    return m->dst_id < IBLUE_PORTS && m->perc_max <= 100 && m->perc_threshold <= 100 && m->algo <= 5;
 }
 
 int
 iblue_link_set_map(iblue_link* l, int port, int first, int count, const iblue_map_entry* in, int new_size) {
-    uint8_t arg[7 + 100 * IBLUE_MAP_ENTRY];
-    if (count < 0 || count > 100) {
-        return IBLUE_ERR_PROTO;
+    uint32_t base;
+    if (port < 0 || port >= IBLUE_PORTS || first < 0 || count < 0 || first + count > IBLUE_MAP_MAX ||
+        (new_size >= 0 && (new_size > IBLUE_MAP_MAX || new_size < first + count))) {
+        return IBLUE_RES_BAD_ARG;
     }
-    arg[0] = (uint8_t)port;
-    wr16(arg + 1, (uint16_t)first);
-    wr16(arg + 3, (uint16_t)count);
-    wr16(arg + 5, new_size < 0 ? 0xFFFF : (uint16_t)new_size);
-    memcpy(arg + 7, in, (size_t)count * IBLUE_MAP_ENTRY);
-    return call(l, IBLUE_CMD_SET_MAP, arg, 7 + count * IBLUE_MAP_ENTRY, NULL, 0, NULL);
+    for (int i = 0; i < count; i++) {
+        if (!valid_entry(&in[i])) {
+            return IBLUE_RES_BAD_ARG;
+        }
+    }
+    memcpy(&l->cfg.in_cfg[port].map_cfg[first], in, (size_t)count * sizeof(*in));
+    l->unsaved = 1;
+    base = offsetof(struct br_config, in_cfg) + (uint32_t)port * sizeof(struct br_in_cfg);
+    if (new_size >= 0 && new_size != l->cfg.in_cfg[port].map_size) {
+        int r;
+        l->cfg.in_cfg[port].map_size = (uint8_t)new_size;
+        r = push(l, &l->cfg, base + offsetof(struct br_in_cfg, map_size), 1);
+        if (r) {
+            return r;
+        }
+    }
+    return push(l, &l->cfg, base + offsetof(struct br_in_cfg, map_cfg) + (uint32_t)first * sizeof(*in),
+                (uint32_t)count * sizeof(*in));
 }
 
 int
 iblue_link_set_type(iblue_link* l, int port, int dev_mode, int acc_mode) {
-    uint8_t arg[3] = {(uint8_t)port, (uint8_t)dev_mode, (uint8_t)acc_mode};
-    return call(l, IBLUE_CMD_SET_TYPE, arg, 3, NULL, 0, NULL);
+    if (port < 0 || port >= IBLUE_PORTS || dev_mode < 0 || dev_mode > 3 || acc_mode < 0 || acc_mode > 3) {
+        return IBLUE_RES_BAD_ARG;
+    }
+    l->cfg.out_cfg[port].dev_mode = (uint8_t)dev_mode;
+    l->cfg.out_cfg[port].acc_mode = (uint8_t)acc_mode;
+    l->unsaved = 1;
+    return push(l, &l->cfg, offsetof(struct br_config, out_cfg) + (uint32_t)port * sizeof(struct br_out_cfg),
+                sizeof(struct br_out_cfg));
 }
 
 int
 iblue_link_reset_map(iblue_link* l, int port) {
-    uint8_t arg = (uint8_t)port;
-    return call(l, IBLUE_CMD_RESET_MAP, &arg, 1, NULL, 0, NULL);
+    uint32_t base;
+    if (port < 0 || port >= IBLUE_PORTS) {
+        return IBLUE_RES_BAD_ARG;
+    }
+    iblue_default_in_cfg(&l->cfg.in_cfg[port], port);
+    l->unsaved = 1;
+    base = offsetof(struct br_config, in_cfg) + (uint32_t)port * sizeof(struct br_in_cfg);
+    return push(l, &l->cfg, base, sizeof(struct br_in_cfg));
 }
 
 int
 iblue_link_commit(iblue_link* l) {
-    return call(l, IBLUE_CMD_COMMIT, NULL, 0, NULL, 0, NULL);
+    int r = op(l, BRCTL_OP_CONFIG_SAVE, 0, 0, 0);
+    if (r == IBLUE_RES_BAD_ARG) {
+        reload(l); /* the adapter refused and went back to what it had saved */
+        return r;
+    }
+    if (r) {
+        return r;
+    }
+    l->orig = l->cfg;
+    l->unsaved = 0;
+    return 0;
 }
 
 int
 iblue_link_revert(iblue_link* l) {
-    return call(l, IBLUE_CMD_REVERT, NULL, 0, NULL, 0, NULL);
+    /* write back what differs from the saved copy, a block at a time */
+    for (uint32_t off = 0; off < sizeof(l->cfg); off += CHUNK) {
+        uint32_t n = sizeof(l->cfg) - off < CHUNK ? sizeof(l->cfg) - off : CHUNK;
+        if (memcmp((const uint8_t*)&l->cfg + off, (const uint8_t*)&l->orig + off, n) != 0) {
+            int r = push(l, &l->orig, off, n);
+            if (r) {
+                return r;
+            }
+        }
+    }
+    l->cfg = l->orig;
+    l->unsaved = 0;
+    return 0;
 }
 
 int
 iblue_link_live(iblue_link* l, int port, uint32_t words[4], int* connected) {
-    uint8_t arg = (uint8_t)port;
-    uint8_t ans[24];
-    int len = 0, r = call(l, IBLUE_CMD_LIVE, &arg, 1, ans, sizeof(ans), &len);
+    struct brctl_status st;
+    int r;
+    if (port < 0 || port >= IBLUE_PORTS) {
+        return IBLUE_RES_BAD_ARG;
+    }
+    r = status(l, &st);
     if (r) {
         return r;
     }
-    if (len < 20) {
-        return IBLUE_ERR_PROTO;
-    }
-    *connected = ans[0];
-    for (int i = 0; i < 4; i++) {
-        words[i] = rd32(ans + 4 + i * 4);
-    }
+    *connected = st.port_bt_id[port] != 0xFF;
+    words[0] = *connected ? st.live[port] : 0;
+    words[1] = words[2] = words[3] = 0;
     return 0;
 }
 
 int
 iblue_link_get_pairing(iblue_link* l, int* mode) {
-    uint8_t ans[16];
-    int len = 0, r = call(l, IBLUE_CMD_GET_GLOBAL, NULL, 0, ans, sizeof(ans), &len);
-    if (r) {
-        return r;
-    }
-    if (len < 1) {
-        return IBLUE_ERR_PROTO;
-    }
-    *mode = ans[0];
+    *mode = l->cfg.global_cfg.inquiry_mode;
     return 0;
 }
 
 int
 iblue_link_set_pairing(iblue_link* l, int mode) {
-    uint8_t arg = (uint8_t)mode;
-    return call(l, IBLUE_CMD_SET_GLOBAL, &arg, 1, NULL, 0, NULL);
+    if (mode < 0 || mode > 1) {
+        return IBLUE_RES_BAD_ARG;
+    }
+    l->cfg.global_cfg.inquiry_mode = (uint8_t)mode;
+    l->unsaved = 1;
+    return push(l, &l->cfg, offsetof(struct br_config, global_cfg), sizeof(struct br_global_cfg));
 }
+
+/* ---- profiles and games ------------------------------------------------------------------- */
 
 int
 iblue_link_profiles(iblue_link* l, iblue_profile out[IBLUE_PROFILES]) {
-    uint8_t ans[32];
-    int len = 0, r = call(l, IBLUE_CMD_PROFILE_LIST, NULL, 0, ans, sizeof(ans), &len);
+    struct brctl_profiles p;
+    int r = l->io.read(l->io.ctx, BRCTL_ITEM_PROFILES, 0, &p, sizeof(p));
     if (r) {
         return r;
     }
-    if (len < IBLUE_PROFILES * 4) {
+    if (p.magic != BRCTL_PROFILES_MAGIC) {
         return IBLUE_ERR_PROTO;
     }
     for (int i = 0; i < IBLUE_PROFILES; i++) {
-        out[i].used = ans[i * 4];
-        out[i].dev_mode = ans[i * 4 + 1];
-        out[i].acc_mode = ans[i * 4 + 2];
+        out[i].used = p.used[i];
+        out[i].dev_mode = p.dev_mode[i];
+        out[i].acc_mode = p.acc_mode[i];
     }
     return 0;
 }
 
 int
 iblue_link_profile_save(iblue_link* l, int slot, int port) {
-    uint8_t arg[2] = {(uint8_t)slot, (uint8_t)port};
-    return call(l, IBLUE_CMD_PROFILE_SAVE, arg, 2, NULL, 0, NULL);
+    return op(l, BRCTL_OP_PROFILE_SAVE, (uint32_t)slot, (uint32_t)port, 0);
 }
 
 int
 iblue_link_profile_load(iblue_link* l, int slot, int port) {
-    uint8_t arg[2] = {(uint8_t)slot, (uint8_t)port};
-    return call(l, IBLUE_CMD_PROFILE_LOAD, arg, 2, NULL, 0, NULL);
+    int r = op(l, BRCTL_OP_PROFILE_LOAD, (uint32_t)slot, (uint32_t)port, 0); /* live, not persisted */
+    if (r) {
+        return r;
+    }
+    return reload_unsaved(l);
 }
 
 int
 iblue_link_profile_delete(iblue_link* l, int slot) {
-    uint8_t arg = (uint8_t)slot;
-    return call(l, IBLUE_CMD_PROFILE_DELETE, &arg, 1, NULL, 0, NULL);
+    return op(l, BRCTL_OP_PROFILE_DELETE, (uint32_t)slot, 0, 0);
+}
+
+static void
+game_id(char out[16], const char* id) {
+    int n = 0;
+    memset(out, 0, 16);
+    /* the id becomes a file name on the adapter: letters, digits, - and _ only */
+    for (int i = 0; id[i] && n < IBLUE_GAME_ID_MAX; i++, n++) {
+        char c = id[i];
+        int ok = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '-' || c == '_';
+        out[n] = ok ? c : '_';
+    }
+    while (n > 0 && out[n - 1] == '_' && id[n - 1] == ' ') {
+        out[--n] = '\0'; /* trailing padding */
+    }
+}
+
+static int
+game_apply(const iblue_io* io, const char* product, int* result_flags) {
+    struct brctl_game g;
+    int result = 0, r;
+    memset(&g, 0, sizeof(g));
+    game_id(g.id, product);
+    r = io->write(io->ctx, BRCTL_ITEM_GAME, 0, &g, sizeof(g));
+    if (r) {
+        return r;
+    }
+    r = io->op(io->ctx, BRCTL_OP_GAME_SET, 0, 0, 0, &result);
+    if (r) {
+        return r;
+    }
+    if (result_flags) {
+        r = io->read(io->ctx, BRCTL_ITEM_GAME, 0, &g, sizeof(g));
+        if (r) {
+            return r;
+        }
+        *result_flags = g.flags;
+    }
+    return result == BRCTL_RES_OK ? 0 : IBLUE_RES_BAD_ARG;
 }
 
 int
 iblue_link_game_set(iblue_link* l, const char* id, int* has_own) {
-    uint8_t ans[4];
-    uint8_t buf[IBLUE_GAME_ID_MAX];
-    int len = 0, n = (int)strlen(id), r;
-    if (n > IBLUE_GAME_ID_MAX) {
-        n = IBLUE_GAME_ID_MAX;
-    }
-    /* the id becomes a file name on the board: letters, digits, - and _ only */
-    for (int i = 0; i < n; i++) {
-        char c = id[i];
-        int ok = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '-' || c == '_';
-        buf[i] = (uint8_t)(ok ? c : '_');
-    }
-    while (n > 0 && buf[n - 1] == '_' && id[n - 1] == ' ') {
-        n--; /* trailing padding */
-    }
-    r = call(l, IBLUE_CMD_GAME_SET, buf, n, ans, sizeof(ans), &len);
+    int flags = 0, r = game_apply(&l->io, id, &flags);
     if (r) {
         return r;
     }
     if (has_own) {
-        *has_own = len >= 1 ? ans[0] : 0;
+        *has_own = (flags & BRCTL_GAME_HAS_OWN) != 0;
     }
-    return 0;
+    return reload(l); /* the adapter loaded the game's configuration, or the normal one */
 }
 
 int
 iblue_link_game_save(iblue_link* l) {
-    return call(l, IBLUE_CMD_GAME_SAVE, NULL, 0, NULL, 0, NULL);
+    int r = op(l, BRCTL_OP_GAME_SAVE, 0, 0, 0);
+    if (r) {
+        return r;
+    }
+    l->orig = l->cfg;
+    l->unsaved = 0;
+    return 0;
 }
 
 int
 iblue_link_game_delete(iblue_link* l) {
-    return call(l, IBLUE_CMD_GAME_DELETE, NULL, 0, NULL, 0, NULL);
+    int r = op(l, BRCTL_OP_GAME_DELETE, 0, 0, 0);
+    if (r) {
+        return r;
+    }
+    return reload(l);
+}
+
+int
+iblue_game_apply(const iblue_io* io, const char* product) {
+    struct brctl_info info;
+    int r = io->read(io->ctx, BRCTL_ITEM_INFO, 0, &info, sizeof(info));
+    if (r) {
+        return r;
+    }
+    if (info.magic != BRCTL_INFO_MAGIC || info.proto_ver != BRCTL_PROTO_VER || !(info.features & BRCTL_FEAT_PROFILES)) {
+        return IBLUE_ERR_NO_BOARD;
+    }
+    return game_apply(io, product, NULL);
 }

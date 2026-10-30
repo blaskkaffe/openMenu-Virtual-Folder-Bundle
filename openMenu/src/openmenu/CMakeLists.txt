@@ -13,9 +13,10 @@ set(OPENMENU_SOURCES
         src/main.c
         src/gfx.c
         src/history.c
+        src/brctl/brctl.c
+        src/iblue_brctl.c
         src/iblue_link.c
         src/iblue_map.c
-        src/iblue_vmu.c
         src/input.c
         src/launch.c
         src/serial_region.c

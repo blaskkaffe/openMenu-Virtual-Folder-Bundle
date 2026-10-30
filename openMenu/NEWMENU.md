@@ -147,7 +147,7 @@ iBlueControlMod BlueRetro firmware), like the controller settings of a console:
 - Port A to D (Left/Right), with the Bluetooth controller's name and "pad plugged in" when the board senses a
   physical controller in the port. The board only answers while a Bluetooth controller is connected (hotplug); a port without one is edited through another port.
 - Type (Controller, Dual stick, Keyboard, Mouse), Memory card (VMU) on/off, Rumble pack on/off, Bluetooth
-  pairing (Auto / Manual). Port A always keeps its VMU: the settings channel is in it.
+  pairing (Auto / Manual). 
 - Remap buttons: one row per Dreamcast output (A, B, X, Y, Start, D, Z, C, triggers, d-pad, sticks) showing
   which button of the controller does it. A starts press-to-learn (press the button on the Bluetooth
   controller, 10 s), X picks from a list (the way for a port that has no controller), Y clears,
@@ -160,13 +160,15 @@ iBlueControlMod BlueRetro firmware), like the controller settings of a console:
   iBlue use the game's own settings if it has some (the product number is sent first).
 - Changes work at once but are saved in the iBlue only with Save (B asks when there is something unsaved).
 
-How it talks to the board: `iblue_link.c` (portable, commands in `iblue_proto.h`) over eight blocks (200
-to 207) of the board's emulated VMU, `iblue_vmu.c` for the KOS calls. `iblue_map.c` has the names and the
-swap rule, `ui_iblue.c` the screen (returns sounds instead of playing them). Host test:
-`sh openMenu/src/openmenu/test/run_iblue.sh` runs link, rules and screen against the firmware's own command
-handler (`test/fw`, a copy of `iBlueControlMod/main/system/iblue_cfg_proto.[ch]`; keep the two in step).
-Spec: iBlueControlMod `docs/openmenu-config-channel.md`.
+How it talks to the board: the **brctl** control channel of the iBlueControlMod firmware (Maple frames to the controller with a private function
+code; the library is `src/brctl/`, a copy of `iBlueControlMod/dc/brctl`, protocol 3). `iblue_brctl.c` binds it to the screen, `iblue_link.c`
+(portable) keeps a working copy of the adapter's whole configuration: edits are written to the adapter at once and saved with Save, revert writes the
+saved copy back. `iblue_map.c` has the names and the swap rule, `ui_iblue.c` the screen (returns sounds instead of playing them). Host test:
+`sh openMenu/src/openmenu/test/run_iblue.sh` runs link, rules and screen against a fake adapter that follows the firmware. How the firmware is
+organised, profiles and per-game settings: iBlueControlMod `docs/iblue-extras.md`.
+
+The adapter only appears on a port where a Bluetooth controller is connected (the iBlue's hotplug); plain HW1/HW2 boards always answer. Starting a game
+looks for the adapter once (cached until the next visit to the screen) and costs up to about 100 ms per controller port on a console without one.
 
 Not verified on hardware: neither the board side nor openMenu has run on a console. Likely to need
-tuning: whether blocks 200 to 207 are free on the board's VMU, timing of `vmu_block_write` / the poll, the
-text positions.
+tuning: the Maple timing of 25 config transfers (about half a second to load), the text positions.

@@ -27,7 +27,7 @@
 #include "ui_bios.h"
 #include <backend/gd_list.h>
 
-#include "iblue_vmu.h"
+#include "iblue_brctl.h"
 #include "ui_iblue.h"
 #include "ui_list.h"
 #include "ui_settings.h"
@@ -118,7 +118,7 @@ static void
 start_disc(const gd_item* g) {
     if (g->product[0]) {
         iblue_io io;
-        iblue_vmu_io(&io);
+        iblue_brctl_io(&io, 0);
         uib_prepare_launch(&io, g->product);
     }
     launch_disc(g);
@@ -455,7 +455,7 @@ handle_main(button_t b) {
             } else if (menu.selected == ICON_FILES) {
                 iblue_io io;
                 sound_sfx(BAUDIO_SFX_ENTER);
-                iblue_vmu_io(&io);
+                iblue_brctl_io(&io, 0);
                 uib_open(&io);
                 iblue_back = SCREEN_MAIN;
                 screen = SCREEN_IBLUE;
@@ -552,7 +552,7 @@ handle_games(button_t b) {
         if (cur && !uil_is_folder(cur) && cur->product[0]) {
             iblue_io io;
             sound_sfx(BAUDIO_SFX_ENTER);
-            iblue_vmu_io(&io);
+            iblue_brctl_io(&io, 0);
             uib_open_game(&io, cur->product, cur->name);
             iblue_back = SCREEN_GAMES;
             screen = SCREEN_IBLUE;

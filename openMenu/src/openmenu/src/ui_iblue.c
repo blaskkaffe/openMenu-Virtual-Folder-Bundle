@@ -72,11 +72,10 @@ say(const char* text) {
 static const char*
 error_text(int r) {
     switch (r) {
-        case IBLUE_ERR_IO: return "The memory card did not answer";
+        case IBLUE_ERR_IO: return "The iBlue did not answer";
         case IBLUE_ERR_NO_BOARD: return "No iBlue found";
         case IBLUE_ERR_TIMEOUT: return "The iBlue did not answer";
         case IBLUE_ERR_PROTO: return "Bad answer from the iBlue";
-        case IBLUE_RES_LOCKOUT: return "Port A needs its VMU";
         case IBLUE_RES_BAD_ARG: return "The iBlue refused that";
         case IBLUE_RES_FAILED: return "Could not save in the iBlue";
         default: return "iBlue error";
@@ -182,9 +181,8 @@ uib_open_game(const iblue_io* io, const char* product, const char* name) {
 
 void
 uib_prepare_launch(const iblue_io* io, const char* product) {
-    iblue_link l;
-    if (product && product[0] && iblue_link_open(&l, io) == 0) {
-        iblue_link_game_set(&l, product, NULL); /* its own settings if it has some, else the normal ones */
+    if (product && product[0]) {
+        iblue_game_apply(io, product); /* its own settings if it has some, else the normal ones */
     }
 }
 
@@ -221,10 +219,6 @@ step_type(int delta) {
 static uib_sound
 toggle_acc(int bit) {
     int v = info[port].acc_mode ^ bit;
-    if (port == 0 && !(v & 1)) { /* port A keeps the VMU: the settings channel lives in it */
-        say("Port A needs its VMU");
-        return UIB_SND_ERROR;
-    }
     if (!check(iblue_link_set_type(&lk, port, info[port].dev_mode, v))) {
         return UIB_SND_ERROR;
     }
@@ -701,7 +695,7 @@ draw_port(void) {
             case ROW_VMU:
                 snprintf(label, sizeof(label), "Memory card (VMU)");
                 snprintf(value, sizeof(value), "%s", (info[port].acc_mode & 1) ? "On" : "Off");
-                hint = port == 0 ? "Port A needs its VMU" : "Memory card in this port";
+                hint = "Memory card in this port";
                 break;
             case ROW_RUMBLE:
                 snprintf(label, sizeof(label), "Rumble pack");
@@ -856,8 +850,8 @@ uib_draw(void) {
         case SC_NOBOARD:
             gfx_text("Controllers", LEFT_X, 60.0f, 0.6f, WHITE, 1);
             gfx_text(nobody_text, LEFT_X, 130.0f, 0.6f, WHITE, 0);
-            gfx_text("Needs the iBlue firmware with the", LEFT_X, 180.0f, 0.6f, GREY, 0);
-            gfx_text("settings channel and the VMU on port A.", LEFT_X, 212.0f, 0.6f, GREY, 0);
+            gfx_text("Needs the iBlue firmware with brctl.", LEFT_X, 180.0f, 0.6f, GREY, 0);
+            gfx_text("Connect a Bluetooth controller first.", LEFT_X, 212.0f, 0.6f, GREY, 0);
             gfx_text("B: back", LEFT_X, 270.0f, 0.6f, GREY, 0);
             break;
         case SC_PORT:

@@ -1,6 +1,6 @@
 /*
  * Host test of the iBlue settings: link, remap rules and the Controllers screen, against the
- * firmware's command handler (test/fw) with an in-memory board. See test/run_iblue.sh.
+ * fake adapter that follows the brctl firmware (test/iblue_fake_board.c). See test/run_iblue.sh.
  */
 #include <stdio.h>
 #include <string.h>
@@ -41,55 +41,82 @@ static int shows(const char* text) {
     return strstr(drawn, text) != NULL;
 }
 
-static const iblue_io io = {NULL, board_read, board_write, board_sleep};
+#define io board_io
 
 static void press(button_t b) { uib_button(b); uib_tick(); }
 
-static void test_constants(void) {
-    const int cmds[] = {IBLUE_CMD_HELLO, IBLUE_CMD_PORT_INFO, IBLUE_CMD_GET_MAP, IBLUE_CMD_SET_MAP, IBLUE_CMD_SET_TYPE,
-                        IBLUE_CMD_RESET_MAP, IBLUE_CMD_COMMIT, IBLUE_CMD_REVERT, IBLUE_CMD_LIVE, IBLUE_CMD_GET_GLOBAL,
-                        IBLUE_CMD_SET_GLOBAL, IBLUE_CMD_PROFILE_LIST, IBLUE_CMD_PROFILE_SAVE, IBLUE_CMD_PROFILE_LOAD,
-                        IBLUE_CMD_PROFILE_DELETE, IBLUE_CMD_GAME_SET, IBLUE_CMD_GAME_INFO, IBLUE_CMD_GAME_SAVE,
-                        IBLUE_CMD_GAME_DELETE};
-    const int res[] = {IBLUE_RES_OK, IBLUE_RES_BAD_CMD, IBLUE_RES_BAD_ARG, IBLUE_RES_BAD_CRC, IBLUE_RES_LOCKOUT, IBLUE_RES_FAILED, IBLUE_RES_EMPTY, IBLUE_RES_NO_GAME};
-    CHECK(fw_constants_match(cmds, 19, res, 8));
-}
-
 static void test_link(void) {
-    iblue_link l;
+    static iblue_link l;
     iblue_port_info pi;
     iblue_map_entry m[IBLUE_MAP_MAX];
-    int size = 0, connected = 0;
+    iblue_profile pr[IBLUE_PROFILES];
+    int size = 0, connected = 0, mode = 0;
     uint32_t w[4];
 
+    CHECK(sizeof(struct br_config) == 12356);
     board_reset();
     board_set_present(0);
     CHECK(iblue_link_open(&l, &io) == IBLUE_ERR_NO_BOARD);
     board_reset();
-    CHECK(iblue_link_open(&l, &io) == 0 && l.map_max == 128);
-    CHECK(board_stat(2) > 0); /* it had to wait for the board's task */
-    CHECK(iblue_link_port_info(&l, 1, &pi) == 0 && pi.connected && strcmp(pi.name, "Fake Pad") == 0 && pi.map_size == 118);
-    CHECK(iblue_link_port_info(&l, 0, &pi) == 0 && !pi.connected && pi.acc_mode == 1);
+    CHECK(iblue_link_open(&l, &io) == 0 && !l.unsaved && l.cfg.magic == BR_CONFIG_MAGIC);
+    CHECK(iblue_link_port_info(&l, 1, &pi) == 0 && pi.connected && strcmp(pi.name, "Bluetooth controller") == 0 && pi.map_size == 118);
+    CHECK(iblue_link_port_info(&l, 0, &pi) == 0 && !pi.connected && !pi.plugged && pi.acc_mode == 1);
+    board_set_plugged(0, 1);
+    CHECK(iblue_link_port_info(&l, 0, &pi) == 0 && pi.plugged);
     CHECK(iblue_link_port_info(&l, 7, &pi) == IBLUE_RES_BAD_ARG);
     CHECK(iblue_link_get_map(&l, 2, m, &size) == 0 && size == 118);
     CHECK(m[18].src_btn == 18 && m[18].dst_btn == 18 && m[18].dst_id == 2 && m[117].dst_btn == 127);
 
-    /* a table update that spans several blocks (all 118 entries) */
+    /* edits reach the adapter at once, spread over several transfers, and stay unsaved */
     for (int i = 0; i < size; i++) m[i].perc_deadzone = 99;
     CHECK(iblue_link_set_map(&l, 3, 0, 100, m, -1) == 0 && l.unsaved);
     CHECK(iblue_link_set_map(&l, 3, 100, 18, m + 100, -1) == 0);
-    {
-        iblue_map_entry back[IBLUE_MAP_MAX];
-        CHECK(iblue_link_get_map(&l, 3, back, &size) == 0 && size == 118 && back[117].perc_deadzone == 99 &&
-              back[3].perc_deadzone == 99);
-    }
-    CHECK(iblue_link_set_type(&l, 0, 0, 2) == IBLUE_RES_LOCKOUT && board_acc(0) == 1);
-    CHECK(iblue_link_set_type(&l, 2, 1, 2) == 0 && board_dev(2) == 1 && board_acc(2) == 2);
-    CHECK(iblue_link_revert(&l) == 0 && !l.unsaved && board_dev(2) == 0);
+    CHECK(board_field(3, 0, 2) == 99 && board_field(3, 117, 2) == 99 && board_field(3, 50, 2) == 99);
+    CHECK(board_stat(1) >= 3);
+    /* nothing outside the range changed */
+    CHECK(board_dst(3, 50) == 50 && board_dst(2, 5) == 5 && board_field(2, 5, 2) == 135);
+    CHECK(iblue_link_set_type(&l, 0, 1, 2) == 0 && board_dev(0) == 1 && board_acc(0) == 2);
+    CHECK(iblue_link_set_type(&l, 0, 4, 0) == IBLUE_RES_BAD_ARG && board_dev(0) == 1);
+    m[0].dst_id = 9;
+    CHECK(iblue_link_set_map(&l, 3, 0, 1, m, -1) == IBLUE_RES_BAD_ARG);
+    m[0].dst_id = 3; m[0].perc_max = 101;
+    CHECK(iblue_link_set_map(&l, 3, 0, 1, m, -1) == IBLUE_RES_BAD_ARG && board_field(3, 0, 0) == 100);
+    CHECK(iblue_link_set_map(&l, 3, 120, 1, m, 200) == IBLUE_RES_BAD_ARG);
+    m[0].perc_max = 100;
+    CHECK(iblue_link_set_map(&l, 3, 118, 1, m, 119) == 0 && board_map_size(3) == 119);
+
+    /* revert writes the saved state back; the adapter ends up as it was */
+    CHECK(iblue_link_revert(&l) == 0 && !l.unsaved && board_dev(0) == 0 && board_acc(0) == 1 && board_map_size(3) == 118 && board_field(3, 50, 2) == 135);
+
+    /* commit keeps it */
+    CHECK(iblue_link_set_type(&l, 2, 1, 3) == 0 && iblue_link_commit(&l) == 0 && !l.unsaved && board_stat(0) == 1);
+    CHECK(iblue_link_revert(&l) == 0 && board_dev(2) == 1);
+    CHECK(iblue_link_reset_map(&l, 2) == 0 && l.unsaved && iblue_link_get_map(&l, 2, m, &size) == 0 && size == 118 && m[117].dst_btn == 127);
+
+    /* the adapter refuses an impossible save and goes back to what is saved */
+    board_corrupt_map_size(1);
+    CHECK(iblue_link_commit(&l) == IBLUE_RES_BAD_ARG && board_map_size(1) == 118 && !l.unsaved);
+
+    CHECK(iblue_link_get_pairing(&l, &mode) == 0 && mode == 0);
+    CHECK(iblue_link_set_pairing(&l, 1) == 0 && board_pairing() == 1 && l.unsaved);
+    CHECK(iblue_link_set_pairing(&l, 2) == IBLUE_RES_BAD_ARG);
+    CHECK(iblue_link_revert(&l) == 0 && board_pairing() == 0);
 
     board_set_held(1, 1u << 19);
     CHECK(iblue_link_live(&l, 1, w, &connected) == 0 && connected == 1 && w[0] == (1u << 19));
-    CHECK(iblue_link_live(&l, 0, w, &connected) == 0 && connected == 0);
+    CHECK(iblue_link_live(&l, 0, w, &connected) == 0 && connected == 0 && w[0] == 0);
+
+    /* profiles keep a port's type and table; loading is live and unsaved */
+    CHECK(iblue_link_profiles(&l, pr) == 0 && !pr[0].used);
+    CHECK(iblue_link_profile_load(&l, 0, 2) == IBLUE_RES_EMPTY);
+    CHECK(iblue_link_set_type(&l, 2, 1, 3) == 0);
+    board_set_dst(2, 16, 19);
+    iblue_link_get_map(&l, 2, m, &size);
+    CHECK(iblue_link_profile_save(&l, 1, 2) == 0 && board_profile_used(1));
+    CHECK(iblue_link_profiles(&l, pr) == 0 && pr[1].used && pr[1].dev_mode == 1 && pr[1].acc_mode == 3);
+    CHECK(iblue_link_profile_load(&l, 1, 3) == 0 && board_dev(3) == 1 && l.cfg.out_cfg[3].dev_mode == 1 && l.unsaved);
+    CHECK(iblue_link_profile_delete(&l, 1) == 0 && !board_profile_used(1));
+    CHECK(iblue_link_profile_save(&l, 4, 0) == IBLUE_RES_BAD_ARG);
 }
 
 static void test_assign(void) {
@@ -150,13 +177,15 @@ static void test_ui(void) {
     press(BTN_LEFT);
     CHECK(board_acc(0) == 1);
 
-    /* port A cannot lose its VMU, the other ports can */
+    /* the VMU can be switched off on any port (the channel does not live in it any more) */
     goto_row(3, 2);
     press(BTN_A);
-    CHECK(board_acc(0) == 1 && strcmp(uib_notice(), "Port A needs its VMU") == 0);
+    CHECK(board_acc(0) == 0);
+    press(BTN_A);
+    CHECK(board_acc(0) == 1);
     goto_row(2, 0);
     press(BTN_RIGHT); /* port B */
-    CHECK(shows("Fake Pad"));
+    CHECK(shows("Bluetooth controller"));
     goto_row(0, 2);
     press(BTN_A);
     CHECK(board_acc(1) == 0 && shows("Off"));
@@ -221,7 +250,7 @@ static void test_ui(void) {
     /* port B has a controller: press-to-learn */
     goto_row(4, 0);
     press(BTN_RIGHT);
-    CHECK(shows("Fake Pad"));
+    CHECK(shows("Bluetooth controller"));
     goto_row(0, 4); press(BTN_A);
     press(BTN_DOWN);            /* output "B" */
     board_set_held(1, 1u << 19); /* held while the screen opens: ignored until released */
@@ -259,7 +288,7 @@ static void test_ui(void) {
     CHECK(!uib_done() && !shows("Unsaved changes"));
     press(BTN_B);
     press(BTN_X);
-    CHECK(uib_done() && board_stat(1) == 1 && board_dst(1, 25) == 25 && board_pairing() == 0);
+    CHECK(uib_done() && board_stat(0) == 0 && board_dst(1, 25) == 25 && board_pairing() == 0);
 
     /* save */
     board_reset();
@@ -283,8 +312,6 @@ static void test_ui(void) {
 }
 
 static void test_profiles(void) {
-    unsigned int btns, prev = 0;
-
     board_reset();
     uib_open(&io);
     goto_row(0, 1);
@@ -309,12 +336,6 @@ static void test_profiles(void) {
     CHECK(!board_profile_used(1) && shows("empty"));
     press(BTN_B);
     CHECK(shows("Profiles"));
-
-    /* Home + a face button on the controller (the board does this itself; same filter as the firmware) */
-    btns = (1u << 22) | (1u << 17);
-    CHECK(hotkey_slot(&btns, &prev) == 1 && !(btns & 0xF0000));
-    btns = (1u << 22) | (1u << 17);
-    CHECK(hotkey_slot(&btns, &prev) == -1);
 }
 
 static void test_game(void) {
@@ -376,7 +397,6 @@ static void test_game(void) {
 }
 
 int main(void) {
-    test_constants();
     test_link();
     test_assign();
     test_ui();
