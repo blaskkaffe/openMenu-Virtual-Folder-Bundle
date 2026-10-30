@@ -58,18 +58,32 @@ untagged. No timestamp: ordering uses the revision only.
 
 - **Restore (SD to VMU).** Stamp the tag into the in-memory buffer before the
   write loop: same lineage and revision as the SD copy, fresh nonzero nonce.
-  Write the same nonce into `LASTDISC.TXT`.
+  The SD file itself is not modified (its nonce stays 0). Write lineage,
+  revision and nonce into `LASTTAG.TXT`.
 - **Backup (VMU to SD, next boot).** After a successful write of the SD file,
   set revision + 1 and nonce 0 in both the SD image and the VMU's block 255.
-  Delete `LASTDISC.TXT`.
-- So `V.nonce == 0` means the VMU's content is on the SD card at `V.revision`.
-  `V.nonce != 0` means the VMU holds play data not yet backed up.
+  Delete `LASTDISC.TXT` and `LASTTAG.TXT`.
+- The VMU is **clean** when `V.nonce == 0` or `V.nonce == S.nonce`: its content
+  is on the SD card. It is **dirty** (play data not yet backed up) when
+  `V.nonce != 0` and `V.nonce != S.nonce`. The `S.nonce` comparison matters when
+  Derek's build does the backup: it copies the VMU's tag, nonce included, into
+  the SD file without clearing it on the VMU, and that state must read as
+  clean.
 
-## `LASTDISC.TXT`
+## Launch records
 
-Line 1 stays `<GAMEID>-<slot>` so older parsers and Derek's builds still read
-it. Following lines add `lineage`, `revision` and `nonce` as hex. A file with
-only line 1 is accepted and means no verification data is available.
+`LASTDISC.TXT` stays byte-for-byte in Derek's format (`<GAMEID>-<slot>`, one
+line, nothing else). His parser reads at most 31 bytes and splits at the last
+`-` in the whole string, so any extra line would corrupt the game ID he
+reads.
+
+The verification data goes in a separate file,
+`/sd/OPENMENU/LASTTAG.TXT`, one line of hex: `lineage revision nonce`. His
+build never opens it.
+
+It is valid only together with a `LASTDISC.TXT` whose game ID and slot match.
+If `LASTDISC.TXT` is missing (his build backed up and deleted it) or does not
+match, `LASTTAG.TXT` is stale: ignore it and delete it.
 
 ## Decisions
 
@@ -81,16 +95,17 @@ Let V be the tag on the VMU and S the tag on the SD slot file.
 |---|---|
 | Blank or freshly formatted (no files, no tag) | Proceed. |
 | No tag, has files | **Always confirm**, every mode. Choices: overwrite, choose another device, cancel. |
-| Tagged, `nonce != 0` | Warn: unsaved play data. Choices: back it up first, overwrite anyway, cancel. |
-| Tagged, `nonce == 0`, matching SD file with same lineage and `S.revision >= V.revision` | Proceed. |
-| Tagged, `nonce == 0`, SD file missing, other lineage, or `S.revision < V.revision` | Warn: this VMU's content is not on this SD card. Same choices. |
+| Tagged, dirty (see state machine) | Warn: unsaved play data. Choices: back it up first, overwrite anyway, cancel. |
+| Tagged, clean, matching SD file with same lineage and `S.revision >= V.revision` | Proceed. |
+| Tagged, clean, SD file missing, other lineage, or `S.revision < V.revision` | Warn: this VMU's content is not on this SD card. Same choices. |
 
 ### Before a backup (would overwrite the SD file)
 
 | Check | Action |
 |---|---|
-| V.nonce and V.lineage match `LASTDISC.TXT`, and S.revision == V.revision (or S absent) | Proceed. |
-| VMU untagged, or tag mismatches `LASTDISC.TXT` (wrong VMU) | Warn. |
+| V.nonce and V.lineage match `LASTTAG.TXT`, and S.revision == V.revision (or S absent) | Proceed. |
+| VMU untagged, or tag mismatches `LASTTAG.TXT` (wrong VMU) | Warn. |
+| `LASTTAG.TXT` missing or stale while `LASTDISC.TXT` exists (the launch was by Derek's build) | Compare V and S tags only; same lineage and equal or newer V proceeds, anything else warns. |
 | S.revision > V.revision (SD copy is newer) | Warn. |
 | S.revision < V.revision, or other lineage (VMU is newer, or the SD card was swapped) | Warn. |
 
@@ -109,8 +124,69 @@ Let V be the tag on the VMU and S the tag on the SD slot file.
 - A first-time slot (no SD file): "copy the current VMU" or "wipe from
   `EMPTY.VMU`" stay as options. Copying a VMU with files is allowed here
   because the user chose it explicitly. The result is tagged either way.
-- `LASTDISC.TXT` from an older build (one line, no nonce) with an untagged VMU:
-  one-time confirm before the backup.
+- `LASTDISC.TXT` with no `LASTTAG.TXT` (written by Derek's build) and an
+  untagged VMU: one-time confirm before the backup.
+
+## Upgrade: no nag on every start
+
+Prompts can only come from VMUs that are untagged and contain files.
+Blank VMUs and tagged VMUs never prompt. The rule is at most one prompt per
+physical VMU:
+
+- Every proceeding outcome (overwrite, adopt, first-time copy) stamps the tag,
+  so that VMU never asks again. Only "cancel" asks again next time.
+- The default choice on the untagged prompt is **Adopt, keep a rescue copy**:
+  the VMU's current 128 KB is written to
+  `/sd/OPENMENU/SAVES/_RESCUE/` before anything is overwritten. Nothing is
+  lost even if the prompt is dismissed without reading. This runs once per
+  VMU, because the VMU is tagged afterwards.
+- No silent auto-adoption. A VMU whose directory and FAT match an SD slot file
+  is still not proven identical, since a game can rewrite a save in place
+  without changing either.
+- A user with an existing dedicated Serial VMU therefore sees one prompt on the
+  first launch after upgrading.
+- Optional: a settings action "Adopt VMU in Serial slot" to do it deliberately.
+
+## Faster transfers
+
+The SD file stays the full 128 KB image (256 x 512 bytes), so Derek's builds
+and VMU tools read it unchanged. Only what travels over the Maple bus shrinks.
+
+**Restore.** For each block: read the VMU block, compare with the target block,
+write only if different. This is correct for any layout and needs no knowledge
+of the VMU filesystem. Optional further skip: if the FAT marks a user block
+(0-199) free in the target image, skip it without reading. Stale bytes then stay
+in unreachable free blocks, which neither the BIOS nor games see.
+
+**Backup.** Read the root block, FAT and directory first (15 blocks). Then read
+only the blocks the FAT marks as used, plus the hidden area (blocks 200-240).
+Free user blocks go into the SD image as zeros.
+
+**Safety rules.**
+
+- Validate the FAT before trusting it; on any inconsistency, fall back to the
+  full copy.
+- Write order on restore: data blocks, then directory and FAT, then the root
+  block with the tag last. A power loss mid-restore leaves the old structure.
+- The hidden area stays on the compare-and-write rule (not assumed free).
+- Measure first: time a full 256-block read and write on a real VMU, a VM2, a
+  VMUPro and a Pico2Maple before choosing how far to optimise.
+
+## Compatibility with Derek's 1.7.1
+
+Checked against the 1.7.1 source (`ui_menu_credits.c`):
+
+| Point | Finding |
+|---|---|
+| SD layout | Unchanged: `SAVES/<GAMEID>/SLOTn.VMU`, `.TXT`, `TITLE.TXT`. His code requires `SLOTn.VMU` to be exactly 131072 bytes and never lists directories, so extra files and the `_RESCUE` folder are ignored. |
+| `LASTDISC.TXT` | Must stay one line, `<GAMEID>-<slot>`. His reader takes 31 bytes and splits at the last `-`. The extra data therefore lives in `LASTTAG.TXT`, which he never opens. |
+| Image content | His restore and backup copy all 256 blocks as opaque data, so the tag at `0x60` and zeroed free blocks pass through unchanged and unexamined. |
+| Mixed use | A VMU restored by our build and backed up by his comes back with the tag copied into the SD file unbumped; the `S.nonce` comparison treats that as clean. A VMU restored by his build from our image carries nonce 0 and is clean. |
+| Paths | His path buffers are 64 bytes; new paths stay short (`LASTTAG.TXT`, `_RESCUE`). |
+
+Not verifiable from source: whether the BIOS, games and the virtual VMU devices
+keep bytes at `0x60`. That is the hardware list above and must pass before
+release.
 
 ## Phase 2: visible image
 
@@ -139,4 +215,4 @@ a user deletes it, it comes back on the next write.
 
 - Port selector when no VMU is in the configured slot: should the fork keep
   Derek's device picker, or require the configured slot?
-- Should `LASTDISC.TXT` extra lines be hex text or a fixed-format line?
+- Rescue copies in `_RESCUE`: keep all, or cap the count to limit SD usage?
